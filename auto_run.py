@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""
+KAT Auto-Run
+============
+Single entry point for the entire KAT pipeline.
+
+Modes:
+  train   → generate data, preprocess, train all models
+  predict → load latest checkpoint, run prediction on recent data
+  serve   → launch FastAPI inference server
+  demo    → quick end-to-end demo (small dataset, 5 epochs)
+
+Usage:
+    python auto_run.py train --model all --epochs 50
+    python auto_run.py train --model causal_tiger --epochs 30
+    python auto_run.py predict --model causal_tiger --steps 60
+    python auto_run.py serve --port 8000
+    python auto_run.py demo
+"""
+
+import sys, time
+import numpy as np
+import argparse
+from pathlib import Path
+
+ROOT        = Path(__file__).parent
+DATA_DIR    = ROOT / "data"
+MODEL_DIR   = ROOT / "src/architectures"
+LOG_DIR     = ROOT / "logs"
+SAVED_MODELS = ROOT / "models"
+
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(MODEL_DIR))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MODES
+# ──────────────────────────────────────────────────────────────────────────────
+
+def mode_train(args):
+    """Full training pipeline."""
+    import subprocess
+    cmd = [
+        sys.executable, str(ROOT / "train.py"),
+        "--model",   args.model,
+        "--epochs",  str(args.epochs),
+        "--batch",   str(args.batch),
+        "--candles", str(args.candles),
+    ]
+    print(f"Running: {' '.join(cmd)}")
+    if hasattr(args, "symbol"):
+        cmd.extend(["--symbol", args.symbol])
+    if hasattr(args, "finetune") and args.finetune:
+        cmd.append("--finetune")
+    
+    subprocess.run(cmd, check=True)
+
+
+def mode_predict(args):
+    """Load a trained model and run prediction on fresh synthetic data."""
+    import numpy as np
+    import tensorflow as tf
+    import keras
+    from generate_data import generate_synthetic
+    from preprocess    import build_dataset, KATScaler
+    from fetch_data    import fetch_live_kat_data
+
+    CKPT = ROOT / "saved_models"
+
+    # ── Load scaler ──────────────────────────────────────────────────────────
+    variant = "base"
+    if "tiger" in args.model: variant = "tiger"
+    elif "lion" in args.model: variant = "lion"
+
+    scaler_path = CKPT / f"scaler_{variant}.pkl"
+    if not scaler_path.exists():
+        scaler_path = CKPT / "scaler_base.pkl"
+
+    if not scaler_path.exists():
+        print("No scaler found. Run `python auto_run.py train` first.")
+        sys.exit(1)
+
+    scaler = KATScaler.load(str(scaler_path))
+
+    # ── Fresh data ───────────────────────────────────────────────────────────
+    ctx_map = {"base": 150, "lion": 480, "tiger": 1440, "hydra": 360}
+    model_key = args.model.replace("causal_", "")
+    ctx = ctx_map.get(model_key, 150)
+
+    print(f"Fetching {ctx + 200} live candles for prediction...")
+    df = fetch_live_kat_data(symbol="BTCUSD", n_candles=ctx + 200)
+
+    ds = build_dataset(df, context_window=ctx, forecast_steps=1, train_ratio=0, val_ratio=0, scaler=scaler)
+    seed = ds["X_test"][-1]   # (ctx, features) — Use the latest full window
+
+    # ── Load model ───────────────────────────────────────────────────────────
+    model_file = CKPT / f"{args.model}_final.keras"
+    if not model_file.exists():
+        print(f"Checkpoint not found: {model_file}")
+        sys.exit(1)
+
+    print(f"Loading {model_file}...")
+
+    # Ensure custom classes are registered by importing their modules
+    if   "alpha" in args.model: import alpha
+    elif "titan" in args.model: import titan
+    elif "causal" in args.model: import causal
+    elif "hydra"  in args.model: import hydra
+
+    model = keras.models.load_model(str(model_file))
+
+    # ── Predict ──────────────────────────────────────────────────────────────
+    if "causal" in args.model or "hydra" in args.model:
+        if "causal" in args.model: from causal import CausalModel as GeneratorModel
+        else: from hydra import Hydra as GeneratorModel
+        traj = model.generate(seed, steps=args.steps, scaler=scaler)
+        last_known = scaler.inverse_y(seed[-1:, 3:4].ravel())[0]
+        print(f"\nLast known close: ${last_known:,.2f}")
+        print(f"Predicted trajectory ({args.steps} steps):")
+
+        # ── Visual Plotting ──────────────────────────────────────────────────
+        try:
+            import matplotlib.pyplot as plt
+            plot_dir = LOG_DIR / "plots"
+            plot_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get last 30 historical points for context
+            hist_close = scaler.inverse_y(seed[-30:, 3:4].ravel())
+            
+            plt.figure(figsize=(10, 6))
+            plt.plot(range(len(hist_close)), hist_close, label="History", color="blue", marker="o", markersize=3)
+            
+            # Forecast starts from the last historical point (connects history to forecast)
+            forecast_x = range(len(hist_close) - 1, len(hist_close) + len(traj))
+            plt.plot(forecast_x, [hist_close[-1]] + list(traj), label="Forecast", color="orange", linestyle="--", marker="x", markersize=4)
+            
+            plt.title(f"KAT Prediction: {args.model}")
+            plt.xlabel("Minutes")
+            plt.ylabel("Price ($)")
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            
+            plot_file = plot_dir / f"{args.model}_{time.strftime('%H%M%S')}.png"
+            plt.savefig(plot_file)
+            print(f"📈 Visual plot saved to: {plot_file}")
+            plt.close()
+            
+        except Exception as e:
+            print(f"! Could not generate visual plot: {e}")
+
+        # Text output
+        for i, p in enumerate(traj, 1):
+            arrow = "↑" if p > (traj[i-2] if i > 1 else last_known) else "↓"
+            print(f"  +{i:3d}min  ${p:,.2f}  {arrow}")
+    else:
+        inp = seed[np.newaxis]
+        pred_s = model.predict(inp, verbose=0)[0]
+        if hasattr(pred_s, "__len__"):
+            pred_s = pred_s[-1]
+        pred = scaler.inverse_y(np.array([float(pred_s)]))[0]
+        last_known = scaler.inverse_y(seed[-1:, 3:4].ravel())[0]
+        direction = "UP ↑" if pred > last_known else "DOWN ↓"
+        print(f"\nLast known close : ${last_known:,.2f}")
+        print(f"Predicted close  : ${pred:,.2f}  ({direction})")
+        delta = pred - last_known
+        sign = "+" if delta >= 0 else "-"
+        print(f"Delta            : {sign}${abs(delta):,.2f}")
+
+
+def mode_serve(args):
+    """Launch FastAPI server."""
+    try:
+        import uvicorn
+        print(f"Starting KAT API server on port {args.port}...")
+        uvicorn.run(
+            "src.api.serve:app",
+            host="0.0.0.0",
+            port=args.port,
+            reload=False,
+            app_dir=str(ROOT),
+        )
+    except ImportError:
+        print("uvicorn not installed. Run: pip install uvicorn fastapi")
+
+
+def mode_demo(args):
+    """Quick end-to-end demo: train KAT 1.3 for 5 epochs, predict."""
+    import subprocess
+
+    print("=" * 60)
+    print("  KAT DEMO — Quick end-to-end pipeline test")
+    print("=" * 60)
+
+    print("\n[1/2] Training ALPHA (5 epochs, 2,000 candles, LIVE)...")
+    subprocess.run([
+        sys.executable, str(ROOT / "train.py"),
+        "--model", "alpha",
+        "--epochs", "5",
+        "--batch", "64",
+        "--candles", "2000",
+        "--live"
+    ], check=True)
+
+    print("\n[2/2] Running prediction...")
+    sys.argv = ["auto_run.py", "predict", "--model", "alpha"]
+    predict_args = argparse.Namespace(model="alpha", steps=1)
+    mode_predict(predict_args)
+
+    print("\n✓ Demo complete! Run `python auto_run.py train` for full training.")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CLI
+# ──────────────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="KAT Predictive Engine — Master Entry Point",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+
+    sub = parser.add_subparsers(dest="mode", required=True)
+
+    # ── train ─────────────────────────────────────────────────────────────────
+    p_train = sub.add_parser("train", help="Train KAT models")
+    p_train.add_argument("--model",   default="all",
+        choices=["all","alpha","titan","causal_base","causal_lion","causal_tiger","hydra"])
+    p_train.add_argument("--epochs",  type=int, default=50)
+    p_train.add_argument("--batch",   type=int, default=128)
+    p_train.add_argument("--candles", type=int, default=60_000)
+    p_train.add_argument("--symbol",  default="BTCUSD")
+    p_train.add_argument("--finetune", action="store_true", help="Fine-tune existing model")
+
+    # ── predict ───────────────────────────────────────────────────────────────
+    p_pred = sub.add_parser("predict", help="Run prediction with a trained model")
+    p_pred.add_argument("--model", default="causal_base",
+        choices=["alpha", "titan", "causal_base", "causal_lion", "causal_tiger", "hydra"])
+    p_pred.add_argument("--steps", type=int, default=60,
+        help="Forecast steps (CAUSAL/HYDRA only)")
+    p_pred.add_argument("--live", action="store_true", default=True,
+        help="Fetch live data for prediction (default: True)")
+
+    # ── serve ─────────────────────────────────────────────────────────────────
+    p_srv = sub.add_parser("serve", help="Launch FastAPI inference server")
+    p_srv.add_argument("--port", type=int, default=8000)
+
+    # ── trade ─────────────────────────────────────────────────────────────────
+    p_trade = sub.add_parser("trade", help="Live autonomous Sandbox trading")
+    p_trade.add_argument("--model",  default="hydra",
+        choices=["alpha", "titan", "causal_base", "causal_lion", "causal_tiger", "hydra"])
+    p_trade.add_argument("--symbol", default="BTCUSD")
+    p_trade.add_argument("--size",   type=int, default=1)
+    p_trade.add_argument("--thresh", type=float, default=0.05)
+    
+    args = parser.parse_args()
+
+    if   args.mode == "train":   mode_train(args)
+    elif args.mode == "predict": mode_predict(args)
+    elif args.mode == "trade":
+        import live_trader
+        live_trader.MODEL_NAME = args.model
+        live_trader.SYMBOL     = args.symbol
+        live_trader.SIZE       = args.size
+        live_trader.THRESHOLD  = args.thresh
+        live_trader.run_trader()
+    elif args.mode == "serve":   mode_serve(args)
+    elif args.mode == "demo":    mode_demo(args)
+
+
+if __name__ == "__main__":
+    main()

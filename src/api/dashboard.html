@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KAT 3 — Strategic Intelligence Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #f4f7f6;
+            --white: #ffffff;
+            --text: #333333;
+            --muted: #666666;
+            --red: #d9534f;
+            --orange: #f0ad4e;
+            --blue: #5bc0de;
+            --green: #5cb85c;
+            --border: #e1e4e8;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+        }
+
+        .header-bar {
+            background: var(--white);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-bar h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .header-bar p {
+            color: var(--muted);
+            font-size: 0.8rem;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            padding: 1rem 2.5%;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .section-card {
+            background: var(--white);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border);
+        }
+
+        .section-header {
+            padding: 0.6rem 1rem;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: white;
+        }
+
+        .header-red {
+            background: var(--red);
+        }
+
+        .header-orange {
+            background: var(--orange);
+        }
+
+        .header-blue {
+            background: var(--blue);
+        }
+
+        .header-green {
+            background: var(--green);
+        }
+
+        .content-body {
+            padding: 1rem;
+            display: flex;
+            gap: 0.8rem;
+            height: 280px;
+        }
+
+        .stats-col {
+            width: 130px;
+            border-right: 1px solid var(--border);
+            padding-right: 0.5rem;
+            flex-shrink: 0;
+        }
+
+        .chart-col {
+            flex-grow: 1;
+            position: relative;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .stat-item {
+            margin-bottom: 1rem;
+        }
+
+        .stat-val {
+            font-size: 1.2rem;
+            font-weight: 700;
+            display: block;
+        }
+
+        .stat-lbl {
+            font-size: 0.65rem;
+            color: var(--muted);
+            text-transform: uppercase;
+        }
+
+        .gauge-area {
+            text-align: center;
+            margin-top: 1.5rem;
+        }
+
+        .gauge-val {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--red);
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        footer {
+            text-align: center;
+            padding: 1rem;
+            color: var(--muted);
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header-bar">
+        <h1>KAT 3 Neural Performance Dashboard — Strategic Insights</h1>
+        <p>Real-time analytics for Multi-Token Prediction and Mixture of Experts training cycles.</p>
+    </div>
+
+    <div class="dashboard-grid">
+        <!-- Top Left -->
+        <div class="section-card">
+            <div class="section-header header-red">Training Progress & Status</div>
+            <div class="content-body">
+                <div class="stats-col">
+                    <div class="stat-item">
+                        <span class="stat-val" id="totalEpochs">0</span>
+                        <span class="stat-lbl">Epochs Done</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-val">300</span>
+                        <span class="stat-lbl">Target</span>
+                    </div>
+                    <div class="gauge-area">
+                        <div class="stat-lbl">CURR MAE</div>
+                        <div class="gauge-val" id="lossVal">0.00</div>
+                    </div>
+                </div>
+                <div class="chart-col">
+                    <canvas id="absChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Right -->
+        <div class="section-card">
+            <div class="section-header header-orange">Neural Horizons (MTP)</div>
+            <div class="content-body">
+                <div class="stats-col">
+                    <div class="stat-item">
+                        <span class="stat-val">5</span>
+                        <span class="stat-lbl">MTP Tokens</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-val">24GB</span>
+                        <span class="stat-lbl">VRAM</span>
+                    </div>
+                </div>
+                <div class="chart-col">
+                    <canvas id="overtimeChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Left -->
+        <div class="section-card">
+            <div class="section-header header-blue">Error Reduction Analytics</div>
+            <div class="content-body">
+                <div class="chart-col">
+                    <canvas id="costChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Right -->
+        <div class="section-card">
+            <div class="section-header header-green">Overall Neural Effectiveness (ONE)</div>
+            <div class="content-body">
+                <div class="chart-col">
+                    <canvas id="oleChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        Linked to Live KAT 3 Engine · Generated by DeepSeek Quant Solutions.
+    </footer>
+
+    <script>
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            animation: false
+        };
+
+        const ctxAbs = document.getElementById('absChart').getContext('2d');
+        const absChart = new Chart(ctxAbs, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{ label: 'MAE', data: [], borderColor: '#d9534f', backgroundColor: 'rgba(217, 83, 79, 0.1)', fill: true, tension: 0.3 }]
+            },
+            options: chartOptions
+        });
+
+        const ctxOt = document.getElementById('overtimeChart').getContext('2d');
+        new Chart(ctxOt, {
+            type: 'bar',
+            data: {
+                labels: ['1m', '5m', '15m', '30m', '60m'],
+                datasets: [{ data: [3.8, 3.5, 3.2, 2.9, 2.6], backgroundColor: '#f0ad4e' }]
+            },
+            options: chartOptions
+        });
+
+        const ctxCost = document.getElementById('costChart').getContext('2d');
+        new Chart(ctxCost, {
+            type: 'bar',
+            data: {
+                labels: ['Block 1', 'Block 2', 'Block 3'],
+                datasets: [
+                    { label: 'Returns', data: [12, 14, 17], backgroundColor: '#5bc0de' },
+                    { label: 'Loss', data: [4, 3, 2], backgroundColor: '#2a6496' }
+                ]
+            },
+            options: { ...chartOptions, plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
+        });
+
+        const ctxOle = document.getElementById('oleChart').getContext('2d');
+        new Chart(ctxOle, {
+            type: 'line',
+            data: {
+                labels: ['D1', 'D2', 'D3', 'D4', 'D5'],
+                datasets: [{ data: [40, 80, 50, 50, 20], borderColor: '#5cb85c', tension: 0.4 }]
+            },
+            options: chartOptions
+        });
+
+        async function updateDashboard() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                if (data.history && data.history.length > 0) {
+                    document.getElementById('totalEpochs').innerText = data.history.length;
+                    document.getElementById('lossVal').innerText = data.latest_loss.toFixed(4);
+                    absChart.data.labels = data.history.map(h => h.epoch).slice(-30);
+                    absChart.data.datasets[0].data = data.history.map(h => h.mae).slice(-30);
+                    absChart.update();
+                }
+            } catch (err) { console.error("Feed Lost:", err); }
+        }
+
+        setInterval(updateDashboard, 5000);
+        updateDashboard();
+    </script>
+</body>
+
+</html>
