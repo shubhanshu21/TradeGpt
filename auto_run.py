@@ -42,10 +42,11 @@ def mode_train(args):
     import subprocess
     cmd = [
         sys.executable, str(ROOT / "train.py"),
-        "--model",   args.model,
-        "--epochs",  str(args.epochs),
-        "--batch",   str(args.batch),
-        "--candles", str(args.candles),
+        "--model",    args.model,
+        "--epochs",   str(args.epochs),
+        "--batch",    str(args.batch),
+        "--candles",  str(args.candles),
+        "--timeframe", args.timeframe,
     ]
     print(f"Running: {' '.join(cmd)}")
     if hasattr(args, "symbol"):
@@ -87,8 +88,8 @@ def mode_predict(args):
     model_key = args.model.replace("causal_", "")
     ctx = ctx_map.get(model_key, 150)
 
-    print(f"Fetching {ctx + 200} live candles for prediction...")
-    df = fetch_live_kat_data(symbol="BTCUSD", n_candles=ctx + 200)
+    print(f"Fetching {ctx + 200} live candles for prediction ({args.timeframe})...")
+    df = fetch_live_kat_data(symbol="BTCUSD", n_candles=ctx + 200, timeframe=args.timeframe)
 
     ds = build_dataset(df, context_window=ctx, forecast_steps=1, train_ratio=0, val_ratio=0, scaler=scaler)
     seed = ds["X_test"][-1]   # (ctx, features) — Use the latest full window
@@ -230,6 +231,7 @@ def main():
     p_train.add_argument("--batch",   type=int, default=128)
     p_train.add_argument("--candles", type=int, default=60_000)
     p_train.add_argument("--symbol",  default="BTCUSD")
+    p_train.add_argument("--timeframe", default="1m", help="Timeframe (1m, 5m, 15m, 1h, etc.)")
     p_train.add_argument("--finetune", action="store_true", help="Fine-tune existing model")
 
     # ── predict ───────────────────────────────────────────────────────────────
@@ -238,6 +240,7 @@ def main():
         choices=["alpha", "titan", "causal_base", "causal_lion", "causal_tiger", "hydra"])
     p_pred.add_argument("--steps", type=int, default=60,
         help="Forecast steps (CAUSAL/HYDRA only)")
+    p_pred.add_argument("--timeframe", default="1m", help="Timeframe (1m, 5m, 15m, 1h, etc.)")
     p_pred.add_argument("--live", action="store_true", default=True,
         help="Fetch live data for prediction (default: True)")
 
@@ -252,6 +255,7 @@ def main():
     p_trade.add_argument("--symbol", default="BTCUSD")
     p_trade.add_argument("--size",   type=int, default=1)
     p_trade.add_argument("--thresh", type=float, default=0.05)
+    p_trade.add_argument("--timeframe", default="1m", help="Timeframe (1m, 5m, 15m, 1h, etc.)")
     
     args = parser.parse_args()
 
@@ -263,6 +267,7 @@ def main():
         live_trader.SYMBOL     = args.symbol
         live_trader.SIZE       = args.size
         live_trader.THRESHOLD  = args.thresh
+        live_trader.TIMEFRAME  = args.timeframe
         live_trader.run_trader()
     elif args.mode == "serve":   mode_serve(args)
     elif args.mode == "demo":    mode_demo(args)

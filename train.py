@@ -321,8 +321,7 @@ def train_hydra(ds: dict, epochs: int = 40, batch_size: int = 32, finetune: bool
     print(f"   ✓ Locked Neural Input:  {X_tr_in.shape}")
     print(f"   ✓ Locked Neural Target: {y_tr.shape}")
     
-    # Explicitly build model to define shapes for Keras 3
-    model.build(input_shape=(None, X_tr_in.shape[1], X_tr_in.shape[2]))
+    # Summary reflects established shapes from factory build
     model.summary()
 
     # ── Dynamic Training Density ─────────────────────────────────────────────
@@ -372,21 +371,23 @@ def main():
     parser.add_argument("--candles", type=int, default=60_000,
                         help="Number of real-world candles to fetch from Delta Exchange")
     parser.add_argument("--symbol", default=".DEXBTUSD", help="Symbol to fetch")
+    parser.add_argument("--timeframe", default="1m", help="Timeframe (1m, 5m, 15m, 1h, etc.)")
     parser.add_argument("--finetune", action="store_true", help="Fine-tune existing model instead of scratch")
     args = parser.parse_args()
 
     configure_gpu()
     CKPT_DIR.mkdir(exist_ok=True)
+    DATA_DIR.mkdir(exist_ok=True)
 
     # ── Fetch Live Data (with Caching) ─────────────────────────────────────────
-    CACHE_PATH = DATA_DIR / f"{args.symbol}_history_{args.candles}.parquet"
+    CACHE_PATH = DATA_DIR / f"{args.symbol}_{args.timeframe}_history_{args.candles}.parquet"
     
     if CACHE_PATH.exists():
         print(f"\n📂 Loading cached dataset from: {CACHE_PATH}")
         df = pd.read_parquet(CACHE_PATH)
     else:
-        print(f"\n📡 No cache found. Fetching {args.candles:,} live {args.symbol} candles from Delta Exchange...")
-        df = fetch_live_kat_data(symbol=args.symbol, n_candles=args.candles)
+        print(f"\n📡 No cache found. Fetching {args.candles:,} live {args.symbol} candles ({args.timeframe}) from Delta Exchange...")
+        df = fetch_live_kat_data(symbol=args.symbol, n_candles=args.candles, timeframe=args.timeframe)
         # Save cache for next time
         df.to_parquet(CACHE_PATH)
         print(f"💾 Dataset cached to: {CACHE_PATH}")

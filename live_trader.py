@@ -31,6 +31,7 @@ SYMBOL     = "BTCUSD"
 SIZE       = 1    
 THRESHOLD  = 0.05 
 INTERVAL   = 60   
+TIMEFRAME  = "1m"
 MODEL_NAME = "hydra"
 
 # ── PERFORMANCE TRACKING ─────────────────────────────────────────────────────
@@ -80,6 +81,12 @@ def run_trader():
     elif "causal" in MODEL_NAME: import causal
     elif "hydra" in MODEL_NAME: import hydra
 
+    # Set Interval based on timeframe
+    tf_map = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600}
+    global INTERVAL
+    INTERVAL = tf_map.get(TIMEFRAME, 60)
+    print(f"  Cycle: {INTERVAL}s (Timeframe: {TIMEFRAME})")
+
     print(f"Loading {model_path}...")
     model = keras.models.load_model(str(model_path))
 
@@ -118,7 +125,7 @@ def run_trader():
             print(C_CYAN + "═"*60 + C_RESET)
 
             # 4. Fetch Fresh Data
-            df = fetch_live_kat_data(symbol=SYMBOL, n_candles=500)
+            df = fetch_live_kat_data(symbol=SYMBOL, n_candles=500, timeframe=TIMEFRAME)
             
             # Dynamic Risk: ATR
             atr = calculate_atr(df)

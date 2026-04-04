@@ -1,7 +1,7 @@
 # Neural Trading Engines — Autonomous Decision Suite
 
 Professional-grade AI trading intelligence for **Delta Exchange India**.  
-Designed to analyze high-frequency price action and execute autonomous trades with institutional-level risk management.
+Designed to analyze multi-timeframe price action and execute autonomous trades with institutional-level risk management.
 
 ## 🏗️ Project Overview
 
@@ -21,38 +21,44 @@ auto_run.py              ← The "Remote Control" (Train / Predict / Trade)
 
 | Engine | Description | Best For |
 | :--- | :--- | :--- |
-| **HYDRA (V3)** | Our most advanced brain. Uses 4 specialized "experts" to handle different market regimes. | **High-precision trading** |
-| **CAUSAL (V2)** | Predicts the full "path" of a price move, like GPT predicts a sentence. | **Trajectory forecasting** |
-| **TITAN (V1)** | A heavy-duty, high-capacity hybrid model. | **Complex market analysis** |
+| **HYDRA (Elite)** | **16 Blocks Deep**. Uses **Attention Residuals** (Selective Memory) and **MoE**. | **"Best-of-the-Best" Strategic Trading** |
+| **CAUSAL (V2)** | Predicts the full "path" of a price move using Causal Transformers. | **Trajectory forecasting** |
+| **TITAN (V1)** | A heavy-duty, hybrid Bi-LSTM + Transformer model. | **Complex market analysis** |
 | **ALPHA (V0)** | Our classic, lightweight baseline model. | **Simple price prediction** |
 
-## 🚀 How to Trade (Live)
+## 🚀 The HYDRA "Elite" Advantage
 
-Launches the autonomous trading pilot on the Delta India Testnet. Includes a real-time dashboard.
+The HYDRA Engine is a **16-Block architecture**, making it one of the most sophisticated time-series models available.
 
-```bash
-# Start the HYDRA pilot on BTCUSD
-python auto_run.py trade --model hydra
-```
+### 🛡️ **Technical Specs:**
+- **Dynamic Timeframes (New)**: Support for `1m`, `5m`, `15m`, `1h`, or any timeframe.
+- **Attention Residuals (AttnRes)**: Instead of simple skip connections, each layer "selectively memory-checks" every previous layer.
+- **RMSNorm**: Root Mean Square Layer Normalization for extreme numerical stability at high depth.
+- **MTP (Multi-Token Prediction)**: Predicts the next 5 minutes simultaneously to ensure high-conviction forecasting.
+- **MLA (Multi-Head Latent Attention)**: Highly efficient context compression for large lookback windows.
 
-### 🛡️ **Built-in Safety (Automatic):**
-- **Dynamic Risk**: Automatically widens or tightens your Stop-Loss and Take-Profit based on current market volatility (ATR).
-- **Directional Check**: Only enters trades when it's highly confident in the direction, not just the price.
-- **Heartbeat**: Re-calculates every 60 seconds to stay perfectly synced with the ticker.
+---
 
 ## 🦾 How to Train (Simulation)
 
 Before trading, the AI needs to "go to school" on historical data.
 
-### **1. Deep Learning (41 days of history)**
+### **1. Deep Train (Elite 300-Epoch Mission)**
+Fetches 6 weeks of data and performs deep neural optimization.
 ```bash
-python auto_run.py train --model hydra --epochs 300 --candles 60000
+# Example: Train HYDRA on 5-minute candles
+python auto_run.py train --model hydra --timeframe 5m --epochs 300 --candles 60000
 ```
 
-### **2. Quick Refresh (Latest 24 hours)**
+### **2. Live Trading (Autonomous Pilot)**
+Launches the real-time Bloomberg-style dashboard and starts the autonomous loop.
 ```bash
-python auto_run.py train --model hydra --epochs 10 --candles 2000 --finetune
+# Example: Start the HYDRA pilot on a 15-minute timeframe
+python auto_run.py trade --model hydra --timeframe 15m
 ```
+
+### **3. Smart Caching**
+The system automatically caches datasets to avoid re-fetching from the exchange. Caches are separated by **Symbol** and **Timeframe** to ensure zero data pollution.
 
 ---
 

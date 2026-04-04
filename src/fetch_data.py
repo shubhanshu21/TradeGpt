@@ -3,7 +3,7 @@ import numpy as np
 from delta_client import DeltaClient
 import time
 
-def fetch_live_kat_data(symbol: str = "BTCUSDT", n_candles: int = 1000) -> pd.DataFrame:
+def fetch_live_kat_data(symbol: str = "BTCUSDT", n_candles: int = 1000, timeframe: str = "1m") -> pd.DataFrame:
     """
     Fetches real candles from Delta and augments with OB data.
     For the latest candle, it tries to fetch the actual live OB.
@@ -12,8 +12,8 @@ def fetch_live_kat_data(symbol: str = "BTCUSDT", n_candles: int = 1000) -> pd.Da
     # Use Live Production Server for market data (even during paper trading)
     client = DeltaClient(testnet=False)
     
-    print(f"   Fetching {n_candles} candles for {symbol}...")
-    df = client.get_candles(symbol, resolution="1m", limit=n_candles)
+    print(f"   Fetching {n_candles} candles for {symbol} ({timeframe})...")
+    df = client.get_candles(symbol, resolution=timeframe, limit=n_candles)
     
     if df.empty:
         raise ValueError(f"No data returned for {symbol}")
