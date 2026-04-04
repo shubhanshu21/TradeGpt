@@ -16,7 +16,7 @@ Usage:
     python train.py --model causal_tiger --epochs 30
 """
 
-import os, sys, argparse, time
+import os, sys, argparse, time, gc
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -33,7 +33,7 @@ LOG_DIR    = ROOT / "logs"
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(MODEL_DIR))
 
-from preprocess  import build_dataset, KATScaler
+from preprocess  import build_dataset, create_tf_dataset, KATScaler
 from alpha       import build_alpha
 from titan       import build_titan
 from causal      import build_causal, prepare_causal_targets
@@ -46,13 +46,17 @@ from fetch_data  import fetch_live_kat_data
 # ──────────────────────────────────────────────────────────────────────────────
 
 def configure_gpu():
+    """Optimizes TF for server stability on 4-core CPUs and GPUs."""
     gpus = tf.config.list_physical_devices("GPU")
     if gpus:
         for g in gpus:
             tf.config.experimental.set_memory_growth(g, True)
-        print(f"GPU(s) detected: {[g.name for g in gpus]}")
+        print(f"✓ GPU(s) detected: {[g.name for g in gpus]}")
     else:
-        print("No GPU detected — running on CPU")
+        # Prevent server hang on 4-core CPU by limiting threads
+        print("✓ No GPU detected — Limiting CPU parallelism to 2 threads for OS safety")
+        tf.config.threading.set_intra_op_parallelism_threads(2)
+        tf.config.threading.set_inter_op_parallelism_threads(2)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -324,16 +328,18 @@ def train_hydra(ds: dict, epochs: int = 40, batch_size: int = 32, finetune: bool
     # Summary reflects established shapes from factory build
     model.summary()
 
-    # ── Dynamic Training Density ─────────────────────────────────────────────
-    steps = max(1, len(X_tr_in) // batch_size)
-    print(f"   ✓ Training Strategy: {steps} steps per epoch (Dynamic)")
+    # Use memory-efficient tf.data pipeline
+    train_ds = create_tf_dataset(X_tr_in, y_tr, batch_size=batch_size, shuffle=True)
+    val_ds   = create_tf_dataset(X_va_in, y_va, batch_size=batch_size, shuffle=False) if val_data else None
+
+    # Clear memory of raw matrices
+    del X_tr_in, y_tr, X_va_in, y_va
+    gc.collect()
 
     history = model.fit(
-        X_tr_in, y_tr,
-        validation_data=val_data,
+        train_ds,
+        validation_data=val_ds,
         epochs=epochs if epochs > 0 else 300, 
-        batch_size=batch_size,
-        steps_per_epoch=steps,
         callbacks=get_callbacks("hydra", patience=15),
         verbose=1,
     )
@@ -367,7 +373,7 @@ def main():
         help="Which model(s) to train",
     )
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch",  type=int, default=128)
+    parser.add_argument("--batch",  type=int, default=32)
     parser.add_argument("--candles", type=int, default=60_000,
                         help="Number of real-world candles to fetch from Delta Exchange")
     parser.add_argument("--symbol", default=".DEXBTUSD", help="Symbol to fetch")
@@ -438,6 +444,12 @@ def main():
 
         elapsed = time.time() - t0
         print(f"  ⏱  {target} trained in {elapsed:.1f}s")
+        # Resource cleanup
+        gc.collect()
+        keras.backend.clear_session()
+        # Explicitly clear memory after each model
+        gc.collect()
+        keras.backend.clear_session()
 
     # ── Summary ──────────────────────────────────────────────────────────────
     print("\n" + "═"*60)

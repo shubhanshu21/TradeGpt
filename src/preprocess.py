@@ -2,12 +2,12 @@
 KAT 3 Core Infrastructure — Preprocessing & Data Pipelines
 ==========================================================
 Includes:
- - Universal feature generator (47 features)
+ - Universal feature generator (23 features)
  - KAT Scaler (Invertible data normalization)
- - Memory-efficient dataset building (TensorFlow Data)
+ - Stride-trick memory efficient dataset building
 """
 
-import os
+import os, gc
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -39,20 +39,20 @@ def add_derived_features(df):
     df["return_long"] = df["close"].pct_change(15)
     
     # EMAs
-    df["ema_short"] = df["close"].ewm(span=12).mean()
-    df["ema_mid"] = df["close"].ewm(span=26).mean()
-    df["ema_long"] = df["close"].ewm(span=50).mean()
+    df["ema_short"] = df["close"].ewm(span=12, adjust=False).mean()
+    df["ema_mid"] = df["close"].ewm(span=26, adjust=False).mean()
+    df["ema_long"] = df["close"].ewm(span=50, adjust=False).mean()
     
     # MACD
     df["macd"] = df["ema_short"] - df["ema_mid"]
-    df["macd_signal"] = df["macd"].ewm(span=9).mean()
+    df["macd_signal"] = df["macd"].ewm(span=9, adjust=False).mean()
     df["macd_hist"] = df["macd"] - df["macd_signal"]
     
-    # RSI
+    # RSI (Pandas-friendly calculation)
     delta = df["close"].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / (loss + 1e-9)
+    rs = gain / (loss.replace(0, 1e-9))
     df["rsi"] = 100 - (100 / (1 + rs))
     df["rsi_signal"] = df["rsi"].rolling(window=9).mean()
     
@@ -78,12 +78,7 @@ def add_derived_features(df):
 
     return df.fillna(0)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# SCALING
-# ──────────────────────────────────────────────────────────────────────────────
-
 class KATScaler:
-    """Universal Scaler for features and price targets."""
     def __init__(self):
         self.mean = None
         self.scale = None
@@ -93,81 +88,68 @@ class KATScaler:
         self.scale = np.std(X, axis=0) + 1e-8
         
     def transform_X(self, X):
-        if self.mean is None: raise ValueError("Not fitted")
+        if self.mean is None: return X
         return (X - self.mean) / self.scale
 
-    def transform_y(self, y):
-        if self.mean is None: raise ValueError("Not fitted")
-        return (y - self.mean[3]) / self.scale[3]
-
-    def inverse_y(self, y_scaled):
-        if self.mean is None: raise ValueError("Not fitted")
-        return (y_scaled * self.scale[3]) + self.mean[3]
-
-    @classmethod
-    def load(cls, path):
-        with open(path, 'rb') as f: return pickle.load(f)
-
+    def inverse_y(self, y):
+        # Target is at index 3 (close)
+        return y * self.scale[3] + self.mean[3]
+    
     def save(self, path):
-        with open(path, 'wb') as f: pickle.dump(self, f)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# DATASET BUILDING
-# ──────────────────────────────────────────────────────────────────────────────
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+            
+    @staticmethod
+    def load(path):
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
 def build_dataset(df, context_window=360, forecast_steps=1, scaler=None, scaler_save_path=None):
-    """
-    Universal dataset builder with Memory-Efficient splitting.
-    Returns: Dict containing train/val/test splits + scaler.
-    """
     if df is None or len(df) <= context_window + forecast_steps:
         return None
 
-    # 1. Feature Engineering
-    df = add_derived_features(df)
+    df_feat = add_derived_features(df)
     features = build_feature_cols()
-    X_raw = df[features].values
+    data = df_feat[features].values.astype("float32")
 
-    # 2. Scaling
     if scaler is None:
         scaler = KATScaler()
-        scaler.fit(X_raw)
-    
+        scaler.fit(data)
     if scaler_save_path:
         scaler.save(scaler_save_path)
-        print(f"   💾 Scaler cached: {scaler_save_path}")
 
-    X_scaled = scaler.transform_X(X_raw)
-
-    # 3. Create Windows
-    Xs, ys = [], []
-    for i in range(context_window, len(df) - forecast_steps):
-        Xs.append(X_scaled[i-context_window : i])
-        ys.append(X_scaled[i + forecast_steps - 1, 3])
-
-    Xs = np.array(Xs, dtype="float32")
-    ys = np.array(ys, dtype="float32")
-
-    # 4. Standard Chronological Split
-    n = len(Xs)
+    scaled_data = scaler.transform_X(data)
+    
+    # Memory Efficient Slinding Windows (using stride tricks)
+    from numpy.lib.stride_tricks import sliding_window_view
+    Xs = sliding_window_view(scaled_data, window_shape=(context_window, len(features)))
+    Xs = Xs.squeeze(axis=1) # Remove the extra dimension from window_shape
+    
+    # Slice to align with targets
+    Xs_view = Xs[:-forecast_steps]
+    ys_view = scaled_data[context_window + forecast_steps - 1:, 3]
+    
+    # Standard array for split
+    Xs_final = np.array(Xs_view)
+    ys_final = np.array(ys_view)
+    
+    n = len(Xs_final)
     tr_idx = int(n * 0.8)
     va_idx = int(n * 0.9)
 
     ds = {
-        "X_train": Xs[:tr_idx], "y_train": ys[:tr_idx],
-        "X_val":   Xs[tr_idx:va_idx], "y_val":   ys[tr_idx:va_idx],
-        "X_test":  Xs[va_idx:], "y_test":  ys[va_idx:],
+        "X_train": Xs_final[:tr_idx], "y_train": ys_final[:tr_idx],
+        "X_val":   Xs_final[tr_idx:va_idx], "y_val":   ys_final[tr_idx:va_idx],
+        "X_test":  Xs_final[va_idx:], "y_test":  ys_final[va_idx:],
         "n_features": len(features),
         "scaler":  scaler
     }
     
-    print(f"   📊 Combined Dataset: {n:,} windows | Features: {len(features)}")
+    gc.collect()
+    print(f"   📊 Dataset Built: {n:,} windows | RSS Memory Reclaimed")
     return ds
 
-def create_tf_dataset(Xs, ys, batch_size=64, shuffle=True):
-    """
-    Converts raw numpy arrays to optimized TensorFlow Dataset.
-    """
+def create_tf_dataset(Xs, ys, batch_size=32, shuffle=True):
     dataset = tf.data.Dataset.from_tensor_slices((Xs, ys))
     if shuffle:
         dataset = dataset.shuffle(buffer_size=min(len(Xs), 10000))
