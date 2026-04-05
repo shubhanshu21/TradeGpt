@@ -132,11 +132,6 @@ def get_callbacks(model_name: str, patience: int = 10) -> list:
             str(run_dir / "history.csv"),
             append=False,
         ),
-        keras.callbacks.TensorBoard(
-            log_dir=str(run_dir),
-            histogram_freq=0,
-            update_freq="epoch",
-        ),
     ]
 
 
@@ -260,24 +255,24 @@ def train_causal(ds: dict, variant: str = "base", epochs: int = 40, batch_size: 
 
 def prepare_hydra_targets(X: np.ndarray, mtp_steps: int = 5) -> tuple:
     """
-    For HYDRA MTP:
-      Input = X[:, :-mtp_steps, :]
-      Target = (B, T, mtp_steps)
+    For HYDRA (V3.6) Optimized:
+      Target matches (B, 1, mtp_steps) for fast CPU training.
     """
     if X is None or len(X.shape) < 3 or X.shape[0] == 0:
         return X, None
 
     B, L, F = X.shape
     T = L - mtp_steps
-    X_in = X[:, :T, :]
+    X_in = X[:, :T, :] # Sequence context
     
-    # Target: for each position i, we want close prices at i+1, i+2, ..., i+mtp_steps
+    # Target: Future prices relative to the VERY LAST context step (T-1)
     y_blocks = []
-    for s in range(1, mtp_steps + 1):
-        y_blocks.append(X[:, s:T+s, 3:4]) # close is index 3
+    for s in range(0, mtp_steps):
+        # T+s points to the future steps after the context
+        y_blocks.append(X[:, T+s:T+s+1, 3:4]) 
     
-    y_t = np.concatenate(y_blocks, axis=-1) # (B, T, mtp_steps)
-    return X_in, y_t
+    y_t = np.concatenate(y_blocks, axis=-1) # (B, 1, mtp_steps)
+    return X_in, y_t # (B, T, F) -> (B, 1, mtp_steps)
 
 
 def train_hydra(ds: dict, epochs: int = 40, batch_size: int = 32, finetune: bool = False):
