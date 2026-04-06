@@ -112,41 +112,47 @@ def build_dataset(df, context_window=360, forecast_steps=1, scaler=None, scaler_
     features = build_feature_cols()
     data = df_feat[features].values.astype("float32")
 
+    # ── SPLIT AND SCALE (Institutional Rigor: No Lookahead) ─────────────────────
+    n = len(data)
+    tr_idx = int(n * 0.8)
+    
+    train_data = data[:tr_idx]
+
     if scaler is None:
         scaler = KATScaler()
-        scaler.fit(data)
+        scaler.fit(train_data) # ONLY fit on training data
     if scaler_save_path:
         scaler.save(scaler_save_path)
 
-    scaled_data = scaler.transform_X(data)
+    scaled_data = scaler.transform_X(data) # Transform EVERYTHING with TR-Scaling
     
-    # Memory Efficient Slinding Windows (using stride tricks)
+    # Memory Efficient Slinding Windows
     from numpy.lib.stride_tricks import sliding_window_view
     Xs = sliding_window_view(scaled_data, window_shape=(context_window, len(features)))
-    Xs = Xs.squeeze(axis=1) # Remove the extra dimension from window_shape
+    Xs = Xs.squeeze(axis=1) 
     
     # Slice to align with targets
     Xs_view = Xs[:-forecast_steps]
     ys_view = scaled_data[context_window + forecast_steps - 1:, 3]
     
-    # Standard array for split
     Xs_final = np.array(Xs_view)
     ys_final = np.array(ys_view)
     
-    n = len(Xs_final)
-    tr_idx = int(n * 0.8)
-    va_idx = int(n * 0.9)
+    # Windows are already offset by context_window
+    n_win = len(Xs_final)
+    tr_win = int(n_win * 0.8)
+    va_win = int(n_win * 0.9)
 
     ds = {
-        "X_train": Xs_final[:tr_idx], "y_train": ys_final[:tr_idx],
-        "X_val":   Xs_final[tr_idx:va_idx], "y_val":   ys_final[tr_idx:va_idx],
-        "X_test":  Xs_final[va_idx:], "y_test":  ys_final[va_idx:],
+        "X_train": Xs_final[:tr_win], "y_train": ys_final[:tr_win],
+        "X_val":   Xs_final[tr_win:va_win], "y_val":   ys_final[tr_win:va_win],
+        "X_test":  Xs_final[va_win:],  "y_test":  ys_final[va_win:],
         "n_features": len(features),
-        "scaler":  scaler
+        "scaler": scaler
     }
     
     gc.collect()
-    print(f"   📊 Dataset Built: {n:,} windows | RSS Memory Reclaimed")
+    print(f"   📊 Dataset Built: {n_win:,} windows | RSS Memory Reclaimed")
     return ds
 
 def create_tf_dataset(Xs, ys, batch_size=32, shuffle=True):

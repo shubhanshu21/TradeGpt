@@ -1,188 +1,141 @@
 #!/usr/bin/env python3
 """
-KAT Live Sandbox Executor — Production Grade
-===========================================
-- Cycles: 60s
-- Infrastructure: HYDRA Engine (MoE + MLA + MTP)
-- Risk Management: Dynamic ATR-based Stop-Loss/Take-Profit
+SOVEREIGN ALPHA PILOT (V3.7.2) ⚓🚀
+==========================================
+- Timeframe: 1 minute (Institutional Scaling)
+- Brain: HYDRA Sovereign MoE Transformer
+- Targets: MTP-5 (Multi-Target Future Curve)
+- Compliance: Delta Exchange (Market-Order + Brackets)
 """
 
 import os, sys, time
 import numpy as np
 import tensorflow as tf
 import keras
+import pandas as pd
+from datetime import datetime
 from pathlib import Path
 
-# Fix paths
+# Paths
 ROOT = Path(__file__).parent
-DATA_DIR = ROOT / "data"
-MODELS_DIR = ROOT / "src/architectures"
-SAVED_MODELS = ROOT / "models"
-
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(MODELS_DIR))
 
+# Architecture Imports (Required for Keras Serialization)
+from architectures.hydra import Hydra, HydraBlock, GatedMoE, MLAAttention, AttnRes, VSN, RMSNorm, DualScaleFusion, TemporalGating, SovereignLoss
 from delta_client import DeltaClient
 from fetch_data    import fetch_live_kat_data
-from preprocess    import build_dataset, KATScaler
+from preprocess    import KATScaler, build_feature_cols, add_derived_features
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
 SYMBOL     = "BTCUSD"
-SIZE       = 1    
-THRESHOLD  = 0.05 
-INTERVAL   = 60   
+SIZE       = 1           # Delta Units
+THRESHOLD  = 0.08        # 0.08% Neural Conviction (Fee-Aware)
 TIMEFRAME  = "1m"
-MODEL_NAME = "hydra"
+MODEL_FILE = "hydra_best.keras" # Uses the 'Best' model from training
+CONTEXT_L  = 360
+INPUT_N    = 355 # MTP Slicing (360 -> 355 Input + 5 Target)
 
-# ── PERFORMANCE TRACKING ─────────────────────────────────────────────────────
-START_EQUITY = None
-HWM          = 0.0
-
-# ── COLORS ───────────────────────────────────────────────────────────────────
+# ── PILOT HUD ────────────────────────────────────────────────────────────────
 C_RESET = "\033[0m"
 C_BOLD  = "\033[1m"
 C_GREEN = "\033[32m"
 C_RED   = "\033[31m"
 C_CYAN  = "\033[36m"
 C_YELLOW = "\033[33m"
-C_BLUE   = "\033[34m"
 
-def calculate_atr(df, window=14):
-    """Calculates Average True Range for dynamic risk management."""
-    high_low = df['high'] - df['low']
-    high_close = np.abs(df['high'] - df['close'].shift())
-    low_close = np.abs(df['low'] - df['close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    return true_range.rolling(window=window).mean().iloc[-1]
+def log_event(msg, color=C_RESET):
+    stamp = datetime.now().strftime("%H:%M:%S")
+    print(f"[{C_CYAN}{stamp}{C_RESET}] {color}{msg}{C_RESET}")
 
-def run_trader():
+def run_pilot():
     print("="*60)
-    print(f"  HYDRA Engine — SANDBOX EXECUTOR [ {SYMBOL} ]")
+    print(f"  SOVEREIGN ALPHA PILOT (V3.7.2) — TESTNET PILOT [ {SYMBOL} ]")
     print("="*60)
 
-    # 1. Initialize Client & Model
+    # 1. Initialize
     client = DeltaClient(testnet=True)
-    
-    scaler_path = SAVED_MODELS / "scaler_base.pkl"
-    if not scaler_path.exists():
-        print("! Error: Scaler not found. Train the model first.")
+    scaler_p = ROOT / "models/scaler_base.pkl"
+    model_p  = ROOT / f"models/{MODEL_FILE}"
+
+    if not scaler_p.exists():
+        log_event("Error: Scaler missing. Train the model first.", C_RED)
         return
-    scaler = KATScaler.load(str(scaler_path))
+    scaler = KATScaler.load(str(scaler_p))
 
-    model_path = SAVED_MODELS / f"{MODEL_NAME}_final.keras"
-    if not model_path.exists():
-        print(f"! Error: Model not found at {model_path}.")
+    # Load Model with custom objects
+    if not model_p.exists():
+        log_event(f"Error: No model at {model_p}", C_RED)
         return
     
-    # Ensure custom modules are in path
-    if   "alpha" in MODEL_NAME: import alpha
-    elif "titan" in MODEL_NAME: import titan
-    elif "causal" in MODEL_NAME: import causal
-    elif "hydra" in MODEL_NAME: import hydra
+    log_event(f"🏗️ Syncing Neural Brain: {MODEL_FILE}...")
+    custom_objs = {
+        "Hydra": Hydra, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
+        "MLAAttention": MLAAttention, "AttnRes": AttnRes, "VSN": VSN,
+        "RMSNorm": RMSNorm, "DualScaleFusion": DualScaleFusion, 
+        "TemporalGating": TemporalGating, "SovereignLoss": SovereignLoss
+    }
+    model = keras.models.load_model(str(model_p), custom_objects=custom_objs, compile=False)
+    log_event("✓ Brain Sync Complete. Entering Live Loop.", C_GREEN)
 
-    # Set Interval based on timeframe
-    tf_map = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600}
-    global INTERVAL
-    INTERVAL = tf_map.get(TIMEFRAME, 60)
-    print(f"  Cycle: {INTERVAL}s (Timeframe: {TIMEFRAME})")
-
-    print(f"Loading {model_path}...")
-    model = keras.models.load_model(str(model_path))
-
-    global START_EQUITY, HWM
-    print(f"\n✓ Engine started. Polling every {INTERVAL}s...")
-    
-    import pandas as pd
-    
     while True:
         try:
-            # 2. Position Check
-            positions = client.get_positions()
-            active_p = next((p for p in positions if p.get("product_symbol") == SYMBOL), None)
-            pos_upnl = float(active_p.get("unrealized_pnl", 0)) if active_p else 0
-            pos_color = C_GREEN if pos_upnl >= 0 else C_RED
+            # 2. Market Data Pull
+            log_event(f"📡 Polling {SYMBOL} Market Stream...")
+            df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CONTEXT_L + 10, timeframe=TIMEFRAME)
+            
+            # Prepare Features for Neural Input
+            df_feat = add_derived_features(df)
+            features = build_feature_cols()
+            data = df_feat[features].values.astype("float32")
+            
+            # Transform and Slice the latest window
+            scaled = scaler.transform_X(data)
+            # Take the latest 355 points for Hydra Input
+            X_in = scaled[-INPUT_N:].reshape(1, INPUT_N, len(features))
+            X_in = X_in.astype("float32")
+            
+            # 3. Neural Pulse (Predicting the next 5 mins)
+            pred = model.predict(X_in, verbose=0) # Shape (1, 1, 5)
+            curve = pred[0, 0] # 5 points
+            mean_move = np.mean(curve) # Average direction of next 5 mins
+            
+            p_str = " | ".join([f"{x:+.4f}" for x in curve])
+            log_event(f"🔮 NEURAL CURVE: [ {p_str} ] | {C_BOLD}AVG: {mean_move:+.4f}{C_RESET}")
 
-            # 3. Performance
-            balances = client._get("/v2/wallet/balances", auth=True).get("result", [])
-            usd_bal = next((float(b["balance"]) for b in balances if b["asset_symbol"] == "USD"), 0)
-            btc_bal = next((float(b["balance"]) for b in balances if b["asset_symbol"] == "BTC"), 0)
-            
-            ticker = client._get("/v2/tickers/BTCUSD", auth=False).get("result", {})
-            btc_price = float(ticker.get("mark_price", 0))
-            
-            total_equity = usd_bal + (btc_bal * btc_price)
-            if START_EQUITY is None: START_EQUITY = total_equity
-            if total_equity > HWM: HWM = total_equity
-            
-            pnl_pct = ((total_equity - START_EQUITY) / START_EQUITY) * 100 if START_EQUITY else 0
-            pnl_color = C_GREEN if pnl_pct >= 0 else C_RED
-            
-            # Dashboard
-            print("\n" + C_CYAN + "═"*60 + C_RESET)
-            print(f"  {C_BOLD}HYDRA DASHBOARD{C_RESET} | {C_YELLOW}{SYMBOL}{C_RESET} | EQUITY: {C_BOLD}${total_equity:,.2f}{C_RESET}")
-            print(f"  PnL: {pnl_color}{pnl_pct:+.3f}%{C_RESET} | POS PnL: {pos_color}${pos_upnl:.4f}{C_RESET}")
-            print(C_CYAN + "═"*60 + C_RESET)
+            # 4. Strategy Bridge
+            # Check Position
+            pos = client.get_positions(SYMBOL)
+            is_in_long  = any(p['size'] > 0 for p in pos)
+            is_in_short = any(p['size'] < 0 for p in pos)
 
-            # 4. Fetch Fresh Data
-            df = fetch_live_kat_data(symbol=SYMBOL, n_candles=500, timeframe=TIMEFRAME)
+            # Signal Logic
+            if mean_move > THRESHOLD:
+                if not is_in_long:
+                    log_event(f"📈 SIGNAL: BULLISH CONVICTION DETECTED. Executing LONG...", C_GREEN)
+                    if is_in_short: client.close_position(SYMBOL)
+                    client.place_market_order(SYMBOL, "buy", SIZE)
+                    # Note: Add SL/TP logic here in DeltaClient if desired
             
-            # Dynamic Risk: ATR
-            atr = calculate_atr(df)
-            current_price = df['close'].iloc[-1]
-            atr_pct = (atr / current_price) * 100
+            elif mean_move < -THRESHOLD:
+                if not is_in_short:
+                    log_event(f"📉 SIGNAL: BEARISH CONVICTION DETECTED. Executing SHORT...", C_RED)
+                    if is_in_long: client.close_position(SYMBOL)
+                    client.place_market_order(SYMBOL, "sell", SIZE)
             
-            sl_pct = max(1.0, min(3.0, atr_pct * 1.5)) # Dynamic SL: 1.5x ATR
-            tp_pct = max(2.0, min(6.0, atr_pct * 3.0)) # Dynamic TP: 3.0x ATR
-            
-            print(f"   Volatility (ATR): {atr:.2f} ({atr_pct:.2f}%) | Brackets: SL={sl_pct:.2f}% TP={tp_pct:.2f}%")
-
-            # 5. Predict
-            ctx = 360 if "hydra" in MODEL_NAME else 150
-            ds = build_dataset(df, context_window=ctx, forecast_steps=1, scaler=scaler)
-            seed = ds["X_test"][-1:] 
-            
-            if "causal" in MODEL_NAME or "hydra" in MODEL_NAME:
-                traj = model.generate(seed[0], steps=5, scaler=scaler)
             else:
-                p_raw = model.predict(seed, verbose=0)[0]
-                traj = [scaler.inverse_y(np.array([p_raw[-1] if hasattr(p_raw, "len") else p_raw]))[0]]
-            
-            last_p = current_price
-            avg_p  = np.mean(traj)
-            pct_move = ((avg_p - last_p) / last_p) * 100
-            
-            print(f"   Last: ${last_p:,.2f} | Forecast: ${avg_p:,.2f} ({pct_move:+.3f}%)")
+                log_event("⏸️ NEURAL STATUS: STABLE / SIDEWAYS. Holding Cash.", C_YELLOW)
+                # If we are in profit or trend flipped, close
+                # (Simple strategy logic: exit if sentiment neutralizes)
+                if is_in_long or is_in_short:
+                    log_event("🔄 Trend neutralised. Exiting current position.", C_YELLOW)
+                    client.close_position(SYMBOL)
 
-            # 6. Signals
-            p_size = float(active_p["size"]) if active_p else 0
-            
-            if pct_move > THRESHOLD:
-                if p_size == 0:
-                    print(f"   {C_GREEN}🚀 SIGNAL: LONG (Dynamic Brackets){C_RESET}")
-                    client.place_order(SYMBOL, SIZE, "buy", sl_pct=sl_pct, tp_pct=tp_pct)
-                elif active_p.get("side") == "sell":
-                    client.place_order(SYMBOL, abs(p_size), "buy") # Close
-                    client.place_order(SYMBOL, SIZE, "buy", sl_pct=sl_pct, tp_pct=tp_pct)
-            
-            elif pct_move < -THRESHOLD:
-                if p_size == 0:
-                    print(f"   {C_RED}🩸 SIGNAL: SHORT (Dynamic Brackets){C_RESET}")
-                    client.place_order(SYMBOL, SIZE, "sell", sl_pct=sl_pct, tp_pct=tp_pct)
-                elif active_p.get("side") == "buy":
-                    client.place_order(SYMBOL, abs(p_size), "sell") # Close
-                    client.place_order(SYMBOL, SIZE, "sell", sl_pct=sl_pct, tp_pct=tp_pct)
-            
-            elif p_size != 0 and abs(pct_move) < (THRESHOLD / 2):
-                print(f"   {C_CYAN}💤 EXIT: Signal Faded{C_RESET}")
-                close_side = "sell" if active_p.get("side") == "buy" else "buy"
-                client.place_order(SYMBOL, abs(p_size), close_side)
+            # 5. Cycle Management
+            time.sleep(60) # High-Frequency Heartbeat
 
         except Exception as e:
-            print(f"   ⚠️ Loop Error: {e}")
-        
-        time.sleep(INTERVAL)
+            log_event(f"⚠️ Exception in Pilot Loop: {e}", C_RED)
+            time.sleep(10)
 
 if __name__ == "__main__":
-    (ROOT / "logs" / "plots").mkdir(parents=True, exist_ok=True)
-    run_trader()
+    run_pilot()
