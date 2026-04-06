@@ -1,12 +1,11 @@
 """
-HYDRA SOVEREIGN NEURAL CHECKUP (V1.0)
-======================================
-Diagnostic: Accuracy, Direction, and Simulated PnL.
-Input: models/hydra_best.keras
-Dataset: Latest BTC/USD 1,000 candles (Fresh 'Out-of-Sample' Data)
+HYDRA SOVEREIGN NEURAL CHECKUP (V1.2) - DELTA EDITION 
+=====================================================
+Diagnostic: Real-Time Directional Delta Accuracy (+/- Change).
+This measures the 'UP or DOWN' guess from the CURRENT price.
 """
 
-import os, time, argparse, gc
+import os, time, sys
 import numpy as np
 import tensorflow as tf
 import keras
@@ -15,116 +14,86 @@ from pathlib import Path
 
 # Paths
 ROOT = Path(__file__).parent.parent
-import sys
 sys.path.insert(0, str(ROOT / "src"))
 
-# CRITICAL: We must import the architecture components
+# Architecture Imports
 from architectures.hydra import Hydra, HydraBlock, GatedMoE, MLAAttention, AttnRes, VSN, RMSNorm, DualScaleFusion, TemporalGating, SovereignLoss
 from preprocess import build_dataset, KATScaler
 from fetch_data import fetch_live_kat_data
 
 def prepare_hydra_targets(X: np.ndarray, mtp_steps: int = 5) -> tuple:
-    """Matches the target preparation in train.py"""
     if X is None or len(X.shape) < 3: return X, None
     B, L, F = X.shape
     T = L - mtp_steps
     X_in = X[:, :T, :] 
     y_blocks = []
-    for s in range(0, mtp_steps):
-        y_blocks.append(X[:, T+s:T+s+1, 3:4]) 
-    y_t = np.concatenate(y_blocks, axis=-1) 
-    return X_in, y_t
+    for s in range(0, mtp_steps) : y_blocks.append(X[:, T+s:T+s+1, 3:4]) 
+    return X_in, np.concatenate(y_blocks, axis=-1)
 
 # ── DIAGNOSTIC ENGINE ─────────────────────────────────────────────────────────
 
 def run_neural_checkup(model_path: str, timeframe: str = "1m"):
-    print(f"🔬 INITIALIZING NEURAL CHECKUP | Source: {model_path}")
+    print(f"🔬 INITIALIZING SOVEREIGN DELTA-CHECKUP | Source: {model_path}")
     
-    # 1. Load trained model
-    print("🏗️ Loading Sovereign Brain...")
+    # 1. Load Brain
     custom_objs = {
-        "Hydra": Hydra,
-        "HydraBlock": HydraBlock,
-        "GatedMoE": GatedMoE,
-        "MLAAttention": MLAAttention,
-        "AttnRes": AttnRes,
-        "VSN": VSN,
-        "RMSNorm": RMSNorm,
-        "DualScaleFusion": DualScaleFusion,
-        "TemporalGating": TemporalGating,
-        "SovereignLoss": SovereignLoss
+        "Hydra": Hydra, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
+        "MLAAttention": MLAAttention, "AttnRes": AttnRes, "VSN": VSN,
+        "RMSNorm": RMSNorm, "DualScaleFusion": DualScaleFusion, 
+        "TemporalGating": TemporalGating, "SovereignLoss": SovereignLoss
     }
+    model = keras.models.load_model(model_path, custom_objects=custom_objs, compile=False)
     
-    try:
-        model = keras.models.load_model(model_path, custom_objects=custom_objs, compile=True)
-    except Exception as e:
-        print(f"   ! Warning during load ({e}). Attempting without compilation...")
-        model = keras.models.load_model(model_path, custom_objects=custom_objs, compile=False)
-    
-    # 2. Fetch FRESH out-of-sample data (Latest 1500 candles)
-    print("📊 Fetching fresh 'Out-of-Sample' Stress Dataset...")
+    # 2. Fetch Latest 1500 Candles
     df = fetch_live_kat_data(symbol="BTCUSD", n_candles=1500, timeframe=timeframe)
-    if df is None or len(df) < 500:
-        print("   🛑 Error: Not enough candles fetched.")
-        return 0
+    if df is None or len(df) < 500: return 0
 
-    # 3. Build & Scaler Reverse
-    print("📂 Slicing data for evaluation...")
+    # 3. Scaler & Prep
     scaler_p = ROOT / "models/scaler_base.pkl"
-    if not scaler_p.exists(): scaler_p = ROOT / "data/scaler_base.pkl"
     scaler = KATScaler.load(scaler_p)
-    
-    # Note: build_dataset returns standard windows. Hydra needs to re-slice them for MTP.
     ds = build_dataset(df, context_window=360, forecast_steps=1, scaler=scaler)
     
-    # HYDRA SPECIAL: Re-slice the windows into (ctx-5) and (1, 5) targets
     X_test_raw = ds["X_test"]
-    X_in, y_test = prepare_hydra_targets(X_test_raw, mtp_steps=5)
+    X_in, y_true_all = prepare_hydra_targets(X_test_raw, mtp_steps=5)
     
-    y_true_1min = y_test[:, 0, 0] # Price in 1m (normalized)
+    # Capture the price exactly at the Moment of Prediction (The very last input step)
+    # Shape of X_in is (B, 355, 23). The price is index 3.
+    last_input_prices = X_in[:, -1, 3] # (B,)
     
-    # 4. Neural Inference
-    print("🚀 Running Neural Predictions on Stress Points...")
-    t_start = time.time()
-    X_in = X_in.astype("float32")
-    y_pred = model.predict(X_in, verbose=0, batch_size=32)
-    y_pred_1min = y_pred[:, 0, 0]
+    # 4. Neural Predict
+    print(f"🚀 Predicting {len(X_in)} market intervals...")
+    y_pred_all = model.predict(X_in.astype("float32"), verbose=0, batch_size=32)
     
-    inf_time = (time.time() - t_start) / len(X_in)
+    # Focus on the next 1-minute target
+    y_true_1min = y_true_all[:, 0, 0]
+    y_pred_1min = y_pred_all[:, 0, 0]
     
-    # 5. Accuracy Math (USD Scale)
-    y_true_usd = scaler.inverse_y(y_true_1min)
-    y_pred_usd = scaler.inverse_y(y_pred_1min)
+    # ── THE REAL ALPHA CALCULATION ──────────────────────────────────────────
+    # We want to know if y_pred is GREATER or LESS than its own starting point
+    delta_true = y_true_1min - last_input_prices
+    delta_pred = y_pred_1min - last_input_prices
     
-    # Filter out any NaNs or infinities
-    mask = ~np.isnan(y_true_usd) & ~np.isnan(y_pred_usd)
-    y_true_usd = y_true_usd[mask]
-    y_pred_usd = y_pred_usd[mask]
-    y_true_norm = y_true_1min[mask]
-    y_pred_norm = y_pred_1min[mask]
-
-    mae = np.mean(np.abs(y_true_usd - y_pred_usd))
+    # Directional Delta Accuracy
+    dir_acc = np.mean(np.sign(delta_true) == np.sign(delta_pred)) * 100
     
-    # Directional Accuracy (Correction sign relative to zero-center?)
-    # Since prices are normalized, y_true is the diff from window start.
-    dir_true = np.sign(y_true_norm)
-    dir_pred = np.sign(y_pred_norm)
-    dir_acc = np.mean(dir_true == dir_pred) * 100
+    # USD MAE
+    t_usd = scaler.inverse_y(y_true_1min)
+    p_usd = scaler.inverse_y(y_pred_1min)
+    mae_usd = np.mean(np.abs(t_usd - p_usd))
     
     print("\n" + "="*60)
-    print("📊 SOVEREIGN CHECKUP: BTC/USD 1-MINUTE")
+    print("📊 SOVEREIGN DELTA-CHECKUP (HONEST ALPHA TEST)")
     print("="*60)
-    print(f"   - Inference Speed: {inf_time*1000:.2f}ms/pred")
-    print(f"   - Neural MAE:      ${mae:.2f} USD")
-    print(f"   - Direction Acc:   {dir_acc:.1f}%")
+    print(f"   - Target:          Predict +1m Close vs Current")
+    print(f"   - Neural MAE:      ${mae_usd:,.2f} USD")
+    print(f"   - Delta Accuracy:  {dir_acc:.1f}%")
     
     if dir_acc > 53.0:
-        print("   ✅ STATUS: PROFITABLE ALPHA DETECTED")
+        print(f"   ✅ STATUS: PROFITABLE ALPHA ({dir_acc:.1f}%)")
     elif dir_acc > 50.5:
-        print("   ⚠️ STATUS: WEAK ALPHA (Needs more epochs)")
+        print(f"   ⚠️ STATUS: WEAK ALPHA (Low conviction)")
     else:
-        print("   🛑 STATUS: NO ALPHA (Possible coin-flip/noise)")
-    
+        print(f"   🛑 STATUS: NO ALPHA (Model is lagging)")
     print("="*60)
     return dir_acc
 
