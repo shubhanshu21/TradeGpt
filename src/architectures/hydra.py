@@ -14,20 +14,19 @@ import keras
 from keras import layers, ops
 from typing import Optional
 
-# ── HARDWARE AUTODETECT ───────────────────────────────────────────────────────
-GPUS = tf.config.list_physical_devices('GPU')
-if GPUS:
-    try:
-        # A40 Optimization: Enable Mixed Precision for massive speedup
-        from tensorflow.keras import mixed_precision
-        mixed_precision.set_global_policy('mixed_float16')
-        print(f"🚀 KRAKEN: NVIDIA GPU DETECTED. Mixed Precision ENABLED (A40 Mode).")
-        IS_GPU = True
-    except:
-        IS_GPU = False
-else:
-    print(f"🐌 KRAKEN: NO GPU DETECTED. Running in CPU-Lite Mode.")
-    IS_GPU = False
+# Lazy Hardware Initializer
+IS_GPU = len(tf.config.list_physical_devices('GPU')) > 0
+
+def init_kraken_hardware():
+    if IS_GPU:
+        try:
+            from tensorflow.keras import mixed_precision
+            mixed_precision.set_global_policy('mixed_float16')
+            print(f"🚀 KRAKEN: NVIDIA GPU DETECTED. Mixed Precision ENABLED (A40 Mode).")
+        except:
+            pass
+    else:
+        print(f"🐌 KRAKEN: NO GPU DETECTED. Running in CPU-Lite Mode.")
 
 @keras.saving.register_keras_serializable(package="KAT")
 class RMSNorm(layers.Layer):
@@ -57,7 +56,7 @@ class MLAAttention(layers.Layer):
     def build(self, input_shape):
         # Latent Compression logic
         self.kv_downproj = layers.Dense(self.d_latent)
-        self.kv_upproj   = layers.Dense(self.d_model)
+        self.kv_upproj   = layers.Dense(self.d_model * 2)
         self.q_proj      = layers.Dense(self.d_model)
         self.out_proj    = layers.Dense(self.d_model)
 
@@ -101,21 +100,28 @@ class GatedMoE(layers.Layer):
             initializer="glorot_uniform", name="expert_weights"
         )
 
+    def __init__(self, d_model=128, **kwargs):
+        super().__init__(**kwargs)
+        self.d_model = d_model
+        # CPU Mode gets 8 specialists | GPU gets 32 specialists (Vectorized)
+        self.n_experts = 32 if IS_GPU else 8
+
+    def build(self, input_shape):
+        self.gate = layers.Dense(self.n_experts, activation="softmax")
+        self.expert_w = self.add_weight(
+            shape=(self.n_experts, self.d_model, self.d_model),
+            initializer="glorot_uniform", name="expert_weights"
+        )
+
     def call(self, x):
-        # x is (B, T, D)
-        gate_scores = self.gate(x) # (B, T, n_experts)
-        
-        # Batch Matrix Multiply across the expert dimension
-        # A40 Mode: This is where the 48GB VRAM unleashes the Specialists
-        outputs = []
-        for i in range(self.n_experts):
-            outputs.append(ops.matmul(x, self.expert_w[i]))
-        
-        all_experts = ops.stack(outputs, axis=2) # (B, T, n_experts, D)
-        
-        gate_scores = ops.expand_dims(gate_scores, axis=-1) # (B, T, n_experts, 1)
-        combined = ops.sum(all_experts * gate_scores, axis=2)
-        return combined
+        # gate_scores: (B, T, n_experts)
+        gate_scores = self.gate(x) 
+        # Vectorized MoE: Single Matrix Contract (No Loops)
+        # x: (B, T, D), weight: (E, D, D) -> results: (B, T, E, D)
+        all_experts = ops.tensordot(x, self.expert_w, axes=[[-1], [1]]) 
+        # result: (B, T, E, D) -> reduce with gate: (B, T, D)
+        gate_scores = ops.expand_dims(gate_scores, axis=-1)
+        return ops.sum(all_experts * gate_scores, axis=2)
 
     def get_config(self):
         config = super().get_config()
@@ -145,32 +151,39 @@ class HydraBlock(layers.Layer):
 @keras.saving.register_keras_serializable(package="KAT")
 class HydraV4(keras.Model):
     """The KRAKEN Multi-Hardware Engine (MoE 32 + MLA 8 + MTP-15)"""
-    def __init__(self, n_features=23, d_model=128 if IS_GPU else 96, n_blocks=12 if IS_GPU else 6, **kwargs):
+    def __init__(self, n_features=23, d_model=None, n_blocks=None, **kwargs):
         super().__init__(**kwargs)
         self.n_features = n_features
-        self.d_model = d_model
-        self.n_blocks = n_blocks
-        self.mtp_steps = 15 # Predict 15 minutes of Alpha
+        # Allow dynamic override: 128/16 for GPU Power, 96/8 for CPU Stability
+        self.d_model = d_model if d_model else (128 if IS_GPU else 96)
+        self.n_blocks = n_blocks if n_blocks else (16 if IS_GPU else 8)
+        self.mtp_steps = 15 
 
-    def build(self, input_shape):
+        # Dynamic Unbundling for Full Summary Visibility & GPU Scaling
         self.feat_proj = layers.Dense(self.d_model)
-        self.blocks = [HydraBlock(d_model=self.d_model) for _ in range(self.n_blocks)]
-        self.head = layers.Dense(self.mtp_steps) # Output 15 future steps
+        self.layer_names = [f"b_{i}" for i in range(self.n_blocks)]
+        for name in self.layer_names:
+            setattr(self, name, HydraBlock(d_model=self.d_model))
+        
+        self.head = layers.Dense(self.mtp_steps) 
         self.norm_final = RMSNorm()
 
     def call(self, x, training=False):
         x = self.feat_proj(x)
-        for block in self.blocks:
-            x = block(x, training=training)
+        # Sequential Execution of Dynamically Unbundled Sovereigns
+        for name in self.layer_names:
+            x = getattr(self, name)(x, training=training)
         
-        # Aggregate Context (Mean Pool) + Final Residual Link
         x = self.norm_final(x)
-        # We take the VERY LAST step to predict the future curve
-        last_step = x[:, -1, :] # (B, D)
-        return self.head(last_step) # (B, 15)
+        last_step = x[:, -1, :] 
+        return self.head(last_step)
 
     def get_config(self):
         return {"n_features": self.n_features, "d_model": self.d_model, "n_blocks": self.n_blocks}
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 @keras.saving.register_keras_serializable(package="KAT")
 class SovereignLoss(keras.losses.Loss):
