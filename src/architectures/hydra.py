@@ -1,10 +1,12 @@
 """
-HYDRA SOVEREIGN KRAKEN (V4.0) - MULTI-HARDWARE EDITION ⚓🚀⚡
+HYDRA SOVEREIGN KRAKEN (V4.2) - MASTERY EDITION ⚓🚀⚡
 ==========================================================
-- Architecture: MoE + MLA + MTP (Adaptive)
+- Architecture: MoE + MLA + RoPE + MTP (Adaptive)
+- Features: 
+    1. RoPE (Rotary Positional Embeddings) for relative time awareness.
+    2. Auxiliary Head (MTP-3): Predicts Price, Volatility, and Volume Imbalance.
+    3. Regime-Aware Gating: Contextual routing for experts.
 - Hardware: Auto-Detect (CPU / NVIDIA A40)
-- Intelligence: 15-Minute Future Prophecy (MTP-15)
-- Memory: Elastic Context (150 - 1440 minutes)
 """
 
 import os, time
@@ -28,6 +30,35 @@ def init_kraken_hardware():
     else:
         print(f"🐌 KRAKEN: NO GPU DETECTED. Running in CPU-Lite Mode.")
 
+def apply_rope(x, head_dim):
+    """
+    Apply Rotary Positional Embeddings (RoPE).
+    Ensures the model understands the RELATIVE distance between candles.
+    """
+    B, T, H, D = ops.shape(x)[0], ops.shape(x)[1], ops.shape(x)[2], ops.shape(x)[3]
+    
+    # Generate frequencies
+    inv_freq = 1.0 / (10000**(ops.cast(ops.arange(0, D, 2), "float32") / D))
+    t = ops.cast(ops.arange(T), "float32")
+    freqs = ops.outer(t, inv_freq)
+    
+    # Pre-calculated sin/cos
+    sin_f = ops.sin(freqs)
+    cos_f = ops.cos(freqs)
+    
+    # Reshape for broadcasting
+    sin_f = ops.reshape(sin_f, (1, T, 1, D // 2))
+    cos_f = ops.reshape(cos_f, (1, T, 1, D // 2))
+    
+    # Split queries/keys into two halves
+    x1, x2 = ops.split(x, 2, axis=-1)
+    
+    # Effective rotation: [x1*cos - x2*sin, x1*sin + x2*cos]
+    rx1 = x1 * cos_f - x2 * sin_f
+    rx2 = x1 * sin_f + x2 * cos_f
+    
+    return ops.concatenate([rx1, rx2], axis=-1)
+
 @keras.saving.register_keras_serializable(package="KAT")
 class RMSNorm(layers.Layer):
     def __init__(self, eps=1e-6, **kwargs):
@@ -45,7 +76,7 @@ class RMSNorm(layers.Layer):
 
 @keras.saving.register_keras_serializable(package="KAT")
 class MLAAttention(layers.Layer):
-    """DeepSeek-style Multi-head Latent Attention (Adaptive for A40)"""
+    """DeepSeek-style Multi-head Latent Attention with RoPE integration."""
     def __init__(self, d_model=128, n_heads=8, d_latent=64, **kwargs):
         super().__init__(**kwargs)
         self.d_model = d_model
@@ -54,7 +85,6 @@ class MLAAttention(layers.Layer):
         self.head_dim = d_model // n_heads
 
     def build(self, input_shape):
-        # Latent Compression logic
         self.kv_downproj = layers.Dense(self.d_latent)
         self.kv_upproj   = layers.Dense(self.d_model * 2)
         self.q_proj      = layers.Dense(self.d_model)
@@ -71,7 +101,10 @@ class MLAAttention(layers.Layer):
         kv = ops.reshape(kv, (B, T, self.n_heads, self.head_dim * 2))
         k, v = ops.split(kv, 2, axis=-1)
         
-        # Fast attention (A40 will use FlashAttention if available)
+        # Inject Relative Time Awareness via RoPE
+        q = apply_rope(q, self.head_dim)
+        k = apply_rope(k, self.head_dim)
+        
         att = ops.matmul(q, ops.transpose(k, (0, 1, 3, 2))) / ops.sqrt(float(self.head_dim))
         att = ops.softmax(att, axis=-1)
         
@@ -86,40 +119,29 @@ class MLAAttention(layers.Layer):
 
 @keras.saving.register_keras_serializable(package="KAT")
 class GatedMoE(layers.Layer):
-    """Adaptive Gated Mixture of Experts (Auto-sizes to Hardware)"""
-    def __init__(self, d_model=128, n_experts=32 if IS_GPU else 8, **kwargs):
+    """Regime-Aware Multi-Expert Router (V4.2)"""
+    def __init__(self, d_model=128, n_experts=None, **kwargs):
         super().__init__(**kwargs)
         self.d_model = d_model
-        self.n_experts = n_experts
+        self.n_experts = n_experts if n_experts else (32 if IS_GPU else 8)
 
     def build(self, input_shape):
-        self.gate = layers.Dense(self.n_experts, activation="softmax")
-        # Optimization: Matrix Sharding of Experts for Memory Speed
-        self.expert_w = self.add_weight(
-            shape=(self.n_experts, self.d_model, self.d_model),
-            initializer="glorot_uniform", name="expert_weights"
-        )
-
-    def __init__(self, d_model=128, **kwargs):
-        super().__init__(**kwargs)
-        self.d_model = d_model
-        # CPU Mode gets 8 specialists | GPU gets 32 specialists (Vectorized)
-        self.n_experts = 32 if IS_GPU else 8
-
-    def build(self, input_shape):
+        # We use the raw sequence plus a 'Regime Context' for routing
         self.gate = layers.Dense(self.n_experts, activation="softmax")
         self.expert_w = self.add_weight(
             shape=(self.n_experts, self.d_model, self.d_model),
             initializer="glorot_uniform", name="expert_weights"
         )
 
-    def call(self, x):
-        # gate_scores: (B, T, n_experts)
-        gate_scores = self.gate(x) 
-        # Vectorized MoE: Single Matrix Contract (No Loops)
-        # x: (B, T, D), weight: (E, D, D) -> results: (B, T, E, D)
+    def call(self, x, context=None):
+        # If context is provided (Regime info), use it for routing, otherwise use x
+        route_input = context if context is not None else x
+        if len(ops.shape(route_input)) == 2: # Broadcast context to sequence
+           route_input = ops.expand_dims(route_input, axis=1)
+           route_input = ops.repeat(route_input, ops.shape(x)[1], axis=1)
+
+        gate_scores = self.gate(route_input) 
         all_experts = ops.tensordot(x, self.expert_w, axes=[[-1], [1]]) 
-        # result: (B, T, E, D) -> reduce with gate: (B, T, D)
         gate_scores = ops.expand_dims(gate_scores, axis=-1)
         return ops.sum(all_experts * gate_scores, axis=2)
 
@@ -139,9 +161,9 @@ class HydraBlock(layers.Layer):
         self.attn  = MLAAttention(d_model=self.d_model, n_heads=self.n_heads)
         self.norm2 = RMSNorm()
         self.moe   = GatedMoE(d_model=self.d_model)
-    def call(self, x, training=False):
+    def call(self, x, training=False, context=None):
         x = x + self.attn(self.norm1(x))
-        x = x + self.moe(self.norm2(x))
+        x = x + self.moe(self.norm2(x), context=context)
         return x
     def get_config(self):
         config = super().get_config()
@@ -150,33 +172,42 @@ class HydraBlock(layers.Layer):
 
 @keras.saving.register_keras_serializable(package="KAT")
 class HydraV4(keras.Model):
-    """The KRAKEN Multi-Hardware Engine (MoE 32 + MLA 8 + MTP-15)"""
+    """The KRAKEN Mastery Engine (RoPE + MLA + Aux-MTP)"""
     def __init__(self, n_features=23, d_model=None, n_blocks=None, **kwargs):
         super().__init__(**kwargs)
         self.n_features = n_features
-        # Allow dynamic override: 128/16 for GPU Power, 96/8 for CPU Stability
         self.d_model = d_model if d_model else (128 if IS_GPU else 96)
         self.n_blocks = n_blocks if n_blocks else (16 if IS_GPU else 8)
         self.mtp_steps = 15 
+        self.aux_targets = 3 # Price, Volatility, Volume Imbalance
 
-        # Dynamic Unbundling for Full Summary Visibility & GPU Scaling
         self.feat_proj = layers.Dense(self.d_model)
+        # Regime Extractor (Compresses features into a routing context)
+        self.regime_ext = layers.Dense(self.d_model // 2, activation="tanh")
+        
         self.layer_names = [f"b_{i}" for i in range(self.n_blocks)]
         for name in self.layer_names:
             setattr(self, name, HydraBlock(d_model=self.d_model))
         
-        self.head = layers.Dense(self.mtp_steps) 
         self.norm_final = RMSNorm()
+        # Multi-Target Head: (Batch, MTP_Steps, 3)
+        self.head = layers.Dense(self.mtp_steps * self.aux_targets) 
 
     def call(self, x, training=False):
+        # Extract Regime Context from the last candle
+        last_candle = x[:, -1, :]
+        regime_ctx = self.regime_ext(last_candle)
+
         x = self.feat_proj(x)
-        # Sequential Execution of Dynamically Unbundled Sovereigns
         for name in self.layer_names:
-            x = getattr(self, name)(x, training=training)
+            x = getattr(self, name)(x, training=training, context=regime_ctx)
         
         x = self.norm_final(x)
         last_step = x[:, -1, :] 
-        return self.head(last_step)
+        
+        out = self.head(last_step)
+        # Reshape to (Batch, 15, 3) -> Predicts Price, Vol, and Volume Balance
+        return ops.reshape(out, (-1, self.mtp_steps, self.aux_targets))
 
     def get_config(self):
         return {"n_features": self.n_features, "d_model": self.d_model, "n_blocks": self.n_blocks}
@@ -187,28 +218,41 @@ class HydraV4(keras.Model):
 
 @keras.saving.register_keras_serializable(package="KAT")
 class SovereignLoss(keras.losses.Loss):
-    """The Kraken Loss: Rewards Directional Prophecy over Mean Error"""
-    def __init__(self, direction_weight=3.0, **kwargs):
+    """Directional + Auxiliary Consistency Loss"""
+    def __init__(self, direction_weight=3.0, aux_weight=0.5, **kwargs):
         super().__init__(**kwargs)
         self.direction_weight = direction_weight
+        self.aux_weight = aux_weight
+
     def call(self, y_true, y_pred):
-        mse = ops.mean(ops.square(y_true - y_pred))
-        # Penalty for guessing the wrong Delta-Direction
-        dir_true = ops.sign(y_true[:, 1:] - y_true[:, :-1])
-        dir_pred = ops.sign(y_pred[:, 1:] - y_pred[:, :-1])
-        dir_err = ops.mean(ops.cast(ops.not_equal(dir_true, dir_pred), "float32"))
-        return mse + (self.direction_weight * dir_err)
+        # y_true: (B, 15, 3), y_pred: (B, 15, 3)
+        # Index 0: Price, 1: Volatility, 2: Volume
+        
+        # 1. Price MSE + Directional Error
+        p_true, p_pred = y_true[:, :, 0], y_pred[:, :, 0]
+        mse_price = ops.mean(ops.square(p_true - p_pred))
+        
+        dir_true = ops.sign(p_true[:, 1:] - p_true[:, :-1])
+        dir_pred = ops.sign(p_pred[:, 1:] - p_pred[:, :-1])
+        dir_err  = ops.mean(ops.cast(ops.not_equal(dir_true, dir_pred), "float32"))
+        
+        # 2. Auxiliary Losses (Volatility & Volume Imbalance)
+        v_true, v_pred = y_true[:, :, 1:], y_pred[:, :, 1:]
+        mse_aux = ops.mean(ops.square(v_true - v_pred))
+        
+        return mse_price + (self.direction_weight * dir_err) + (self.aux_weight * mse_aux)
+
     def get_config(self):
         config = super().get_config()
-        config.update({"direction_weight": self.direction_weight})
+        config.update({"direction_weight": self.direction_weight, "aux_weight": self.aux_weight})
         return config
 
 def build_kraken(n_features=23):
     model = HydraV4(n_features=n_features)
-    # Use higher learning rate on GPU to burn through the $7.00 faster
+    # Adaptive Learning Rate: Lower for CPUs to avoid gradient explosions
     lr = 1e-3 if IS_GPU else 5e-4
     model.compile(
-        optimizer=keras.optimizers.Adam(lr, clipnorm=1.0),
+        optimizer=keras.optimizers.AdamW(lr, weight_decay=0.01, clipnorm=1.0),
         loss=SovereignLoss(),
         metrics=["mae"]
     )
