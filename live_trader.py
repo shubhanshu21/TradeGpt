@@ -1,143 +1,157 @@
 """
-SOVEREIGN ALPHA PILOT (V4.2) ⚓🚀
+SOVEREIGN ALPHA PILOT (V5.0) ⚓🚀
 ==========================================
-- Timeframe: 1 minute (Institutional Scaling)
-- Brain: HYDRA Sovereign V4.2 (RoPE + MLA + Aux-MTP)
-- Targets: MTP-15 (Predicting Price, Volatility, Volume)
-- Compliance: Delta Exchange (Market-Order + Brackets)
+- Timeframe: 1 minute
+- Brain: HYDRA V5.0 (128-wide, 12-block, 16-expert MoE)
+- Targets: MTP-15 (Price, Volatility, Volume Flow)
+- Exchange: Delta Exchange (Market-Order + SL/TP Brackets)
 """
 
 import os, sys, time
 import numpy as np
-import tensorflow as tf
 import keras
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
 
-# Paths
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT / "src"))
 
-# Architecture Imports (Sync with Hydra V4.2)
-from architectures.hydra import HydraV4, HydraBlock, GatedMoE, MLAAttention, RMSNorm, SovereignLoss
+from architectures.hydra import (HydraV4, HydraBlock, GatedMoE,
+                                  MLAAttention, RMSNorm, TTMReflex, SovereignLoss)
 from delta_client import DeltaClient
-from fetch_data    import fetch_live_kat_data
-from preprocess    import KATScaler, build_feature_cols, add_derived_features
+from fetch_data  import fetch_live_kat_data
+from preprocess  import KATScaler, build_feature_cols, compute_indicators
 
-# ── CONFIG ───────────────────────────────────────────────────────────────────
+# ── CONFIG ────────────────────────────────────────────────────────────────────
 SYMBOL     = "BTCUSD"
-SIZE       = 1           
-THRESHOLD  = 0.08        # Base Conviction (Fee-Aware)
+SIZE       = 1              # Contract size
+THRESHOLD  = 0.05           # Base conviction (Z-score units on scaled output)
 TIMEFRAME  = "1m"
-MODEL_FILE = "hydra_best.keras" 
-CONTEXT_L  = 360         # Matches V4.2 TurboQuant CPU Training context
-INPUT_N    = 345         # 360 - 15 target steps
+MODEL_FILE = "hydra_best.keras"
+CTX_WIN    = 120            # Must match training context window
+SLEEP_S    = 60             # Poll every 1 minute
 
-# ── PILOT HUD ────────────────────────────────────────────────────────────────
-C_RESET = "\033[0m"
-C_BOLD  = "\033[1m"
-C_GREEN = "\033[32m"
-C_RED   = "\033[31m"
-C_CYAN  = "\033[36m"
+# ── HUD ───────────────────────────────────────────────────────────────────────
+C_RESET  = "\033[0m"
+C_BOLD   = "\033[1m"
+C_GREEN  = "\033[32m"
+C_RED    = "\033[31m"
+C_CYAN   = "\033[36m"
 C_YELLOW = "\033[33m"
 
-def log_event(msg, color=C_RESET):
+def log(msg, color=C_RESET):
     stamp = datetime.now().strftime("%H:%M:%S")
-    print(f"[{C_CYAN}{stamp}{C_RESET}] {color}{msg}{C_RESET}")
+    print(f"[{C_CYAN}{stamp}{C_RESET}] {color}{msg}{C_RESET}", flush=True)
+
+def load_model_and_scaler():
+    """Load the trained brain and fitted scaler. Exits if either is missing."""
+    scaler_p = ROOT / "models" / "scaler_base.pkl"
+    model_p  = ROOT / "models" / MODEL_FILE
+
+    if not scaler_p.exists():
+        log("❌ Scaler missing — run training first.", C_RED); sys.exit(1)
+    if not model_p.exists():
+        log(f"❌ Model not found: {MODEL_FILE}", C_RED); sys.exit(1)
+
+    scaler = KATScaler.load(str(scaler_p))
+
+    log(f"🏗️  Loading brain: {MODEL_FILE}...")
+    custom_objs = {
+        "HydraV4": HydraV4, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
+        "MLAAttention": MLAAttention, "RMSNorm": RMSNorm,
+        "TTMReflex": TTMReflex, "SovereignLoss": SovereignLoss,
+    }
+    model = keras.models.load_model(
+        str(model_p), custom_objects=custom_objs, compile=False
+    )
+    log("✅ Brain sync complete.", C_GREEN)
+    return model, scaler
+
+def get_neural_signal(model, scaler):
+    """
+    Fetch latest market data, engineer features, run inference.
+    Returns (mean_price_move, mean_volatility, full_pred_array).
+    """
+    features = build_feature_cols()
+    n_feats  = len(features)
+
+    # Fetch CTX_WIN + small buffer for indicator warm-up
+    df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CTX_WIN + 150, timeframe=TIMEFRAME)
+
+    # V5.0 feature engineering (compute_indicators replaces add_derived_features)
+    df_feat = compute_indicators(df)
+    data    = df_feat[features].values.astype("float32")
+
+    # Scale and take the last CTX_WIN rows
+    scaled = scaler.transform_X(data)
+    X_in   = scaled[-CTX_WIN:].reshape(1, CTX_WIN, n_feats).astype("float32")
+
+    # Inference — output shape: (1, 15, 3) → [price, volatility, volume]
+    pred     = model(X_in, training=False).numpy()[0]   # (15, 3)
+    p_curve  = pred[:, 0]   # 15 price steps
+    v_curve  = pred[:, 1]   # 15 volatility steps
+    q_curve  = pred[:, 2]   # 15 volume flow steps
+
+    return np.mean(p_curve), np.mean(v_curve), np.mean(q_curve), pred
 
 def run_pilot():
     print("="*60)
-    print(f"  SOVEREIGN ALPHA PILOT (V4.2) — TESTNET PILOT [ {SYMBOL} ]")
+    print(f"  ⚓ SOVEREIGN ALPHA PILOT V5.0 — [ {SYMBOL} ] LIVE")
     print("="*60)
 
-    # 1. Initialize
-    client = DeltaClient(testnet=True)
-    scaler_p = ROOT / "models/scaler_base.pkl"
-    model_p  = ROOT / f"models/{MODEL_FILE}"
-
-    if not scaler_p.exists():
-        log_event("Error: Scaler missing. Train the model first.", C_RED)
-        return
-    scaler = KATScaler.load(str(scaler_p))
-
-    # Load Model with custom objects
-    if not model_p.exists():
-        log_event(f"Error: No model at {model_p}", C_RED)
-        return
-    
-    log_event(f"🏗️ Syncing Neural Brain V4.2: {MODEL_FILE}...")
-    custom_objs = {
-        "HydraV4": HydraV4, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
-        "MLAAttention": MLAAttention, "RMSNorm": RMSNorm, "SovereignLoss": SovereignLoss,
-        "TTMReflex": TTMReflex
-    }
-    # Compile=False as we only need inference
-    model = keras.models.load_model(str(model_p), custom_objects=custom_objs, compile=False)
-    log_event("✓ Brain Sync Complete. Entering Live Loop.", C_GREEN)
+    client        = DeltaClient(testnet=True)
+    model, scaler = load_model_and_scaler()
 
     while True:
         try:
-            # 2. Market Data Pull
-            log_event(f"📡 Polling {SYMBOL} Market Stream...")
-            df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CONTEXT_L + 10, timeframe=TIMEFRAME)
-            
-            # Prepare Features for Neural Input
-            df_feat = add_derived_features(df)
-            features = build_feature_cols()
-            data = df_feat[features].values.astype("float32")
-            
-            # Transform and Slice the latest window
-            scaled = scaler.transform_X(data)
-            X_in = scaled[-INPUT_N:].reshape(1, INPUT_N, len(features))
-            X_in = X_in.astype("float32")
-            
-            # 3. Neural Pulse (V4.2 Multi-Target Inference)
-            pred = model.predict(X_in, verbose=0) # Shape (1, 15, 3)
-            pred = pred[0] # Take first batch (15, 3)
-            
-            p_curve = pred[:, 0] # 15 Price steps
-            v_curve = pred[:, 1] # 15 Volatility steps
-            q_curve = pred[:, 2] # 15 Volume steps
-            
-            mean_move = np.mean(p_curve)
-            mean_vol  = np.mean(v_curve)
-            
-            p_str = " | ".join([f"{x:+.3f}" for x in p_curve[:5]]) # Show first 5 mins
-            log_event(f"🔮 PRICE CURVE: [ {p_str}... ] | AVG: {mean_move:+.4f}")
-            log_event(f"📊 VOLATILITY: {mean_vol:.4f} | VOLUME FLOW: {np.mean(q_curve):.4f}")
+            log(f"📡 Polling {SYMBOL} market stream...")
 
-            # 4. Strategy Bridge (V4.2 Regime-Aware Execution)
-            pos = client.get_positions()
-            # Filter for our symbol
-            my_pos = [p for p in pos if client._resolve_product_id(SYMBOL) == int(p['product_id'])]
-            
-            is_in_long  = any(float(p['size']) > 0 for p in my_pos)
-            is_in_short = any(float(p['size']) < 0 for p in my_pos)
+            # ── Inference ────────────────────────────────────────────────────
+            mean_price, mean_vol, mean_q, pred = get_neural_signal(model, scaler)
 
-            # Volatility Adaptive Threshold (High Vol = Need Higher Conviction)
-            # Normalizing mean_vol (assumed around 0-1 range after scaling)
-            dynamic_thresh = THRESHOLD * (1.0 + max(0, mean_vol))
+            p_str = " | ".join([f"{x:+.3f}" for x in pred[:5, 0]])
+            log(f"🔮 PRICE CURVE : [ {p_str}... ]  AVG: {mean_price:+.4f}")
+            log(f"📊 VOLATILITY  : {mean_vol:.4f}  |  VOLUME FLOW: {mean_q:.4f}")
 
-            # Signal Logic
-            if mean_move > dynamic_thresh:
+            # ── Dynamic threshold (scale with volatility) ─────────────────────
+            dynamic_thresh = THRESHOLD * (1.0 + max(0.0, mean_vol))
+
+            # ── Position check ────────────────────────────────────────────────
+            pos         = client.get_positions()
+            product_id  = client._resolve_product_id(SYMBOL)
+            my_pos      = [p for p in pos if int(p["product_id"]) == product_id]
+            is_in_long  = any(float(p["size"]) > 0 for p in my_pos)
+            is_in_short = any(float(p["size"]) < 0 for p in my_pos)
+            in_position = is_in_long or is_in_short
+
+            # ── Signal Logic ──────────────────────────────────────────────────
+            if mean_price > dynamic_thresh:
                 if not is_in_long:
-                    log_event(f"📈 SIGNAL: BULLISH CONVICTION ({mean_move:.4f} > {dynamic_thresh:.4f}). Executing LONG...", C_GREEN)
+                    log(f"📈 LONG  ({mean_price:+.4f} > +{dynamic_thresh:.4f})", C_GREEN)
                     client.place_order(SYMBOL, SIZE, "buy", sl_pct=1.0, tp_pct=2.5)
-            
-            elif mean_move < -dynamic_thresh:
+                else:
+                    log(f"✅ Already LONG — holding.", C_GREEN)
+
+            elif mean_price < -dynamic_thresh:
                 if not is_in_short:
-                    log_event(f"📉 SIGNAL: BEARISH CONVICTION ({mean_move:.4f} < {-dynamic_thresh:.4f}). Executing SHORT...", C_RED)
+                    log(f"📉 SHORT ({mean_price:+.4f} < -{dynamic_thresh:.4f})", C_RED)
                     client.place_order(SYMBOL, SIZE, "sell", sl_pct=1.0, tp_pct=2.5)
-            
+                else:
+                    log(f"✅ Already SHORT — holding.", C_RED)
+
             else:
-                log_event(f"⏸️ NEURAL STATUS: STABLE / WEAK ({mean_move:.4f} vs {dynamic_thresh:.4f}).", C_YELLOW)
+                log(f"⏸️  HOLD — weak signal ({mean_price:+.4f}, thresh ±{dynamic_thresh:.4f})", C_YELLOW)
 
-            # 5. Cycle Management
-            time.sleep(60) 
+            # ── Cycle ─────────────────────────────────────────────────────────
+            log(f"💤 Next poll in {SLEEP_S}s...")
+            time.sleep(SLEEP_S)
 
+        except KeyboardInterrupt:
+            log("🛑 Pilot stopped by operator.", C_YELLOW)
+            break
         except Exception as e:
-            log_event(f"⚠️ Exception in Pilot Loop: {e}", C_RED)
+            log(f"⚠️  Loop error: {e}", C_RED)
             time.sleep(10)
 
 if __name__ == "__main__":
