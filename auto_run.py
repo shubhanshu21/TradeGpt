@@ -53,6 +53,8 @@ def mode_train(args):
         cmd.extend(["--symbol", args.symbol])
     if hasattr(args, "finetune") and args.finetune:
         cmd.append("--finetune")
+    if hasattr(args, "resume") and args.resume:
+        cmd.append("--resume")
     
     subprocess.run(cmd, check=True)
 
@@ -62,11 +64,10 @@ def mode_predict(args):
     import numpy as np
     import tensorflow as tf
     import keras
-    from generate_data import generate_synthetic
     from preprocess    import build_dataset, KATScaler
     from fetch_data    import fetch_live_kat_data
 
-    CKPT = ROOT / "saved_models"
+    CKPT = ROOT / "models" if "hydra" in args.model else ROOT / "saved_models"
 
     # ── Load scaler ──────────────────────────────────────────────────────────
     variant = "base"
@@ -84,18 +85,18 @@ def mode_predict(args):
     scaler = KATScaler.load(str(scaler_path))
 
     # ── Fresh data ───────────────────────────────────────────────────────────
-    ctx_map = {"base": 150, "lion": 480, "tiger": 1440, "hydra": 360}
+    ctx_map = {"base": 150, "lion": 480, "tiger": 1440, "hydra": 480}
     model_key = args.model.replace("causal_", "")
     ctx = ctx_map.get(model_key, 150)
 
     print(f"Fetching {ctx + 200} live candles for prediction ({args.timeframe})...")
     df = fetch_live_kat_data(symbol="BTCUSD", n_candles=ctx + 200, timeframe=args.timeframe)
 
-    ds = build_dataset(df, context_window=ctx, forecast_steps=1, train_ratio=0, val_ratio=0, scaler=scaler)
-    seed = ds["X_test"][-1]   # (ctx, features) — Use the latest full window
+    ds = build_dataset(df, context_window=ctx, forecast_steps=1, scaler=scaler)
+    seed = ds["X_test"][-1][-465:] if "hydra" in args.model else ds["X_test"][-1]   # (ctx, features) — Use the latest full window
 
     # ── Load model ───────────────────────────────────────────────────────────
-    model_file = CKPT / f"{args.model}_final.keras"
+    model_file = CKPT / f"{args.model}_best.keras" if "hydra" in args.model else CKPT / f"{args.model}_final.keras"
     if not model_file.exists():
         print(f"Checkpoint not found: {model_file}")
         sys.exit(1)
@@ -106,12 +107,62 @@ def mode_predict(args):
     if   "alpha" in args.model: import alpha
     elif "titan" in args.model: import titan
     elif "causal" in args.model: import causal
-    elif "hydra"  in args.model: import hydra
+    elif "hydra"  in args.model: 
+        from architectures.hydra import HydraV4, HydraBlock, GatedMoE, MLAAttention, RMSNorm, SovereignLoss, TTMReflex
+        custom_objs = {
+            "HydraV4": HydraV4, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
+            "MLAAttention": MLAAttention, "RMSNorm": RMSNorm, "SovereignLoss": SovereignLoss,
+            "TTMReflex": TTMReflex
+        }
+        model = keras.models.load_model(str(model_file), custom_objects=custom_objs, compile=False)
 
-    model = keras.models.load_model(str(model_file))
+    if "hydra" not in args.model:
+        model = keras.models.load_model(str(model_file))
 
     # ── Predict ──────────────────────────────────────────────────────────────
-    if "causal" in args.model or "hydra" in args.model:
+    if "hydra" in args.model:
+        inp = seed[np.newaxis]
+        pred = model.predict(inp, verbose=0)[0] # Shape (15, 3)
+        p_curve = pred[:, 0]
+        v_curve = pred[:, 1]
+        q_curve = pred[:, 2]
+        
+        last_known = scaler.inverse_y(seed[-1:, 3:4].ravel())[0]
+        print(f"\nLast known close: ${last_known:,.2f}")
+        print(f"Predicted MTP-15 trajectory ({len(p_curve)} steps):")
+        
+        try:
+            import matplotlib.pyplot as plt
+            plot_dir = LOG_DIR / "plots"
+            plot_dir.mkdir(parents=True, exist_ok=True)
+            hist_close = scaler.inverse_y(seed[-30:, 3:4].ravel())
+            
+            plt.figure(figsize=(10, 6))
+            plt.plot(range(len(hist_close)), hist_close, label="History", color="blue", marker="o", markersize=3)
+            
+            forecast_x = range(len(hist_close) - 1, len(hist_close) + len(p_curve))
+            forecast_price = [hist_close[-1]]
+            for delta in p_curve:
+                forecast_price.append(forecast_price[-1] + float(delta))
+                
+            plt.plot(forecast_x, forecast_price, label="Forecast (Hydra V4.2)", color="green", linestyle="--", marker="x", markersize=4)
+            plt.title(f"KAT Prediction: {args.model} MTP-15")
+            plt.xlabel("Minutes")
+            plt.ylabel("Price ($)")
+            plt.legend()
+            plt.grid(True, alpha=0.3)
+            plot_file = plot_dir / f"{args.model}_{time.strftime('%H%M%S')}.png"
+            plt.savefig(plot_file)
+            print(f"📈 Visual plot saved to: {plot_file}")
+            plt.close()
+        except Exception as e:
+            print(f"! Could not generate visual plot: {e}")
+
+        for i, p in enumerate(p_curve, 1):
+            is_above = "↑" if p > 0 else "↓"
+            print(f"  +{i:3d}min  Delta ${p:+.2f}  {is_above}  |  Vol: {v_curve[i-1]:.4f}  |  Flow: {q_curve[i-1]:.4f}")
+
+    elif "causal" in args.model:
         if "causal" in args.model: from causal import CausalModel as GeneratorModel
         else: from hydra import Hydra as GeneratorModel
         traj = model.generate(seed, steps=args.steps, scaler=scaler)
@@ -197,7 +248,7 @@ def mode_demo(args):
         sys.executable, str(ROOT / "train.py"),
         "--model", "alpha",
         "--epochs", "5",
-        "--batch", "64",
+        "--batch", "128",
         "--candles", "2000",
         "--live"
     ], check=True)
@@ -228,11 +279,12 @@ def main():
     p_train.add_argument("--model",   default="all",
         choices=["all","alpha","titan","causal_base","causal_lion","causal_tiger","hydra"])
     p_train.add_argument("--epochs",  type=int, default=50)
-    p_train.add_argument("--batch",   type=int, default=128)
-    p_train.add_argument("--candles", type=int, default=60_000)
+    p_train.add_argument("--batch",   type=int, default=128)  # V5.0 calibrated
+    p_train.add_argument("--candles", type=int, default=120_000)
     p_train.add_argument("--symbol",  default="BTCUSD")
     p_train.add_argument("--timeframe", default="1m", help="Timeframe (1m, 5m, 15m, 1h, etc.)")
     p_train.add_argument("--finetune", action="store_true", help="Fine-tune existing model")
+    p_train.add_argument("--resume", action="store_true", help="Resume from the latest 'Decade Backup' Epoch checkpoint")
 
     # ── predict ───────────────────────────────────────────────────────────────
     p_pred = sub.add_parser("predict", help="Run prediction with a trained model")

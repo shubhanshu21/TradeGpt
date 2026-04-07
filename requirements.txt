@@ -46,7 +46,7 @@ requests==2.33.1
 rich==14.3.3
 scikit-learn==1.8.0
 scipy==1.17.1
-setuptools==69.5.1
+setuptools==80.9.0
 six==1.17.0
 starlette==1.0.0
 tensorboard==2.20.0

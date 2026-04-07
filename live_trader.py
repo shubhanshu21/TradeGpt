@@ -31,8 +31,8 @@ SIZE       = 1
 THRESHOLD  = 0.08        # Base Conviction (Fee-Aware)
 TIMEFRAME  = "1m"
 MODEL_FILE = "hydra_best.keras" 
-CONTEXT_L  = 480         # Matches V4.2 CPU Training context
-INPUT_N    = 465         # 480 - 15 target steps
+CONTEXT_L  = 360         # Matches V4.2 TurboQuant CPU Training context
+INPUT_N    = 345         # 360 - 15 target steps
 
 # ── PILOT HUD ────────────────────────────────────────────────────────────────
 C_RESET = "\033[0m"
@@ -69,7 +69,8 @@ def run_pilot():
     log_event(f"🏗️ Syncing Neural Brain V4.2: {MODEL_FILE}...")
     custom_objs = {
         "HydraV4": HydraV4, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
-        "MLAAttention": MLAAttention, "RMSNorm": RMSNorm, "SovereignLoss": SovereignLoss
+        "MLAAttention": MLAAttention, "RMSNorm": RMSNorm, "SovereignLoss": SovereignLoss,
+        "TTMReflex": TTMReflex
     }
     # Compile=False as we only need inference
     model = keras.models.load_model(str(model_p), custom_objects=custom_objs, compile=False)

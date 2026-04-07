@@ -42,6 +42,7 @@ models/*.onnx
 
 # Training Logs & Profiles
 logs/
+*.log
 tensorboard/
 plots/
 
