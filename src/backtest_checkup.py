@@ -1,105 +1,173 @@
 """
-HYDRA SOVEREIGN NEURAL CHECKUP (V1.2) - DELTA EDITION 
-=====================================================
-Diagnostic: Real-Time Directional Delta Accuracy (+/- Change).
-This measures the 'UP or DOWN' guess from the CURRENT price.
+SOVEREIGN KRAKEN — Backtest Engine (V5.0) ⚓📊
+===============================================
+Runs a walk-forward directional backtest on the current best model.
+Tests: directional accuracy, simulated P&L, fee-aware win rate.
+
+Usage:
+    python src/backtest_checkup.py
 """
 
-import os, time, sys
+import sys, os
+os.environ["PYTHONUNBUFFERED"] = "1"
 import numpy as np
-import tensorflow as tf
-import keras
 import pandas as pd
+import keras
 from pathlib import Path
+from datetime import datetime
 
-# Paths
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-# Architecture Imports
-from architectures.hydra import Hydra, HydraBlock, GatedMoE, MLAAttention, AttnRes, VSN, RMSNorm, DualScaleFusion, TemporalGating, SovereignLoss
-from preprocess import build_dataset, KATScaler
-from fetch_data import fetch_live_kat_data
+from architectures.hydra import (HydraV4, HydraBlock, GatedMoE,
+                                  MLAAttention, RMSNorm, TTMReflex, SovereignLoss)
+from preprocess import KATScaler, build_feature_cols, compute_indicators
+from fetch_data  import fetch_live_kat_data
 
-def prepare_hydra_targets(X: np.ndarray, mtp_steps: int = 5) -> tuple:
-    if X is None or len(X.shape) < 3: return X, None
-    B, L, F = X.shape
-    T = L - mtp_steps
-    X_in = X[:, :T, :] 
-    y_blocks = []
-    for s in range(0, mtp_steps) : y_blocks.append(X[:, T+s:T+s+1, 3:4]) 
-    return X_in, np.concatenate(y_blocks, axis=-1)
+# ── CONFIG ────────────────────────────────────────────────────────────────────
+MODEL_FILE   = "hydra_best.keras"
+SYMBOL       = "BTCUSD"
+TIMEFRAME    = "1m"
+CTX_WIN      = 120        # Must match training
+N_CANDLES    = 5000       # Test window (~3.5 days of 1m bars)
+THRESHOLD    = 0.15       # Signal threshold — raised to filter noise (was 0.05 → 0% HOLD)
+FEE_PCT      = 0.05 / 100 # Delta taker fee = 0.05%
+TRADE_SIZE   = 1          # 1 contract (for P&L simulation)
 
-# ── DIAGNOSTIC ENGINE ─────────────────────────────────────────────────────────
+# ── Load ──────────────────────────────────────────────────────────────────────
+MODEL_PATH  = ROOT / "models" / MODEL_FILE
+SCALER_PATH = ROOT / "models" / "scaler_base.pkl"
 
-def run_neural_checkup(model_path: str, timeframe: str = "1m"):
-    print(f"🔬 INITIALIZING SOVEREIGN DELTA-CHECKUP | Source: {model_path}")
-    
-    # 1. Load Brain
-    custom_objs = {
-        "Hydra": Hydra, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
-        "MLAAttention": MLAAttention, "AttnRes": AttnRes, "VSN": VSN,
-        "RMSNorm": RMSNorm, "DualScaleFusion": DualScaleFusion, 
-        "TemporalGating": TemporalGating, "SovereignLoss": SovereignLoss
-    }
-    model = keras.models.load_model(model_path, custom_objects=custom_objs, compile=False)
-    
-    # 2. Fetch Latest 1500 Candles
-    df = fetch_live_kat_data(symbol="BTCUSD", n_candles=1500, timeframe=timeframe)
-    if df is None or len(df) < 500: return 0
+print("\n" + "="*60)
+print(f"  ⚓ SOVEREIGN BACKTEST ENGINE V5.0 — {SYMBOL}")
+print("="*60)
 
-    # 3. Scaler & Prep
-    scaler_p = ROOT / "models/scaler_base.pkl"
-    scaler = KATScaler.load(scaler_p)
-    ds = build_dataset(df, context_window=360, forecast_steps=1, scaler=scaler)
-    
-    X_test_raw = ds["X_test"]
-    X_in, y_true_all = prepare_hydra_targets(X_test_raw, mtp_steps=5)
-    
-    # Capture the price exactly at the Moment of Prediction (The very last input step)
-    # Shape of X_in is (B, 355, 23). The price is index 3.
-    last_input_prices = X_in[:, -1, 3] # (B,)
-    
-    # 4. Neural Predict
-    print(f"🚀 Predicting {len(X_in)} market intervals...")
-    y_pred_all = model.predict(X_in.astype("float32"), verbose=0, batch_size=32)
-    
-    # Focus on the next 1-minute target
-    y_true_1min = y_true_all[:, 0, 0]
-    y_pred_1min = y_pred_all[:, 0, 0]
-    
-    # ── THE REAL ALPHA CALCULATION ──────────────────────────────────────────
-    # We want to know if y_pred is GREATER or LESS than its own starting point
-    delta_true = y_true_1min - last_input_prices
-    delta_pred = y_pred_1min - last_input_prices
-    
-    # Directional Delta Accuracy
-    dir_acc = np.mean(np.sign(delta_true) == np.sign(delta_pred)) * 100
-    
-    # USD MAE
-    t_usd = scaler.inverse_y(y_true_1min)
-    p_usd = scaler.inverse_y(y_pred_1min)
-    mae_usd = np.mean(np.abs(t_usd - p_usd))
-    
-    print("\n" + "="*60)
-    print("📊 SOVEREIGN DELTA-CHECKUP (HONEST ALPHA TEST)")
-    print("="*60)
-    print(f"   - Target:          Predict +1m Close vs Current")
-    print(f"   - Neural MAE:      ${mae_usd:,.2f} USD")
-    print(f"   - Delta Accuracy:  {dir_acc:.1f}%")
-    
-    if dir_acc > 53.0:
-        print(f"   ✅ STATUS: PROFITABLE ALPHA ({dir_acc:.1f}%)")
-    elif dir_acc > 50.5:
-        print(f"   ⚠️ STATUS: WEAK ALPHA (Low conviction)")
+if not MODEL_PATH.exists():
+    print(f"❌ No model at {MODEL_PATH} — train first."); sys.exit(1)
+if not SCALER_PATH.exists():
+    print(f"❌ No scaler at {SCALER_PATH} — train first."); sys.exit(1)
+
+print(f"📦 Loading model: {MODEL_FILE}")
+custom_objs = {
+    "HydraV4": HydraV4, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
+    "MLAAttention": MLAAttention, "RMSNorm": RMSNorm,
+    "TTMReflex": TTMReflex, "SovereignLoss": SovereignLoss,
+}
+model  = keras.models.load_model(str(MODEL_PATH), custom_objects=custom_objs, compile=False)
+scaler = KATScaler.load(str(SCALER_PATH))
+print(f"✅ Brain loaded")
+
+# ── Fetch data ────────────────────────────────────────────────────────────────
+print(f"\n📡 Fetching {N_CANDLES:,} candles for backtest...")
+df = fetch_live_kat_data(symbol=SYMBOL, n_candles=N_CANDLES + CTX_WIN + 50, timeframe=TIMEFRAME)
+print(f"   Got {len(df):,} candles")
+
+# ── Feature engineering ───────────────────────────────────────────────────────
+features  = build_feature_cols()
+n_feats   = len(features)
+df_feat   = compute_indicators(df)
+data      = df_feat[features].values.astype("float32")
+scaled    = scaler.transform_X(data)    # (N, 24)
+
+# ── Walk-forward backtest ─────────────────────────────────────────────────────
+print(f"\n🔄 Running walk-forward backtest ({N_CANDLES:,} steps)...")
+
+results = []
+close_col = features.index("close")
+
+for i in range(CTX_WIN, len(scaled) - 15):
+    X_in      = scaled[i - CTX_WIN : i].reshape(1, CTX_WIN, n_feats).astype("float32")
+    pred      = model(X_in, training=False).numpy()[0]   # (15, 3)
+
+    mean_move = float(np.mean(pred[:, 0]))               # avg predicted close direction
+    mean_vol  = float(np.mean(pred[:, 1]))
+
+    # Dynamic threshold
+    dyn_thresh = THRESHOLD * (1.0 + max(0, mean_vol))
+
+    # Actual future 1-min close vs current close (in scaled space)
+    actual_now  = float(scaled[i,     close_col])
+    actual_next = float(scaled[i + 1, close_col])
+    actual_dir  = np.sign(actual_next - actual_now)
+
+    # Signal
+    if mean_move > dyn_thresh:
+        signal = "LONG"
+    elif mean_move < -dyn_thresh:
+        signal = "SHORT"
     else:
-        print(f"   🛑 STATUS: NO ALPHA (Model is lagging)")
-    print("="*60)
-    return dir_acc
+        signal = "HOLD"
 
-if __name__ == "__main__":
-    MODEL_P = str(ROOT / "models/hydra_best.keras")
-    if os.path.exists(MODEL_P):
-        run_neural_checkup(MODEL_P)
-    else:
-        print(f"Error: Model not found at {MODEL_P}")
+    results.append({
+        "i":          i,
+        "signal":     signal,
+        "mean_move":  mean_move,
+        "actual_dir": actual_dir,
+    })
+
+    if i % 500 == 0:
+        print(f"   Step {i - CTX_WIN:,}/{N_CANDLES:,}...", end="\r")
+
+print(f"\n   ✅ {len(results):,} steps evaluated")
+
+# ── Analysis ──────────────────────────────────────────────────────────────────
+df_r = pd.DataFrame(results)
+
+# Trades only (exclude HOLDs)
+trades = df_r[df_r["signal"] != "HOLD"].copy()
+n_trades  = len(trades)
+n_signals = len(df_r)
+hold_pct  = (n_signals - n_trades) / n_signals * 100
+
+# Directional accuracy on trades
+def pred_dir(row):
+    return 1.0 if row["signal"] == "LONG" else -1.0
+
+trades["pred_dir"] = trades.apply(pred_dir, axis=1)
+trades["correct"]  = (trades["pred_dir"] == trades["actual_dir"])
+
+win_rate  = trades["correct"].mean() * 100
+long_wr   = trades[trades["signal"] == "LONG"]["correct"].mean() * 100
+short_wr  = trades[trades["signal"] == "SHORT"]["correct"].mean() * 100
+
+# Simulated P&L (1 pip = 1 scaled unit → directional binary result)
+# Win = +1 unit, Lose = -1 unit, minus 2× fee per round trip
+fee_per_trade = FEE_PCT * 2   # entry + exit
+trades["pnl"] = trades.apply(
+    lambda r: (1 - fee_per_trade) if r["correct"] else (-1 - fee_per_trade), axis=1
+)
+total_pnl    = trades["pnl"].sum()
+cum_pnl      = trades["pnl"].cumsum()
+max_drawdown = (cum_pnl - cum_pnl.cummax()).min()
+sharpe_proxy = trades["pnl"].mean() / (trades["pnl"].std() + 1e-9)
+
+# ── Report ────────────────────────────────────────────────────────────────────
+print("\n" + "="*60)
+print("📊 SOVEREIGN BACKTEST REPORT V5.0")
+print("="*60)
+print(f"  Symbol     : {SYMBOL} {TIMEFRAME}")
+print(f"  Model      : {MODEL_FILE}")
+print(f"  Window     : {N_CANDLES:,} candles (~{N_CANDLES//1440:.1f} days)")
+print(f"  Threshold  : ±{THRESHOLD} (Z-score)")
+print("-"*60)
+print(f"  Signals    : {n_trades:,} trades  |  {hold_pct:.1f}% HOLD")
+print(f"  Win Rate   : {win_rate:.1f}%  (Long: {long_wr:.1f}%  Short: {short_wr:.1f}%)")
+print(f"  Net P&L    : {total_pnl:+.2f} units  ({total_pnl/n_trades*100:+.1f}% per trade)")
+print(f"  Max Drawdown: {max_drawdown:.2f} units")
+print(f"  Sharpe Proxy: {sharpe_proxy:.3f}")
+print("-"*60)
+
+# Verdict
+if win_rate > 55:
+    verdict = f"✅ PROFITABLE ALPHA — {win_rate:.1f}% win rate"
+elif win_rate > 51:
+    verdict = f"⚠️  WEAK ALPHA — {win_rate:.1f}% (marginal edge, needs more training)"
+else:
+    verdict = f"🛑 NO EDGE — {win_rate:.1f}% (below fee breakeven, keep training)"
+
+print(f"\n  {verdict}")
+print("="*60)
+print(f"\n  Fee breakeven: >50.5% win rate")
+print(f"  Profitable:    >53.0% win rate")
+print(f"  Strong edge:   >57.0% win rate")
+print("="*60 + "\n")
