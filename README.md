@@ -16,13 +16,14 @@ Institutional-grade AI trading system for crypto markets. Built on a **32.7M-par
 | V4.3 | Omni-Brain | Infini-Attention + LogSparse mask + TTM Reflex circuit |
 | V4.4 | Einsum-MoE | Replaced `ops.take` with Einstein-Summation — eliminated 16GB memory leak |
 | V4.7 | Abyss-Streamer | Inline feature engineering, TF generator pipeline, stable CPU training |
-| **V5.0** | **Sovereign-Enhanced** | **Current** — 7 enhancements: cosine LR, gradient accumulation, label smoothing, funding rate proxy, BB-width squeeze detector, checkpoint pruning, INT8 quantization |
+| V5.0 | Sovereign-Enhanced | Cosine LR, funding rate proxy, gradient accumulation |
+| **V10.0** | **Singularity** | **Current** — 1,152 Experts (96/layer), 21GB RAM optimization, 27 features (CVD, VWAP, StochRSI), Precision-Decay Attention. |
 
 ---
 
-## 🧠 Architecture: HYDRA V5.0
+## 🧠 Architecture: SINGULARITY V10.0
 
-**32.7M parameters · 384 hidden dim · 12 Transformer blocks · 16 MoE experts · 24 input features**
+**~25.5M parameters · 128 hidden dim · 12 Transformer blocks · 96 MoE experts · 27 input features**
 
 ```
 [ Raw Market Data — 120,000 × 1m Candles (~83 days) ]
@@ -37,7 +38,7 @@ Institutional-grade AI trading system for crypto markets. Built on a **32.7M-par
          │  Regime     ADX · CCI · Volatility│
          │  Funding    funding_rate_proxy    │  ← NEW: perpetual basis z-score
          │                                  │
-         │  Output: 24-dimensional vector   │
+         │  Output: 27-dimensional vector   │
          └────────────────┬─────────────────┘
                           │  Zero-Copy TF Abyss-Streamer
          ┌────────────────▼─────────────────────────┐
@@ -55,7 +56,7 @@ Institutional-grade AI trading system for crypto markets. Built on a **32.7M-par
                │      │  ② MLA Attention (TurboQuant LV-Q, d_lat=32)   │
                │      │     + LogSparse Temporal Penalty Mask           │
                │      │     + Infini-Attention Memory Anchor            │
-               │      │  ③ Gated Sparse MoE — Top-2 of 16 Experts      │
+               │      │  ③ Gated Sparse MoE — Top-4 of 96 Experts      │
                │      │     (Einsum "btd,edo→bteo" — zero alloc spike)  │
                │      └───────────────────────┬────────────────────────┘
                │                              │
@@ -101,10 +102,10 @@ Institutional-grade AI trading system for crypto markets. Built on a **32.7M-par
 
 ## 🚀 Quick Start
 
-### Training (300-Epoch Grand Mastery)
+### Training (V10.0 Singularity High-Quality)
 ```bash
-# Primary mission — streaming, crash-safe (~12GB RAM, CTX=120)
-python train.py --epochs 300 --batch 128 --candles 120000
+# Ultimate mission — 1,152 experts, 21GB RAM optimized (~17s/step)
+nohup python train.py --epochs 300 --batch 64 --candles 120000 2>&1 | tee logs/omni_brain_300.log > /dev/null &
 
 # Monitor live
 tail -f logs/omni_brain_300.log
@@ -164,7 +165,7 @@ scripts/
 
 | Mode | RAM | Speed | Notes |
 |------|-----|-------|-------|
-| **CPU Training (current)** | ~12 GB | ~91s/step | CTX=120, Batch=128, streaming |
+| **CPU Training (V10.0)** | ~21 GB | ~17s/step | 48 Exp · Batch=64 · 21GB Target |
 | **GPU — A40 (target)** | ~8 GB VRAM | ~0.5s/step | Same config, 180× faster |
 | **GPU — A40 (expanded)** | ~20 GB VRAM | ~1s/step | CTX=1440 (full day), Batch=512 |
 | **Inference (CPU, Float32)** | ~350 MB | ~50ms | `hydra_final.keras` |
@@ -175,15 +176,15 @@ scripts/
 ## 📊 Current Mission Status
 
 ```
-Model       : HYDRA V5.0 — 32.7M params (384-wide · 12-block · 16-expert MoE)
-Features    : 24 (added: funding_rate_proxy, bb_width)
-Mission     : 300-Epoch Grand Mastery
+Model       : SINGULARITY V10.0 — 25.5M params (128-wide · 12-block · 96-expert MoE)
+Features    : 27 (Added: CVD, VWAP, StochRSI)
+Mission     : 300-Epoch Grand Mastery (Singularity Tier)
 Dataset     : 120,000 × 1m BTC/USD candles (~83 days)
 Context     : 120 candles (2-hour history per step)
 Forecast    : 15-step multi-target (Price · Volatility · Volume Flow)
-Batch       : 128 (effective 512 via gradient accumulation)
-LR Schedule : CosineDecay  5e-4 → 1e-6 over 224,700 steps
-RAM Usage   : ~12 GB stable (streaming, no materialization)
+Batch       : 64 (Precision-optimized for 1,152 experts)
+LR Schedule : 2e-4 Precision Flow
+RAM Usage   : ~21 GB Optimized (100k shuffle buffer + ensemble overhead)
 Status      : 🟢 ACTIVE — Epoch 1/300
 ```
 

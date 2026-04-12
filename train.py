@@ -87,6 +87,30 @@ class MissionControl(keras.callbacks.Callback):
 
 def train_kraken(args):
     init_kraken_hardware()
+    
+    # ── V6.5 Sovereign Auto-Log ──────────────────────────────────────────────
+    # Recreate logs directory if missing
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Auto-redirect output to file if not interactive
+    log_file_path = LOG_DIR / "omni_brain_300.log"
+    print(f"📡 Internal Logging Engaged: {log_file_path}")
+    
+    # We use a custom logger to write to both console and file if possible
+    class Logger(object):
+        def __init__(self, filename):
+            self.terminal = sys.stdout
+            self.log = open(filename, "a", buffering=1)
+        def write(self, message):
+            self.terminal.write(message)
+            self.log.write(message)
+        def flush(self):
+            self.terminal.flush()
+            self.log.flush()
+
+    sys.stdout = Logger(log_file_path)
+    sys.stderr = sys.stdout
+
     print("\n" + "="*60)
     print(f"  {'🚀 GPU MODE' if IS_GPU else '🐌 CPU MODE'} — SOVEREIGN KRAKEN V4.7")
     print("="*60)
@@ -100,6 +124,7 @@ def train_kraken(args):
     # ── 1. Fetch / Cache ──────────────────────────────────────────────────────
     DATA_DIR.mkdir(exist_ok=True)
     CKPT_DIR.mkdir(exist_ok=True)
+    LOG_DIR.mkdir(exist_ok=True)
     CACHE_P = DATA_DIR / f"{args.symbol}_{args.timeframe}_history_{CANDLES}.parquet"
 
     if CACHE_P.exists():
@@ -114,7 +139,8 @@ def train_kraken(args):
     if df is None or len(df) == 0:
         print("❌ No data. Aborting."); return
 
-    # ── 2. Streaming Dataset (Zero-Copy, No OOM) ──────────────────────────────
+    # ── 2. Streaming Dataset (20GB RAM Optimized) ────────────────────────────
+    # High Batch + High Shuffle = High RAM utilization and better alpha
     ds_info = build_dataset_streaming(df, context_window=CTX_WIN, forecast_steps=FORECAST,
                                        batch_size=BATCH_S,
                                        scaler_save_path=str(CKPT_DIR / "scaler_base.pkl"))
@@ -126,28 +152,17 @@ def train_kraken(args):
 
     print(f"   ✅ {steps_tr} train steps/epoch | {steps_va} val steps")
 
-    # ── 3. Build Model (with Persistent LR) ───────────────────────────────────
-    total_steps  = steps_tr * EPOCHS
-    initial_step = 0
+    # ── 3. Build Model (Singularity Tier: 2e-4 Precision) ────────────────────
+    # For 1,152 experts, we use a slower, higher-quality learning profile.
+    model = build_kraken(n_features=n_feat, context_window=CTX_WIN, 
+                        forecast_steps=FORECAST)
     
-    # Calculate current step if resuming
-    CKPT_BEST = CKPT_DIR / "hydra_best.keras"
-    saved     = sorted(glob.glob(str(CKPT_DIR / "hydra_checkpoint_E*.keras")))
-    
-    if args.resume and saved:
-        try:
-            # Parse epoch from filename: hydra_checkpoint_E087.keras -> 87
-            last_epoch = int(os.path.basename(saved[-1]).split("_E")[-1].split(".")[0])
-            initial_step = last_epoch * steps_tr
-            print(f"♻️  Resuming Mission at Epoch {last_epoch} (Step {initial_step:,})")
-        except: pass
-
-    model = build_kraken(n_features=n_feat, total_steps=total_steps, initial_step=initial_step)
-    dummy = np.zeros((1, CTX_WIN, n_feat), dtype="float32")
-    _     = model(dummy)
-    model.summary()
+    # We allow build_kraken to handle the optimizer initialization
 
     # ── 4. Load Weights ───────────────────────────────────────────────────────
+    CKPT_BEST = CKPT_DIR / "hydra_best.keras"
+    saved     = sorted(glob.glob(str(CKPT_DIR / "hydra_checkpoint_E*.keras")))
+
     if args.resume and saved:
         print(f"📦 Loading weights from {os.path.basename(saved[-1])}")
         model.load_weights(saved[-1])

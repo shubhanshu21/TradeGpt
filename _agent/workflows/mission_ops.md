@@ -2,37 +2,33 @@
 description: Sovereigh Kraken — Mission Operations & Safeguards
 ---
 
-## ⚓ Mission Log: V5.1 "Sovereign-Persistence" Patch
+## ⚓ Mission Log: V10.0 "Singularity" Standard
 
-This workflow documents the critical architectural lessons learned during the 300-epoch training mission of the Hydra V5.0 brain. Use these safeguards to prevent regressions during long-running CPU training.
+This workflow documents the critical architectural lessons learned during the construction of the 1,152-expert Singularity brain. These safeguards are mandatory to survive the 300-epoch mission.
 
-### 1. The Persistent LR Rule
-**Problem**: Keras `optimizer.iterations` resets to 0 on script restart, even if weights are loaded. This causes "Thermal Shock" by jumping back to high Initial LR (e.g., 5e-4) in the middle of a mission.
+### 1. The "Infinity Hammer" Rule (Stability)
+**Problem**: BTC market wicks or exchange freezes can produce `inf` or `nan` values in indicators like VWAP or Funding Proxy. This poisens the 1,152-expert ensemble instantly on Step 1.
 **Safeguard**: 
-- Always calculate `initial_step = current_epoch * steps_per_epoch` on resume.
-- Use `optimizer.iterations.assign(initial_step)` before starting `fit()`.
-- Ensure `initial_epoch` is passed to `fit()` for log continuity.
+- `compute_indicators` must scrub all `inf` values using `df.replace([np.inf, -np.inf], 0)`.
+- Use `.clip(-1e9, 1e9)` as a final defense before returning to the model.
 
-### 2. The Alpha Priority (Loss Weighting)
-**Problem**: The model often prioritizes Absolute Price (MSE) over Directional Accuracy (Alpha). This leads to low win rates even if Val Loss is low.
+### 2. The Unbreakable Scaler
+**Problem**: Zero-variance columns (constant price/volume) cause "divide-by-zero" errors in standard scalers, leading to NaN loss.
 **Safeguard**: 
-- Maintain `direction_weight >= 10.0` in `SovereignLoss`.
-- Use **Label Smoothing** (0.1) on directions to prevent overconfidence on micro-noise.
-- Use **Huber Loss** for raw prices to reduce influence of outlier wicks.
+- `KATScaler` must force `std = 1.0` if `std == 0` is detected in any feature column.
 
-### 3. Hardware Stability (CPU Peak)
-**Problem**: Training is CPU-bound on this host. CTX_WIN > 120 or Batch > 256 leads to activation-buffer bloat and system hangs.
+### 3. Hardware Stability (21GB Singularity Peak)
+**Problem**: 96 Experts per layer create a massive neural graph. High batch sizes (>64) or massive buffers (>30k) will cause OOM freezes.
 **Safeguard**:
-- Context Window: **120 candles** (2 hours).
-- Batch Size: **128** (Saturates ~15GB RAM perfectly).
-- **Abyss-Streamer**: Use `tf.data.from_generator` to ensure zero-copy RAM usage.
+- **Batch Size: 64** (Optimal for backprop on 4-core CPUs).
+- **Shuffle Buffer: 20,000** (Provides randomization while staying under the 23.4GB RAM ceiling).
+- **Target RAM: 21GB** (Stable peak).
 
-### 4. Backtest Protocol
-**Problem**: Training loss is a weak proxy for trading profit.
-**Requirement**:
-- Run `src/backtest_checkup.py` every ~20 epochs.
-- Look for **Hold Rate** improvements as a sign of "maturity."
-- Expect "Buy-Only" alpha (Long Win Rate) to mature faster than "Short-Only" alpha.
+### 4. The Precision Flow Rule
+**Problem**: Large ensembles (MoE) are difficult to converge with high initial learning rates.
+**Safeguard**:
+- Use **2e-4** for initial LR.
+- Always use `clipnorm=1.0` in the optimizer to prevent gradient spikes in the Gated Router.
 
 ---
-*Documented by Antigravity — 2026-04-12*
+*Updated to V10.0 Singularity by Antigravity — 2026-04-12*

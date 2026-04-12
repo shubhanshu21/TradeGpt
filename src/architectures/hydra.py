@@ -164,10 +164,10 @@ class MLAAttention(layers.Layer):
 @keras.saving.register_keras_serializable(package="KAT")
 class GatedMoE(layers.Layer):
     """Regime-Aware Multi-Expert Router (V4.2)"""
-    def __init__(self, d_model=128, n_experts=None, **kwargs):
+    def __init__(self, d_model=128, n_experts=96, **kwargs):
         super().__init__(**kwargs)
         self.d_model = d_model
-        self.n_experts = n_experts if n_experts else 16 # Grand Mastery: Higher Specialization
+        self.n_experts = n_experts # Singularity Tier: 96 Expert Ensemble
 
     def build(self, input_shape):
         # We use the raw sequence plus a 'Regime Context' for routing
@@ -237,7 +237,7 @@ class HydraBlock(layers.Layer):
         self.norm1 = RMSNorm()
         self.attn  = MLAAttention(d_model=self.d_model, n_heads=self.n_heads)
         self.norm2 = RMSNorm()
-        self.moe   = GatedMoE(d_model=self.d_model)
+        self.moe   = GatedMoE(d_model=self.d_model, n_experts=96)
     def call(self, x, training=False, context=None):
         x = x + self.attn(self.norm1(x))
         moe_out, consensus = self.moe(self.norm2(x), context=context)
@@ -401,12 +401,12 @@ class SovereignAccuracy(keras.metrics.Metric):
         p_true = y_true[:, :, 0]
         p_pred = y_pred[:, :, 0]
         
-        # Look at returns from entry (aligns with new loss)
+        # Returns from entry (Anchor point)
         p_entry  = p_true[:, 0:1]
         raw_true = p_true[:, 1:] - p_entry
         raw_pred = p_pred[:, 1:] - p_entry
         
-        # Compare signs
+        # Correct if signs match
         correct = ops.equal(ops.sign(raw_true), ops.sign(raw_pred))
         correct = ops.cast(correct, "float32")
         
@@ -414,55 +414,47 @@ class SovereignAccuracy(keras.metrics.Metric):
         self.count.assign_add(ops.cast(ops.size(correct), "float32"))
 
     def result(self):
-        return self.total / self.count
+        return self.total / (self.count + 1e-9)
 
     def reset_state(self):
         self.total.assign(0.0)
         self.count.assign(0.0)
 
 
-def build_kraken(n_features=23, total_steps=None, initial_step=0):
+def build_kraken(n_features=27, context_window=120, forecast_steps=15, total_steps=None, initial_step=0):
     """
-    Build & compile the Sovereign Kraken model.
-    total_steps: if provided, uses CosineDecay LR schedule.
-    initial_step: used to resume the schedule at the correct point.
+    KRAKEN V8.2 'UNIFIED' INITIALIZER
     """
-    custom_objs = {"TTMReflex": TTMReflex}
-    with keras.saving.custom_object_scope(custom_objs):
-        model = HydraV4(n_features=n_features)
-
-    # ── Cosine Annealing LR ───────────────────────────────────────────────────
-    initial_lr  = 1e-3 if IS_GPU else 5e-4
-    min_lr      = 1e-6
-
-    if total_steps:
-        lr_schedule = keras.optimizers.schedules.CosineDecay(
-            initial_learning_rate=initial_lr,
-            decay_steps=total_steps,
-            alpha=min_lr / initial_lr,
-        )
-        print(f"   📉 Cosine Annealing: Resuming at step {initial_step:,} / {total_steps:,}")
-    else:
-        lr_schedule = initial_lr
-
-    # ── Optimizer ─────────────────────────────────────────────────────────────
+    inputs  = layers.Input(shape=(context_window, n_features))
+    
+    # ── 1. Fractal Projection ────────────────────────────────────────────────
+    x = layers.Dense(128)(inputs)
+    x = RMSNorm()(x)
+    
+    # ── 2. Time-Mastery Core (Transformer + MoE) ─────────────────────────────
+    # Standard 12-block depth. Unpack consensus to avoid tuple-feedback error.
+    for _ in range(12):
+        x, _ = HydraBlock(d_model=128, n_heads=8)(x)
+    
+    # ── 3. Final Convergence ─────────────────────────────────────────────────
+    x = RMSNorm()(x)
+    x = layers.GlobalAveragePooling1D()(x) 
+    
+    # Output: (batch, forecast, 3) 
+    outputs_flat = layers.Dense(forecast_steps * 3)(x)
+    outputs = layers.Reshape((forecast_steps, 3))(outputs_flat)
+    
+    model = keras.Model(inputs, outputs, name="vanguard_v8")
+    
+    # ── Optimizer (Singularity Tier: 2e-4 Precision) ──────────────────────────
+    initial_lr  = 2e-4
     base_optimizer = keras.optimizers.AdamW(
-        lr_schedule, weight_decay=0.01, clipnorm=1.0
+        learning_rate=initial_lr, weight_decay=0.01, clipnorm=1.0
     )
     
-    try:
-        optimizer = keras.optimizers.GradientAccumulationOptimizer(
-            inner_optimizer=base_optimizer, accumulation_steps=4
-        )
-    except AttributeError:
-        optimizer = base_optimizer
-
-    # Set iterations to resume LR schedule
-    if total_steps and initial_step > 0:
-        optimizer.iterations.assign(initial_step)
-
+    # Resuming LR logic handled in train.py via manual scheduler assignments
     model.compile(
-        optimizer=optimizer,
+        optimizer=base_optimizer,
         loss=SovereignLoss(direction_weight=10.0, label_smooth=0.1),
         metrics=["mae", SovereignAccuracy()]
     )

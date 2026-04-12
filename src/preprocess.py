@@ -127,12 +127,14 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["sma_7"]  = close.rolling(7,  min_periods=1).mean()
     df["sma_25"] = close.rolling(25, min_periods=1).mean()
 
-    # Final Safety: Ensure all build_feature_cols exist for model dimension matching
+    # Final Safety: Ensure all build_feature_cols exist and are clean (V8.5 Hammer)
     for col in build_feature_cols():
         if col not in df.columns:
             df[col] = 0.0
-
-    return df.fillna(0)
+    
+    # Force clean numerical types and scrub Inf/NaN
+    df = df.replace([np.inf, -np.inf], np.nan)
+    return df.fillna(0).clip(-1e9, 1e9).astype("float32")
 
 
 class KATScaler:
@@ -145,8 +147,11 @@ class KATScaler:
         self.mean = data.mean(axis=0)
         self.std  = data.std(axis=0) + 1e-8
 
-    def transform_X(self, data: np.ndarray) -> np.ndarray:
-        return (data - self.mean) / self.std
+    def transform_X(self, data):
+        # Prevent division by zero if std is 0 (V8.4 Patch)
+        safe_std = np.copy(self.std)
+        safe_std[safe_std == 0] = 1.0
+        return (data - self.mean) / safe_std
 
     def save(self, path: str):
         with open(path, "wb") as f:
@@ -213,9 +218,10 @@ def build_dataset_streaming(df, context_window=60, forecast_steps=15,
     )
 
     tr_ds = (tf.data.Dataset.from_generator(make_gen(0,      tr_end), output_signature=sig)
-             .batch(batch_size).prefetch(2))
+             .shuffle(20000, reshuffle_each_iteration=True)
+             .batch(batch_size).prefetch(tf.data.AUTOTUNE))
     va_ds = (tf.data.Dataset.from_generator(make_gen(tr_end, va_end), output_signature=sig)
-             .batch(batch_size).prefetch(1))
+             .batch(batch_size).prefetch(tf.data.AUTOTUNE))
 
     steps_tr = max(1, tr_end // batch_size)
     steps_va = max(1, (va_end - tr_end) // batch_size)
