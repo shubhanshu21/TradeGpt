@@ -1,10 +1,3 @@
-"""
-HYDRA SOVEREIGN VISUALIZER (V2.0) 📊⚖️
-======================================
-Focus: Zero-Margin High-Resolution Performance Zoom.
-Outputs to: backtest_honesty.png
-"""
-
 import os, time, sys
 import numpy as np
 import tensorflow as tf
@@ -17,58 +10,53 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-# Architecture Imports
-from architectures.hydra import Hydra, HydraBlock, GatedMoE, MLAAttention, AttnRes, VSN, RMSNorm, DualScaleFusion, TemporalGating, SovereignLoss
-from preprocess import add_derived_features, build_feature_cols, KATScaler
-from fetch_data import fetch_live_kat_data
-
-def prepare_hydra_targets(X: np.ndarray, mtp_steps: int = 5) -> tuple:
-    if X is None or len(X.shape) < 3: return X, None
-    B, L, F = X.shape
-    T = L - mtp_steps
-    X_in = X[:, :T, :] 
-    y_blocks = []
-    for s in range(0, mtp_steps):
-        y_blocks.append(X[:, T+s:T+s+1, 3:4]) 
-    return X_in, np.concatenate(y_blocks, axis=-1)
+from architectures.hydra import build_kraken
+from preprocess import compute_indicators, build_feature_cols, KATScaler
 
 def visualize_performance(model_path: str, timeframe: str = "1m"):
-    print(f"🔬 INITIALIZING ZOOM VISUALIZER (V2.0) | Source: {model_path}")
-    custom_objs = {
-        "Hydra": Hydra, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
-        "MLAAttention": MLAAttention, "AttnRes": AttnRes, "VSN": VSN,
-        "RMSNorm": RMSNorm, "DualScaleFusion": DualScaleFusion, 
-        "TemporalGating": TemporalGating, "SovereignLoss": SovereignLoss
-    }
-    model = keras.models.load_model(model_path, custom_objects=custom_objs, compile=False)
+    print(f"🔬 INITIALIZING SINGULARITY VISUALIZER (V10.3) | Source: {model_path}")
     
-    # Fetch 600 points (Focusing on a 4-hour window)
-    df = fetch_live_kat_data(symbol="BTCUSD", n_candles=600, timeframe=timeframe)
-    if df is None: return
-    
-    df_feat = add_derived_features(df)
+    ctx = 120
+    forecast = 15
     features = build_feature_cols()
-    data = df_feat[features].values.astype("float32")
+    n_feat = len(features)
+    
+    # 1. Build and Load
+    print(f"🏗️  Re-building Kraken V10.3...")
+    model = build_kraken(n_features=n_feat, context_window=ctx, forecast_steps=forecast)
+    model.load_weights(model_path)
     
     scaler_p = ROOT / "models/scaler_base.pkl"
     scaler = KATScaler.load(scaler_p)
+    
+    # 2. Fetch Data
+    print(f"📡 Fetching 1,000 candles for visualization...")
+    from fetch_data import fetch_live_kat_data
+    df = fetch_live_kat_data(symbol="BTCUSD", n_candles=1000, timeframe=timeframe)
+    if df is None: return
+    
+    # 3. Preprocess
+    df_feat = compute_indicators(df)
+    data = df_feat[features].values.astype("float32")
     scaled_data = scaler.transform_X(data)
     
+    # 4. Generate Windows and Predict
     from numpy.lib.stride_tricks import sliding_window_view
-    Xs = sliding_window_view(scaled_data, window_shape=(360, len(features))).squeeze()
-    X_in, y_true = prepare_hydra_targets(Xs, mtp_steps=5)
+    Xs = sliding_window_view(scaled_data, window_shape=(ctx, n_feat)).squeeze()
     
-    y_pred = model.predict(X_in.astype("float32"), verbose=0, batch_size=32)
+    print(f"🔬 Generating {len(Xs)} predictions...")
+    out = model.predict(Xs, verbose=0, batch_size=64)
+    preds = out[0] # (N, 16, 3)
     
     # 5. Invert and Finalize
-    y_true_usd = scaler.inverse_y(y_true[:, 0, 0])
-    y_pred_usd = scaler.inverse_y(y_pred[:, 0, 0])
+    # Actual Price at T+5min
+    y_true_usd = df_feat["close"].values[ctx+5 : ctx+5+120]
     
-    # Filter to the LATEST 120 points only (2 hours)
-    y_true_usd = y_true_usd[-120:]
-    y_pred_usd = y_pred_usd[-120:]
+    # Prediction for T+5min
+    pred_returns = preds[:120, 5, 0] # Returns
+    y_pred_usd = scaler.inverse_y(pred_returns.reshape(-1, 1)).flatten()
     
-    print(f"📊 Crafting HIGH-RESOLUTION ZOOM ({len(y_true_usd)} points)...")
+    print(f"📊 Crafting HIGH-RESOLUTION ZOOM (Last 120 Minutes)...")
     plt.figure(figsize=(16, 8))
     plt.style.use('dark_background')
     
@@ -79,22 +67,17 @@ def visualize_performance(model_path: str, timeframe: str = "1m"):
     avg_err = np.mean(np.abs(y_true_usd - y_pred_usd))
     dir_acc = np.mean(np.sign(np.diff(y_true_usd)) == np.sign(np.diff(y_pred_usd))) * 100
     
-    plt.title(f'HYDRA ZOOM: ${avg_err:.2f} Avg Error | {dir_acc:.1f}% Trend Accuracy', fontsize=16, color='white')
+    plt.title(f'HYDRA V10.3 SINGULARITY: ${avg_err:.2f} Avg Error | {dir_acc:.1f}% Trend Accuracy', fontsize=16, color='white')
     plt.xlabel('Last 120 Minutes', color='#888888')
     plt.ylabel('BTC Price (USD)', color='#888888')
     plt.grid(True, linestyle=':', alpha=0.2)
     plt.legend(loc='upper right')
     
-    # Force Y-axis to be tight around the price
-    p_min = min(np.min(y_true_usd), np.min(y_pred_usd)) - 5
-    p_max = max(np.max(y_true_usd), np.max(y_pred_usd)) + 5
-    plt.ylim(p_min, p_max)
-    
     plot_path = ROOT / "backtest_honesty.png"
     plt.savefig(plot_path, dpi=180)
     plt.close()
     
-    print(f"✅ ZOOM VISUAL COMPLETED: {plot_path}")
+    print(f"✅ VISUAL COMPLETED: {plot_path}")
     print(f"📊 FINAL STATS (Visual): MAE ${avg_err:.2f} | DIR {dir_acc:.1f}%")
 
 if __name__ == "__main__":

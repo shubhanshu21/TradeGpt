@@ -51,9 +51,11 @@ custom_objs = {
     "HydraBlock": HydraBlock,
     "MLAAttention": MLAAttention,
     "GatedMoE": GatedMoE,
-    "SovereignAccuracy": SovereignAccuracy
+    "SovereignAccuracy": SovereignAccuracy,
+    "CertaintyMetric": CertaintyMetric
 }
-model = keras.models.load_model(str(MODEL_PATH), custom_objects=custom_objs)
+# V10.3: Enable unsafe deserialization for Lambda certainty aggregation
+model = keras.models.load_model(str(MODEL_PATH), custom_objects=custom_objs, safe_mode=False)
 print(f"   ✅ Loaded: {MODEL_PATH.name}")
 
 # Convert to concrete function for TFLite

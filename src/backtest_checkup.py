@@ -19,8 +19,7 @@ from datetime import datetime
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from architectures.hydra import (HydraV4, HydraBlock, GatedMoE,
-                                  MLAAttention, RMSNorm, TTMReflex, SovereignLoss)
+from architectures.hydra import build_kraken, SovereignLoss
 from preprocess import KATScaler, build_feature_cols, compute_indicators
 from fetch_data  import fetch_live_kat_data
 
@@ -48,12 +47,13 @@ if not SCALER_PATH.exists():
     print(f"❌ No scaler at {SCALER_PATH} — train first."); sys.exit(1)
 
 print(f"📦 Loading model: {MODEL_FILE}")
-custom_objs = {
-    "HydraV4": HydraV4, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
-    "MLAAttention": MLAAttention, "RMSNorm": RMSNorm,
-    "TTMReflex": TTMReflex, "SovereignLoss": SovereignLoss,
-}
-model  = keras.models.load_model(str(MODEL_PATH), custom_objects=custom_objs, compile=False)
+print(f"🏗️  Re-building Kraken V10.3...")
+features  = build_feature_cols()
+n_feats   = 27
+model = build_kraken(n_features=n_feats, context_window=CTX_WIN, forecast_steps=15)
+
+print(f"🧠 Loading Weights from: {MODEL_PATH.name}")
+model.load_weights(str(MODEL_PATH))
 scaler = KATScaler.load(str(SCALER_PATH))
 print(f"✅ Brain loaded")
 
@@ -69,7 +69,7 @@ df_feat   = compute_indicators(df)
 data      = df_feat[features].values.astype("float32")
 scaled    = scaler.transform_X(data)    # (N, 24)
 
-# ── Walk-forward backtest ─────────────────────────────────────────────────────
+# ── 5. Run backtest ───────────────────────────────────────────────────────────
 print(f"\n🔄 Running walk-forward backtest ({N_CANDLES:,} steps)...")
 
 results = []
@@ -77,26 +77,30 @@ close_col = features.index("close")
 
 for i in range(CTX_WIN, len(scaled) - 15):
     X_in      = scaled[i - CTX_WIN : i].reshape(1, CTX_WIN, n_feats).astype("float32")
-    pred      = model(X_in, training=False).numpy()[0]   # (15, 3)
-
-    mean_move = float(np.mean(pred[:, 0]))               # avg predicted close direction
-    mean_vol  = float(np.mean(pred[:, 1]))
-
-    # Dynamic threshold
-    dyn_thresh = THRESHOLD * (1.0 + max(0, mean_vol))
+    
+    # Dual Output: [0] = Prediction (1, 16, 3), [1] = Certainty (1, 120)
+    out       = model(X_in, training=False)
+    pred      = out[0].numpy()[0]   # Predictions
+    cert      = out[1].numpy()[0]   # Certainty mean
+    
+    mean_move = float(np.mean(pred[1:, 0])) # Future returns
+    mean_cert = float(np.mean(cert))        # Expert consensus score
+    
+    # V10.3 Strategy: Only trade when consensus > threshold
+    # Note: cert is scaled by 120, so 110+ means high agreement
+    if mean_cert < 110:
+        signal = "HOLD" # Experts are confused
+    elif mean_move > THRESHOLD:
+        signal = "LONG"
+    elif mean_move < -THRESHOLD:
+        signal = "SHORT"
+    else:
+        signal = "HOLD"
 
     # Actual future 1-min close vs current close (in scaled space)
     actual_now  = float(scaled[i,     close_col])
     actual_next = float(scaled[i + 1, close_col])
     actual_dir  = np.sign(actual_next - actual_now)
-
-    # Signal
-    if mean_move > dyn_thresh:
-        signal = "LONG"
-    elif mean_move < -dyn_thresh:
-        signal = "SHORT"
-    else:
-        signal = "HOLD"
 
     results.append({
         "i":          i,

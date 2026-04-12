@@ -102,11 +102,13 @@ log(f"   ✅ {steps_tr} train steps | {steps_va} val steps")
 # ── 6. Load model ─────────────────────────────────────────────────────────────
 log(f"🏗️  Loading {MODEL_FILE}...")
 custom_objs = {
-    "HydraV4": HydraV4, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
+    "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
     "MLAAttention": MLAAttention, "RMSNorm": RMSNorm,
     "TTMReflex": TTMReflex, "SovereignLoss": SovereignLoss,
+    "CertaintyMetric": CertaintyMetric, "SovereignAccuracy": SovereignAccuracy
 }
-model = keras.models.load_model(str(MODEL_PATH), custom_objects=custom_objs)
+# V10.3: Enable unsafe deserialization for Lambda certainty aggregation
+model = keras.models.load_model(str(MODEL_PATH), custom_objects=custom_objs, safe_mode=False)
 
 # ── 7. Freeze bottom blocks ───────────────────────────────────────────────────
 frozen = 0
@@ -123,9 +125,15 @@ log(f"🔒 Frozen {frozen} blocks → {trainable:,} / {total:,} params active")
 
 # ── 8. Recompile at low LR ────────────────────────────────────────────────────
 model.compile(
-    optimizer=keras.optimizers.AdamW(LR, weight_decay=0.001, clipnorm=0.5),
-    loss=SovereignLoss(direction_weight=5.0, label_smooth=0.1),
-    metrics=["mae"]
+    optimizer=keras.optimizers.AdamW(LR, weight_decay=0.01, clipnorm=0.5),
+    loss={
+        "prediction": SovereignLoss(direction_weight=10.0, label_smooth=0.1),
+        "certainty": lambda y_true, y_pred: 0.0 * tf.reduce_mean(y_pred) # Neutralize
+    },
+    metrics={
+        "prediction": [SovereignAccuracy(name="dir_acc"), "mae"],
+        "certainty": [CertaintyMetric(name="certainty")]
+    }
 )
 
 # ── 9. Fine-tune ──────────────────────────────────────────────────────────────
