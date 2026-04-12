@@ -39,8 +39,10 @@ models/
 logs/
 *.log
 plots/
-*.png
 tensorboard/
+
+# Allow professional media assets
+!media/
 
 # 🛠️ Development Tools
 .vscode/
