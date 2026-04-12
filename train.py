@@ -8,6 +8,7 @@ SOVEREIGN KRAKEN TRAINING ORCHESTRATOR (V4.7 — Stable Abyss Stream) ⚓🚀⚡
 """
 
 import os, argparse, gc, glob, time
+from datetime import datetime
 import numpy as np
 import tensorflow as tf
 import keras
@@ -51,33 +52,34 @@ class CheckpointPruner(keras.callbacks.Callback):
 
 class MissionControl(keras.callbacks.Callback):
     """
-    Early-Warning Diagnostic System.
-    Monitors directional accuracy and logs to dedicated file.
+    Early-Warning Diagnostic System (V10.2: Expert Insight).
     """
     def __init__(self, log_dir: Path):
         super().__init__()
         self.log_path = log_dir / "diagnostics.log"
-        # Ensure log exists and write header
         log_dir.mkdir(parents=True, exist_ok=True)
-        if not self.log_path.exists():
-            with open(self.log_path, "w") as f:
-                f.write("Time,Epoch,Val_Dir_Acc,Status\n")
+
+    def on_train_begin(self, logs=None):
+        with open(self.log_path, "w") as f:
+            f.write("Time,Epoch,Val_Dir_Acc,Certainty,Status\n")
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        val_acc = logs.get("val_dir_acc", 0)
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        # V10.3 Dual Output keys
+        v_acc = logs.get("val_prediction_dir_acc", 0.0)
+        cert  = logs.get("val_certainty_mean", 0.0)
+        ts    = datetime.now().strftime("%H:%M:%S")
         
-        status = "OK"
-        if val_acc < 0.501: status = "STAGNANT"
-        if val_acc > 0.53:  status = "ALPHA_EDGE"
-
-        # 1. Log to dedicated diagnostics file
+        status = "KEEPING" if v_acc < 0.53 else "🚀 SOVEREIGN EDGE DETECTED"
+        
         with open(self.log_path, "a") as f:
-            f.write(f"{timestamp},{epoch+1},{val_acc:.4f},{status}\n")
-
+            f.write(f"{ts},{epoch+1},{v_acc:.4f},{cert:.4f},{status}\n")
+        
+        if v_acc > 0.53:
+            print(f"\n[🚀 SOVEREIGN EDGE DETECTED] Win-Rate: {v_acc:.2%} | Certainty: {cert:.2%}")
+        
         # 2. Print high-visibility alerts
-        if epoch > 10 and val_acc < 0.501:
+        if epoch > 10 and v_acc < 0.501:
             print(f"\n[⚠️  MISSION CONTROL ALERT] Stagnation detected at Epoch {epoch+1}.")
             print(f"    Current Win-Rate: {val_acc:.4f} (Under Coin-Flip Threshold)")
         

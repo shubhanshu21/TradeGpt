@@ -387,6 +387,23 @@ class SovereignLoss(keras.losses.Loss):
         return cfg
 
 @keras.saving.register_keras_serializable(package="KAT")
+class CertaintyMetric(keras.metrics.Metric):
+    """V10.3: Stable Expert Agreement Tracker"""
+    def __init__(self, name="certainty", **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.cert_sum = self.add_weight(name="cert_sum", initializer="zeros")
+        self.count = self.add_weight(name="count", initializer="zeros")
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        self.cert_sum.assign_add(ops.sum(y_pred))
+        self.count.assign_add(ops.cast(ops.shape(y_pred)[0], "float32"))
+    def result(self):
+        return self.cert_sum / (self.count + 1e-6)
+    def reset_state(self):
+        self.cert_sum.assign(0.0)
+        self.count.assign(0.0)
+
+
+@keras.saving.register_keras_serializable(package="KAT")
 class SovereignAccuracy(keras.metrics.Metric):
     """
     Calculates Directional Win-Rate for Sovereign Kraken.
@@ -432,19 +449,25 @@ def build_kraken(n_features=27, context_window=120, forecast_steps=15, total_ste
     x = RMSNorm()(x)
     
     # ── 2. Time-Mastery Core (Transformer + MoE) ─────────────────────────────
-    # Standard 12-block depth. Unpack consensus to avoid tuple-feedback error.
+    # Standard 12-block depth. Collect consensus for 'Certainty' tracking.
+    all_consensus = []
     for _ in range(12):
-        x, _ = HydraBlock(d_model=128, n_heads=8)(x)
+        x, c = HydraBlock(d_model=128, n_heads=8)(x)
+        all_consensus.append(c)
+    
+    # Average consensus across all 12 layers
+    avg_consensus = layers.Lambda(lambda cs: ops.mean(ops.stack(cs, axis=1), axis=1), name="certainty")(all_consensus)
     
     # ── 3. Final Convergence ─────────────────────────────────────────────────
     x = RMSNorm()(x)
     x = layers.GlobalAveragePooling1D()(x) 
     
-    # Output: (batch, forecast, 3) 
-    outputs_flat = layers.Dense(forecast_steps * 3)(x)
-    outputs = layers.Reshape((forecast_steps, 3))(outputs_flat)
+    # Output: (batch, (forecast+1), 3) 
+    outputs_flat = layers.Dense((forecast_steps + 1) * 3)(x)
+    outputs = layers.Reshape((forecast_steps + 1, 3), name="prediction")(outputs_flat)
     
-    model = keras.Model(inputs, outputs, name="vanguard_v8")
+    # Dual Output: [Prediction, Certainty]
+    model = keras.Model(inputs, [outputs, avg_consensus], name="vanguard_v10")
     
     # ── Optimizer (Singularity Tier: 2e-4 Precision) ──────────────────────────
     initial_lr  = 2e-4
@@ -452,10 +475,11 @@ def build_kraken(n_features=27, context_window=120, forecast_steps=15, total_ste
         learning_rate=initial_lr, weight_decay=0.01, clipnorm=1.0
     )
     
-    # Resuming LR logic handled in train.py via manual scheduler assignments
     model.compile(
         optimizer=base_optimizer,
-        loss=SovereignLoss(direction_weight=10.0, label_smooth=0.1),
-        metrics=["mae", SovereignAccuracy()]
+        loss={"prediction": SovereignLoss(direction_weight=10.0, label_smooth=0.1), 
+              "certainty": None},
+        metrics={"prediction": ["mae", SovereignAccuracy()], 
+                 "certainty": CertaintyMetric()}
     )
     return model

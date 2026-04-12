@@ -199,22 +199,29 @@ def build_dataset_streaming(df, context_window=60, forecast_steps=15,
     t_vol   = 20   # 'volatility'
     t_volu  = 4    # 'volume'
 
-    # Step 3: Generator factories (zero-copy slicing)
+    # Step 3: Generator factories (V10.0 Entry-Anchored)
     def make_gen(start, end):
         def gen():
             for i in range(start, end):
-                x  = scaled[i : i + context_window]                            # (T, 23)
+                x  = scaled[i : i + context_window]                             # (T, 27)
                 end_i = i + context_window + forecast_steps
-                yc = scaled[i + context_window : end_i, t_close]               # (F,)
-                yv = scaled[i + context_window : end_i, t_vol]                 # (F,)
-                yu = scaled[i + context_window : end_i, t_volu]                # (F,)
-                y  = np.stack([yc, yv, yu], axis=-1)                           # (F, 3)
-                yield x, y
+                # Include i+context-1 as the 'entry price' anchor
+                yc = scaled[i + context_window - 1 : end_i, t_close]            # (F+1,)
+                yv = scaled[i + context_window - 1 : end_i, t_vol]              # (F+1,)
+                yu = scaled[i + context_window - 1 : end_i, t_volu]             # (F+1,)
+                y  = np.stack([yc, yv, yu], axis=-1)                            # (F+1, 3)
+                
+                # Dual Target for certainty tracking (dummy)
+                c_dummy = np.zeros((1,), dtype=np.float32)
+                yield x, (y, c_dummy)
         return gen
 
     sig = (
         tf.TensorSpec(shape=(context_window, len(features)), dtype=tf.float32),
-        tf.TensorSpec(shape=(forecast_steps, 3),             dtype=tf.float32),
+        (
+            tf.TensorSpec(shape=(forecast_steps + 1, 3),        dtype=tf.float32),
+            tf.TensorSpec(shape=(1,),                         dtype=tf.float32),
+        )
     )
 
     tr_ds = (tf.data.Dataset.from_generator(make_gen(0,      tr_end), output_signature=sig)

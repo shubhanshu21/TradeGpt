@@ -41,7 +41,18 @@ print("="*50)
 
 # ── 1. Load model ─────────────────────────────────────────────────────────────
 print("\n📦 Loading model...")
-custom_objs = {"SovereignLoss": SovereignLoss, "TTMReflex": TTMReflex}
+from architectures.hydra import (SovereignLoss, TTMReflex, RMSNorm, 
+                                 HydraBlock, MLAAttention, GatedMoE, SovereignAccuracy)
+
+custom_objs = {
+    "SovereignLoss": SovereignLoss, 
+    "TTMReflex": TTMReflex, 
+    "RMSNorm": RMSNorm,
+    "HydraBlock": HydraBlock,
+    "MLAAttention": MLAAttention,
+    "GatedMoE": GatedMoE,
+    "SovereignAccuracy": SovereignAccuracy
+}
 model = keras.models.load_model(str(MODEL_PATH), custom_objects=custom_objs)
 print(f"   ✅ Loaded: {MODEL_PATH.name}")
 
