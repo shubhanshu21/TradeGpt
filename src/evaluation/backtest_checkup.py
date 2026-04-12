@@ -16,12 +16,12 @@ import keras
 from pathlib import Path
 from datetime import datetime
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from architectures.hydra import build_kraken, SovereignLoss
-from preprocess import KATScaler, build_feature_cols, compute_indicators
-from fetch_data  import fetch_live_kat_data
+from core.hydra import build_kraken, SovereignLoss
+from data.preprocess import KATScaler, build_feature_cols, compute_indicators
+from exchange.fetch_data  import fetch_live_kat_data
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 MODEL_FILE   = "hydra_best.keras"

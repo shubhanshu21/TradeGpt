@@ -7,11 +7,11 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 # Paths
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from architectures.hydra import build_kraken
-from preprocess import compute_indicators, build_feature_cols, KATScaler
+from core.hydra import build_kraken
+from data.preprocess import compute_indicators, build_feature_cols, KATScaler
 
 def visualize_performance(model_path: str, timeframe: str = "1m"):
     print(f"🔬 INITIALIZING SINGULARITY VISUALIZER (V10.3) | Source: {model_path}")

@@ -19,10 +19,11 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 import keras
-from architectures.hydra import (HydraV4, HydraBlock, GatedMoE,
-                                  MLAAttention, RMSNorm, TTMReflex, SovereignLoss)
-from preprocess import build_dataset_streaming, KATScaler
-from fetch_data  import fetch_live_kat_data
+from core.hydra import (build_kraken, HydraBlock, GatedMoE,
+                                  MLAAttention, RMSNorm, TTMReflex, 
+                                  SovereignLoss, CertaintyMetric, SovereignAccuracy)
+from data.preprocess import build_dataset_streaming, KATScaler
+from exchange.fetch_data  import fetch_live_kat_data
 
 # ── DEFAULTS ──────────────────────────────────────────────────────────────────
 DAYS         = 2        # Days of recent data to fine-tune on (~2,880 candles)

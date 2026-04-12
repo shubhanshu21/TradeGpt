@@ -9,9 +9,9 @@ from pathlib import Path
 ROOT = Path("/var/www/html/ML/kat")
 sys.path.append(str(ROOT / "src"))
 
-from architectures.hydra import HydraV4, HydraBlock, GatedMoE, MLAAttention, RMSNorm, SovereignLoss
-from preprocess import build_dataset, KATScaler, build_feature_cols
-from fetch_data import fetch_live_kat_data
+from core.hydra import build_kraken, SovereignLoss, CertaintyMetric, SovereignAccuracy
+from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
+from exchange.fetch_data import fetch_live_kat_data
 
 def benchmark_mastery():
     print("🎬 Starting Sovereign Mastery Benchmark (Directional Accuracy Test)...")

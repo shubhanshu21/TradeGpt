@@ -18,8 +18,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import tensorflow as tf
 import keras
-from preprocess import build_dataset_streaming, build_feature_cols
-from architectures.hydra import SovereignLoss, TTMReflex
+from data.preprocess import build_dataset_streaming, build_feature_cols
+from core.hydra import SovereignLoss, TTMReflex, build_kraken, CertaintyMetric, SovereignAccuracy
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 p = argparse.ArgumentParser(description="Sovereign Kraken INT8 Quantizer")
@@ -41,8 +41,7 @@ print("="*50)
 
 # ── 1. Load model ─────────────────────────────────────────────────────────────
 print("\n📦 Loading model...")
-from architectures.hydra import (SovereignLoss, TTMReflex, RMSNorm, 
-                                 HydraBlock, MLAAttention, GatedMoE, SovereignAccuracy)
+from core.hydra import HydraBlock, MLAAttention, GatedMoE, RMSNorm
 
 custom_objs = {
     "SovereignLoss": SovereignLoss, 

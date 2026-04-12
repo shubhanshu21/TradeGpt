@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from delta_client import DeltaClient
+from exchange.delta_client import DeltaClient
 import time
 
 def fetch_live_kat_data(symbol: str = "BTCUSDT", n_candles: int = 1000, timeframe: str = "1m") -> pd.DataFrame:

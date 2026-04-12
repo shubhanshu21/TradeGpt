@@ -22,9 +22,9 @@ LOG_DIR  = ROOT / "logs"
 
 import sys
 sys.path.insert(0, str(ROOT / "src"))
-from architectures.hydra import build_kraken, IS_GPU, init_kraken_hardware
-from preprocess          import build_dataset_streaming
-from fetch_data          import fetch_live_kat_data
+from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetric, SovereignAccuracy, SovereignLoss
+from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
+from exchange.fetch_data import fetch_live_kat_data
 import glob as _glob
 
 
@@ -60,8 +60,9 @@ class MissionControl(keras.callbacks.Callback):
         log_dir.mkdir(parents=True, exist_ok=True)
 
     def on_train_begin(self, logs=None):
-        with open(self.log_path, "w") as f:
-            f.write("Time,Epoch,Val_Dir_Acc,Certainty,Status\n")
+        if not self.log_path.exists() or self.log_path.stat().st_size == 0:
+            with open(self.log_path, "w") as f:
+                f.write("Time,Epoch,Val_Dir_Acc,Certainty,Status\n")
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
