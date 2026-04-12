@@ -65,9 +65,9 @@ class MissionControl(keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        # V10.3 Dual Output keys
+        # V10.3 Dual Output keys (Synchronized with Keras 3 naming)
         v_acc = logs.get("val_prediction_dir_acc", 0.0)
-        cert  = logs.get("val_certainty_mean", 0.0)
+        cert  = logs.get("val_certainty_certainty", 0.0) / 120.0 # Scale to 0-1
         ts    = datetime.now().strftime("%H:%M:%S")
         
         status = "KEEPING" if v_acc < 0.53 else "🚀 SOVEREIGN EDGE DETECTED"
@@ -81,10 +81,10 @@ class MissionControl(keras.callbacks.Callback):
         # 2. Print high-visibility alerts
         if epoch > 10 and v_acc < 0.501:
             print(f"\n[⚠️  MISSION CONTROL ALERT] Stagnation detected at Epoch {epoch+1}.")
-            print(f"    Current Win-Rate: {val_acc:.4f} (Under Coin-Flip Threshold)")
+            print(f"    Current Win-Rate: {v_acc:.4f} (Under Coin-Flip Threshold)")
         
-        if val_acc > 0.53:
-            print(f"\n[🚀 SOVEREIGN EDGE DETECTED] Win-Rate: {val_acc:.4f}. Entering Profit Zone!")
+        if v_acc > 0.53:
+            print(f"\n[🚀 SOVEREIGN EDGE DETECTED] Win-Rate: {v_acc:.4f}. Entering Profit Zone!")
 
 
 def train_kraken(args):
@@ -192,11 +192,23 @@ def train_kraken(args):
     # ── 6. Ignite ─────────────────────────────────────────────────────────────
     print(f"\n🚀 IGNITION: {EPOCHS}-Epoch Mission | Batch {BATCH_S} | CTX {CTX_WIN} candles (2h) | ~14GB RAM Target")
     
+    # V10.3: Robust Epoch Detection
     current_epoch = 0
-    if args.resume and saved:
-        try:
-            current_epoch = int(os.path.basename(saved[-1]).split("_E")[-1].split(".")[0])
-        except: pass
+    if args.resume:
+        diag_p = LOG_DIR / "diagnostics.log"
+        if diag_p.exists():
+            try:
+                # Read last line to get epoch
+                with open(diag_p, "r") as f:
+                    lines = f.readlines()
+                    if len(lines) > 1:
+                        last_line = lines[-1].strip()
+                        current_epoch = int(last_line.split(",")[1]) # Time,Epoch,Val...
+            except: 
+                # Fallback to model count
+                current_epoch = len(saved)
+    
+    # Standard Keras model.fit resumption
 
     model.fit(
         tr_ds,
