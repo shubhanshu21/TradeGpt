@@ -28,87 +28,109 @@ def build_feature_cols():
         'sma_7', 'sma_25', 'sma_99', 'rsi', 'macd', 'macd_signal', 'macd_hist',
         'bollinger_upper', 'bollinger_lower', 'atr', 'obv', 'volatility', 'adx', 'cci',
         'bb_width',                                # ← NEW: Bollinger Band width (squeeze detector)
+        'vwap_dist',                               # ← NEW: Scalpers Mean-Reversion Anchor
+        'stoch_rsi',                               # ← NEW: Fast Momentum Trigger
+        'cvd',                                     # ← NEW: Cumulative Volume Delta Proxy
     ]
 
 
+import pandas_ta as ta
+
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute all 23 technical indicator columns in-place."""
+    """Compute all technical indicators using high-speed pandas_ta engines."""
     df = df.copy()
-    close = df["close"].astype(float)
-    high  = df["high"].astype(float)
-    low   = df["low"].astype(float)
-    vol   = df["volume"].astype(float)
-
-    # Fill any missing raw cols
-    for col in ['quote_volume', 'taker_buy_volume', 'taker_buy_quote_volume']:
+    
+    # ── V6.3 Iron-Clad: Force Base Columns ──────────────────────────────────
+    required_base = ['open', 'high', 'low', 'close', 'volume', 'quote_volume', 
+                     'taker_buy_volume', 'taker_buy_quote_volume']
+    for col in required_base:
         if col not in df.columns:
-            df[col] = 0.0
+            df[col] = 0.0 if col != 'close' else df.get('close', 0.0)
+    
+    # ── Index Enforcement ────────────────────────────────────────────────────
+    if 'timestamp' in df.columns:
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+    elif not isinstance(df.index, pd.DatetimeIndex):
+        df.index = pd.to_datetime(np.arange(len(df)), unit='m')
 
-    # Moving averages
-    df["sma_7"]  = close.rolling(7,  min_periods=1).mean()
-    df["sma_25"] = close.rolling(25, min_periods=1).mean()
+    # ── Standard Momentum (Pandas-TA) ────────────────────────────────────────
+    df.ta.rsi(length=14, append=True)
+    df.ta.macd(fast=12, slow=26, signal=9, append=True)
+    df.ta.adx(length=14, append=True)
+    df.ta.cci(length=20, append=True)
+    df.ta.obv(append=True)
+    
+    # ── Fuzzy Renaming Logic ───────────────
+    # We find columns by searching for partial name matches
+    def find_col(options):
+        return next((c for c in df.columns if c.split('_')[0].upper() in [o.upper() for o in options]), None)
+
+    mapping = {
+        'rsi':           ['RSI'],
+        'macd':          ['MACD'],
+        'macd_signal':   ['MACDs', 'MACDS'],
+        'macd_hist':     ['MACDh', 'MACDH'],
+        'adx':           ['ADX'],
+        'cci':           ['CCI'],
+        'obv':           ['OBV']
+    }
+    for target, options in mapping.items():
+        found = find_col(options)
+        if found: df[target] = df[found]
+        else:     df[target] = 0.0
+
+    # ── Robust Manual Calculations ───────────────────────────────────────────
+    close = df["close"]
+    # Bollinger Bands
+    df["sma_20"] = close.rolling(20, min_periods=1).mean()
+    std20 = close.rolling(20, min_periods=1).std().fillna(1e-9)
+    df["bollinger_upper"] = df["sma_20"] + 2 * std20
+    df["bollinger_lower"] = df["sma_20"] - 2 * std20
+    df["bb_width"] = (df["bollinger_upper"] - df["bollinger_lower"]) / (df["sma_20"] + 1e-9)
+
+    # ATR
+    prev_c = close.shift(1).fillna(close)
+    tr = pd.concat([df["high"] - df["low"],
+                    (df["high"] - prev_c).abs(),
+                    (df["low"]  - prev_c).abs()], axis=1).max(axis=1)
+    df["atr"] = tr.rolling(14, min_periods=1).mean()
+
+    # ── Scalping Core (Pandas-TA) ────────────────────────────────────────────
+    try:
+        df.ta.vwap(append=True)
+        vcol = next((c for c in df.columns if "VWAP" in c), None)
+        df["vwap_dist"] = (close - df[vcol]) / (df[vcol] + 1e-9) if vcol else 0.0
+    except Exception:
+        df["vwap_dist"] = 0.0
+
+    df.ta.stochrsi(length=14, rsi_length=14, k=3, d=3, append=True)
+    sr_col = next((c for c in df.columns if "STOCHRSI" in c.upper() and "K" in c.upper()), None)
+    df["stoch_rsi"] = df[sr_col] if sr_col else 0.5
+
+    # ── Custom Institutional Proxies ─────────────────────────────────────────
+    # Funding Rate Proxy
     df["sma_99"] = close.rolling(99, min_periods=1).mean()
-
-    # ── Funding Rate Proxy (Enhancement #4) ──────────────────────────────────
-    # Measures the premium/discount of spot vs fair value (sma_99).
-    # In perpetual futures, positive = market paying longs → bearish pressure.
     premium = (close - df["sma_99"]) / (df["sma_99"] + 1e-9)
-    # Z-score to keep in [-3, 3] range, then clip
-    p_mean  = premium.rolling(288, min_periods=1).mean()   # 5-hour z-score window
+    p_mean  = premium.rolling(288, min_periods=1).mean()
     p_std   = premium.rolling(288, min_periods=1).std().fillna(1e-9)
     df["funding_rate_proxy"] = ((premium - p_mean) / (p_std + 1e-9)).clip(-3, 3)
 
-    # RSI (14)
-    delta = close.diff()
-    gain  = delta.clip(lower=0).rolling(14, min_periods=1).mean()
-    loss  = (-delta.clip(upper=0)).rolling(14, min_periods=1).mean()
-    df["rsi"] = 100 - (100 / (1 + gain / (loss + 1e-9)))
-
-    # MACD
-    ema12 = close.ewm(span=12, adjust=False).mean()
-    ema26 = close.ewm(span=26, adjust=False).mean()
-    df["macd"]        = ema12 - ema26
-    df["macd_signal"] = df["macd"].ewm(span=9, adjust=False).mean()
-    df["macd_hist"]   = df["macd"] - df["macd_signal"]
-
-    # Bollinger Bands (20, 2σ)
-    sma20 = close.rolling(20, min_periods=1).mean()
-    std20 = close.rolling(20, min_periods=1).std().fillna(0)
-    df["bollinger_upper"] = sma20 + 2 * std20
-    df["bollinger_lower"] = sma20 - 2 * std20
-
-    # ── BB Width — Squeeze Detector (Enhancement #4b) ─────────────────────────
-    # Narrow bands = coiling energy → breakout imminent. Wide bands = trending.
-    df["bb_width"] = (df["bollinger_upper"] - df["bollinger_lower"]) / (sma20 + 1e-9)
-
-    # ATR (14)
-    prev_c = close.shift(1).fillna(close)
-    tr = pd.concat([high - low,
-                    (high - prev_c).abs(),
-                    (low  - prev_c).abs()], axis=1).max(axis=1)
-    df["atr"] = tr.rolling(14, min_periods=1).mean()
-
-    # OBV
-    df["obv"] = (vol * np.sign(close.diff().fillna(0))).cumsum()
+    # CVD Proxy
+    diff = close.diff().fillna(0)
+    df["cvd"] = (df["volume"] * np.sign(diff)).rolling(60, min_periods=1).sum()
 
     # Volatility
     df["volatility"] = close.pct_change().rolling(20, min_periods=1).std().fillna(0)
+    
+    # ── SMA Set ──────────────────────────────────────────────────────────────
+    df["sma_7"]  = close.rolling(7,  min_periods=1).mean()
+    df["sma_25"] = close.rolling(25, min_periods=1).mean()
 
-    # ADX (14)
-    plus_dm  = (high.diff()).clip(lower=0)
-    minus_dm = (-low.diff()).clip(lower=0)
-    plus_dm  = plus_dm.where(plus_dm  > minus_dm, 0)
-    minus_dm = minus_dm.where(minus_dm > plus_dm,  0)
-    atr14    = tr.rolling(14, min_periods=1).mean()
-    pdi = 100 * (plus_dm.rolling(14,  min_periods=1).mean() / (atr14 + 1e-9))
-    mdi = 100 * (minus_dm.rolling(14, min_periods=1).mean() / (atr14 + 1e-9))
-    dx  = 100 * ((pdi - mdi).abs() / (pdi + mdi + 1e-9))
-    df["adx"] = dx.rolling(14, min_periods=1).mean()
-
-    # CCI (20)
-    tp = (high + low + close) / 3
-    df["cci"] = (tp - tp.rolling(20, min_periods=1).mean()) / \
-                (0.015 * tp.rolling(20, min_periods=1).std().fillna(1e-9))
+    # Final Safety: Ensure all build_feature_cols exist for model dimension matching
+    for col in build_feature_cols():
+        if col not in df.columns:
+            df[col] = 0.0
 
     return df.fillna(0)
 

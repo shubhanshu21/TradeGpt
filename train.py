@@ -7,7 +7,7 @@ SOVEREIGN KRAKEN TRAINING ORCHESTRATOR (V4.7 — Stable Abyss Stream) ⚓🚀⚡
 - Batch: 256 — saturates gradient activation buffers to ~15GB
 """
 
-import os, argparse, gc, glob
+import os, argparse, gc, glob, time
 import numpy as np
 import tensorflow as tf
 import keras
@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT     = Path(__file__).parent
 DATA_DIR = ROOT / "data"
 CKPT_DIR = ROOT / "models"
+LOG_DIR  = ROOT / "logs"
 
 import sys
 sys.path.insert(0, str(ROOT / "src"))
@@ -47,6 +48,41 @@ class CheckpointPruner(keras.callbacks.Callback):
                 os.remove(f)
             except OSError:
                 pass
+
+class MissionControl(keras.callbacks.Callback):
+    """
+    Early-Warning Diagnostic System.
+    Monitors directional accuracy and logs to dedicated file.
+    """
+    def __init__(self, log_dir: Path):
+        super().__init__()
+        self.log_path = log_dir / "diagnostics.log"
+        # Ensure log exists and write header
+        log_dir.mkdir(parents=True, exist_ok=True)
+        if not self.log_path.exists():
+            with open(self.log_path, "w") as f:
+                f.write("Time,Epoch,Val_Dir_Acc,Status\n")
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        val_acc = logs.get("val_dir_acc", 0)
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        status = "OK"
+        if val_acc < 0.501: status = "STAGNANT"
+        if val_acc > 0.53:  status = "ALPHA_EDGE"
+
+        # 1. Log to dedicated diagnostics file
+        with open(self.log_path, "a") as f:
+            f.write(f"{timestamp},{epoch+1},{val_acc:.4f},{status}\n")
+
+        # 2. Print high-visibility alerts
+        if epoch > 10 and val_acc < 0.501:
+            print(f"\n[⚠️  MISSION CONTROL ALERT] Stagnation detected at Epoch {epoch+1}.")
+            print(f"    Current Win-Rate: {val_acc:.4f} (Under Coin-Flip Threshold)")
+        
+        if val_acc > 0.53:
+            print(f"\n[🚀 SOVEREIGN EDGE DETECTED] Win-Rate: {val_acc:.4f}. Entering Profit Zone!")
 
 
 def train_kraken(args):
@@ -90,22 +126,33 @@ def train_kraken(args):
 
     print(f"   ✅ {steps_tr} train steps/epoch | {steps_va} val steps")
 
-    # ── 3. Build Model (with CosineDecay LR) ──────────────────────────────────
-    # Pass total training steps so CosineDecay knows how long to anneal
-    total_steps = steps_tr * EPOCHS
-    model = build_kraken(n_features=n_feat, total_steps=total_steps)
+    # ── 3. Build Model (with Persistent LR) ───────────────────────────────────
+    total_steps  = steps_tr * EPOCHS
+    initial_step = 0
+    
+    # Calculate current step if resuming
+    CKPT_BEST = CKPT_DIR / "hydra_best.keras"
+    saved     = sorted(glob.glob(str(CKPT_DIR / "hydra_checkpoint_E*.keras")))
+    
+    if args.resume and saved:
+        try:
+            # Parse epoch from filename: hydra_checkpoint_E087.keras -> 87
+            last_epoch = int(os.path.basename(saved[-1]).split("_E")[-1].split(".")[0])
+            initial_step = last_epoch * steps_tr
+            print(f"♻️  Resuming Mission at Epoch {last_epoch} (Step {initial_step:,})")
+        except: pass
+
+    model = build_kraken(n_features=n_feat, total_steps=total_steps, initial_step=initial_step)
     dummy = np.zeros((1, CTX_WIN, n_feat), dtype="float32")
     _     = model(dummy)
     model.summary()
 
-    # ── 4. Auto-resume ────────────────────────────────────────────────────────
-    CKPT_BEST = CKPT_DIR / "hydra_best.keras"
-    saved     = sorted(glob.glob(str(CKPT_DIR / "hydra_checkpoint_E*.keras")))
+    # ── 4. Load Weights ───────────────────────────────────────────────────────
     if args.resume and saved:
-        print(f"♻️  Resuming from {os.path.basename(saved[-1])}")
+        print(f"📦 Loading weights from {os.path.basename(saved[-1])}")
         model.load_weights(saved[-1])
     elif args.resume and CKPT_BEST.exists():
-        print(f"♻️  Resuming from hydra_best.keras")
+        print(f"📦 Loading weights from hydra_best.keras")
         model.load_weights(str(CKPT_BEST))
 
     # ── 5. Callbacks ──────────────────────────────────────────────────────────
@@ -122,14 +169,23 @@ def train_kraken(args):
         # CosineDecay is baked into the optimizer — no ReduceLROnPlateau needed.
         # Pruner auto-deletes old checkpoints, keeping last 3 + best.
         CheckpointPruner(ckpt_dir=CKPT_DIR, keep_n=3),
+        MissionControl(log_dir=LOG_DIR),  # Dynamic path
     ]
 
     # ── 6. Ignite ─────────────────────────────────────────────────────────────
     print(f"\n🚀 IGNITION: {EPOCHS}-Epoch Mission | Batch {BATCH_S} | CTX {CTX_WIN} candles (2h) | ~14GB RAM Target")
+    
+    current_epoch = 0
+    if args.resume and saved:
+        try:
+            current_epoch = int(os.path.basename(saved[-1]).split("_E")[-1].split(".")[0])
+        except: pass
+
     model.fit(
         tr_ds,
         validation_data=va_ds,
         epochs=EPOCHS,
+        initial_epoch=current_epoch,      # FIX: show correct epoch in logs
         steps_per_epoch=steps_tr,
         validation_steps=steps_va,
         callbacks=callbacks,
