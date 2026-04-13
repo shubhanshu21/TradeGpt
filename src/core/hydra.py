@@ -14,7 +14,62 @@ import numpy as np
 import tensorflow as tf
 import keras
 from keras import layers, ops
-from typing import Optional
+from typing import Optional, Dict, Any
+
+@keras.saving.register_keras_serializable(package="KAT")
+class SwiGLU(layers.Layer):
+    """V10.6: SwiGLU Activation (Gemma/Llama DNA). 
+    Combines Swish + Gating for superior non-linear signal filtering.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.d_model = input_shape[-1]
+        self.w1 = layers.Dense(self.d_model)
+        self.w2 = layers.Dense(self.d_model)
+
+    def call(self, x):
+        return self.w1(x) * ops.sigmoid(self.w1(x)) * self.w2(x)
+
+    def get_config(self):
+        return super().get_config()
+
+@keras.saving.register_keras_serializable(package="KAT")
+class Distiller(keras.Model):
+    """V10.6: Knowledge Distiller (Teacher-Student Pipeline).
+    Trains a student model to mimic the expert consensus of a heavyweight teacher.
+    """
+    def __init__(self, student, teacher):
+        super().__init__()
+        self.student = student
+        self.teacher = teacher
+
+    def compile(self, optimizer, metrics, prediction_loss_fn, distillation_loss_fn, alpha=0.1, temperature=3):
+        super().compile(optimizer=optimizer, metrics=metrics)
+        self.prediction_loss_fn = prediction_loss_fn
+        self.distillation_loss_fn = distillation_loss_fn
+        self.alpha = alpha
+        self.temperature = temperature
+
+    def compute_loss(self, x=None, y=None, y_pred=None, sample_weight=None, allow_no_y=False):
+        # Teacher inference (No gradients)
+        teacher_preds = self.teacher(x, training=False)
+        student_preds = self.student(x, training=True)
+        
+        # 1. Standard task loss
+        student_loss = self.prediction_loss_fn(y["prediction"], student_preds[0])
+        
+        # 2. Distillation loss (Soft labels)
+        distill_loss = self.distillation_loss_fn(
+            ops.softmax(teacher_preds[0] / self.temperature, axis=-1),
+            ops.softmax(student_preds[0] / self.temperature, axis=-1)
+        )
+
+        return self.alpha * student_loss + (1 - self.alpha) * distill_loss
+
+    def call(self, x):
+        return self.student(x)
 
 # Lazy Hardware Initializer
 IS_GPU = len(tf.config.list_physical_devices('GPU')) > 0
@@ -166,6 +221,7 @@ class GatedMoE(layers.Layer):
             shape=(self.n_experts, self.d_model, self.d_model),
             initializer="glorot_uniform", name="expert_weights"
         )
+        self.swiglu = SwiGLU()
 
     def call(self, x, context=None):
         route_input = context if context is not None else x
@@ -183,6 +239,8 @@ class GatedMoE(layers.Layer):
         mask_expanded = ops.expand_dims(mask, axis=-1) 
         
         weighted_avg = ops.sum(expert_outputs * mask_expanded, axis=2)
+        weighted_avg = self.swiglu(weighted_avg) # Apply SwiGLU to expert consensus
+        
         diff_sq = ops.square(expert_outputs - ops.expand_dims(weighted_avg, axis=2))
         weighted_var = ops.sum(diff_sq * mask_expanded, axis=2)
         consensus = ops.exp(-ops.mean(weighted_var, axis=-1))
@@ -203,10 +261,12 @@ class HydraBlock(layers.Layer):
         self.norm1 = RMSNorm()
         self.attn  = LightningAttention(d_model=self.d_model, n_heads=self.n_heads)
         self.tq    = TurboQuant(d_model=self.d_model) # NEW: TurboQuant Sentinel
+        self.swiglu = SwiGLU() # NEW: SwiGLU Gating
         self.norm2 = RMSNorm()
         self.moe   = GatedMoE(d_model=self.d_model, n_experts=256)
     def call(self, x, training=False, context=None):
-        x = x + self.tq(self.attn(self.norm1(x))) # Applied TurboQuant
+        attn_out = self.tq(self.attn(self.norm1(x)))
+        x = x + self.swiglu(attn_out) # Applied SwiGLU Gating
         moe_out, consensus = self.moe(self.norm2(x), context=context)
         x = x + moe_out
         return x, consensus
