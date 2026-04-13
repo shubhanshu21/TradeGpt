@@ -25,7 +25,6 @@ def benchmark_mastery():
         return
 
     scaler = KATScaler.load(str(SCALER_PATH))
-    from architectures.hydra import build_kraken
     
     # ── 1. Re-Build Kraken Archive (Functional Architecture) ─────────────────
     ctx = 120 
@@ -49,7 +48,6 @@ def benchmark_mastery():
 
     # 3. Build Evaluation Dataset
     ctx = 120 
-    from preprocess import build_dataset_streaming
     ds_info = build_dataset_streaming(df, context_window=ctx, forecast_steps=15, scaler=scaler)
     
     # Extract data from generator

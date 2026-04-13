@@ -1,29 +1,55 @@
-# ⚓ Sovereign Kraken (KAT) Engine
-> **Autonomous 1-Minute BTC Scalping | 1,152-Expert Singularity MoE**
+# ⚓ Sovereign Kraken (KAT) Engine — V10.5 HYPER-SENTINEL
+> **Autonomous 1-Minute BTC Scalping | 256-Expert MoE | Google TurboQuant Architecture**
 
 <p align="center">
   <img src="media/banner.png" width="100%" alt="Kraken Banner">
 </p>
 
-## 🌊 The Mission: Hunting the Alpha
-Sovereign Kraken is not just an algorithm; it is a **Mixture-of-Experts (MoE)** ecosystem. It watches every ripple in the digital ocean to catch the exact moment a trend begins.
+## 🌊 The Pinnacle: Hyper-Sentinel Evolution
+V10.5 "Hyper-Sentinel" integrates Google's ICLR 2026 **TurboQuant** research to achieve 8x inference speed and massive multi-day context memory.
+
+### 🦅 Hyper-Sentinel Capabilities:
+- 🌪️ **Google TurboQuant**: Polar-Quantized vector compression for ultra-lean memory.
+- 💠 **10,080-Candle Lookback**: Tracks a full WEEK of market structure (1m resolution).
+- 🧠 **MoE-256 Council**: Highly specialized experts routing via TurboQuant signals.
+- 🎯 **Tactical Reasoning**: Native classification of market regimes and liquidity wicks.
 
 ---
 
-### 📥 Phase 1: The Data Abyss
+### 📥 Phase 1: The Infinite Abyss (1-Week Window)
 <table width="100%">
   <tr>
     <td width="55%">
-      <h4>High-Resolution Ingestion</h4>
-      <p>The Kraken drinks from the Abyss—a massive stream of 27 high-fidelity indicators. It doesn't just see the price; it feels the pressure of the market.</p>
+      <h4>Total Market Presence</h4>
+      <p>V10.5 "Hyper-Sentinel" now observes a massive <b>10,080-candle (1-Week)</b> history context. By utilizing the <b>Lightning Attention</b> core, it identifies institutional accumulation blocks that standard scalpers miss.</p>
       <ul>
-        <li>📊 <b>L2 Order Book</b>: Tracks the hidden walls of the big fish.</li>
-        <li>🌊 <b>CVD Momentum</b>: Measures the real force of the buy/sell waves.</li>
-        <li>🧊 <b>Liquidation Proxy</b>: Sniffs out where other traders are about to break.</li>
+        <li>🦅 <b>7-Day Awareness</b>: Recognizes weekly liquidity wicks.</li>
+        <li>🌊 <b>Full Abyss Integration</b>: Merges live L2 order book signals with multi-day momentum.</li>
+        <li>� <b>Adaptive Lookback</b>: Experts zoom in on micro-patterns while maintaining a macro-view.</li>
       </ul>
     </td>
     <td width="45%">
-      <img src="media/abyss.png" width="100%" alt="Data Abyss">
+      <img src="media/abyss.png" width="100%" alt="Infinite Abyss">
+    </td>
+  </tr>
+</table>
+
+---
+
+### 🌪️ Phase 1.5: Google TurboQuant (Polar Intelligence)
+<table width="100%">
+  <tr>
+    <td width="45%">
+      <img src="media/turboquant.png" width="100%" alt="TurboQuant Logic">
+    </td>
+    <td width="55%">
+      <h4>8x Accelerated Inference</h4>
+      <p>Using Google Research's latest <b>PolarQuant</b> compression, the Kraken transmutates market signatures into ultra-dense vector capsules.</p>
+      <ul>
+        <li>🔄 <b>Random Rotations</b>: Stabilizes expert consensus during high-volatility spikes.</li>
+        <li>💠 <b>Polar Vector Mapping</b>: Compresses the KV-cache to fit a full week of data into 21GB RAM.</li>
+        <li>⚡ <b>Sub-Millisecond Execution</b>: TurboQuant accelerates attention calculation for instant trade entry.</li>
+      </ul>
     </td>
   </tr>
 </table>

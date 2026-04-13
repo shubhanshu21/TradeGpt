@@ -40,7 +40,13 @@ def run_flash():
         v_15  = scaled[i+15, close_idx]
         dir_actual = np.sign(v_15 - v_now)
         
-        results.append(dir_pred == dir_actual)
+        hit = (dir_pred == dir_actual)
+        results.append(hit)
+        
+        # Print progress every 20 steps
+        if len(results) % 20 == 0:
+            moving_acc = np.mean(results) * 100
+            print(f"   Step {len(results):3d}: Moving Acc: {moving_acc:5.2f}% | Last Pred: {dir_pred:2.1f} Act: {dir_actual:2.1f}")
     
     acc = np.mean(results) * 100
     print(f"\n======================================")
