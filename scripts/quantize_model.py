@@ -19,7 +19,8 @@ sys.path.insert(0, str(ROOT / "src"))
 import tensorflow as tf
 import keras
 from data.preprocess import build_dataset_streaming, build_feature_cols
-from core.hydra import SovereignLoss, TTMReflex, build_kraken, CertaintyMetric, SovereignAccuracy
+from core.hydra import (SovereignLoss, build_kraken, CertaintyMetric, SovereignAccuracy,
+                        HydraBlock, GatedMoE, RMSNorm, LightningAttention, TurboQuant, SwiGLU)
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 p = argparse.ArgumentParser(description="Sovereign Kraken INT8 Quantizer")
@@ -41,17 +42,17 @@ print("="*50)
 
 # ── 1. Load model ─────────────────────────────────────────────────────────────
 print("\n📦 Loading model...")
-from core.hydra import HydraBlock, MLAAttention, GatedMoE, RMSNorm
 
 custom_objs = {
-    "SovereignLoss": SovereignLoss, 
-    "TTMReflex": TTMReflex, 
-    "RMSNorm": RMSNorm,
-    "HydraBlock": HydraBlock,
-    "MLAAttention": MLAAttention,
-    "GatedMoE": GatedMoE,
-    "SovereignAccuracy": SovereignAccuracy,
-    "CertaintyMetric": CertaintyMetric
+    "SovereignLoss":      SovereignLoss,
+    "RMSNorm":            RMSNorm,
+    "HydraBlock":         HydraBlock,
+    "LightningAttention": LightningAttention,
+    "TurboQuant":         TurboQuant,
+    "SwiGLU":             SwiGLU,
+    "GatedMoE":           GatedMoE,
+    "SovereignAccuracy":  SovereignAccuracy,
+    "CertaintyMetric":    CertaintyMetric
 }
 # V10.3: Enable unsafe deserialization for Lambda certainty aggregation
 model = keras.models.load_model(str(MODEL_PATH), custom_objects=custom_objs, safe_mode=False)
@@ -75,8 +76,7 @@ if not data_files:
 df_cal = pd.read_parquet(data_files[0]).tail(5000)
 print(f"\n📊 Calibration data: {len(df_cal):,} tail candles from {Path(data_files[0]).name}")
 
-# Build calibration dataset
-from preprocess import build_dataset_streaming
+# Build calibration dataset — use tr_ds for representative data
 ds_info  = build_dataset_streaming(df_cal, context_window=args.ctx,
                                     forecast_steps=15, batch_size=1)
 cal_ds   = ds_info["tr_ds"].take(args.n_cal)

@@ -1,10 +1,10 @@
 """
-SOVEREIGN KRAKEN TRAINING ORCHESTRATOR (V4.7 — Stable Abyss Stream) ⚓🚀⚡
+SOVEREIGN KRAKEN TRAINING ORCHESTRATOR (V10.6 — Predator) ⚓🚀⚡
 ===========================================================================
-- Model: HYDRA V4.5.9 (384-wide, 12-block, 16-expert MoE)
+- Model: HYDRA V10.6 (128-wide, 8-block, 256-Expert MoE + SwiGLU + TurboQuant)
 - RAM Strategy: TF Generator streaming — NO materialization, no OOM
-- Context: 60 candles (1 hour) — proven stable on this hardware
-- Batch: 256 — saturates gradient activation buffers to ~15GB
+- Context: 120 candles (2 hours) — proven stable on this hardware
+- Batch: 128 — calibrated for 21GB RAM host
 """
 
 import os, argparse, gc, glob, time
@@ -68,7 +68,7 @@ class MissionControl(keras.callbacks.Callback):
         logs = logs or {}
         # V10.3 Dual Output keys (Synchronized with Keras 3 naming)
         v_acc = logs.get("val_prediction_dir_acc", 0.0)
-        cert  = logs.get("val_certainty_certainty", 0.0) / 120.0 # Scale to 0-1
+        cert  = logs.get("val_certainty_certainty", 0.0)  # Already averaged by CertaintyMetric
         ts    = datetime.now().strftime("%H:%M:%S")
         
         status = "KEEPING" if v_acc < 0.53 else "🚀 SOVEREIGN EDGE DETECTED"
@@ -78,14 +78,12 @@ class MissionControl(keras.callbacks.Callback):
         
         if v_acc > 0.53:
             print(f"\n[🚀 SOVEREIGN EDGE DETECTED] Win-Rate: {v_acc:.2%} | Certainty: {cert:.2%}")
+            print(f"   Score: {v_acc:.4f} — Entering Profit Zone!")
         
-        # 2. Print high-visibility alerts
+        # High-visibility stagnation alert
         if epoch > 10 and v_acc < 0.501:
             print(f"\n[⚠️  MISSION CONTROL ALERT] Stagnation detected at Epoch {epoch+1}.")
             print(f"    Current Win-Rate: {v_acc:.4f} (Under Coin-Flip Threshold)")
-        
-        if v_acc > 0.53:
-            print(f"\n[🚀 SOVEREIGN EDGE DETECTED] Win-Rate: {v_acc:.4f}. Entering Profit Zone!")
 
 
 def train_kraken(args):

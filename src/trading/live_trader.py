@@ -1,8 +1,8 @@
 """
-SOVEREIGN ALPHA PILOT (V5.0) ⚓🚀
-==========================================
+SOVEREIGN ALPHA PILOT (V10.6 — PREDATOR) ⚓🚀
+==============================================
 - Timeframe: 1 minute
-- Brain: HYDRA V5.0 (128-wide, 12-block, 16-expert MoE)
+- Brain: HYDRA V10.6 (SwiGLU + 256-Expert MoE + TurboQuant)
 - Targets: MTP-15 (Price, Volatility, Volume Flow)
 - Exchange: Delta Exchange (Market-Order + SL/TP Brackets)
 """
@@ -14,14 +14,16 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).parent
+# ROOT must point to the project root (/kat/), not the file's own directory
+ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from architectures.hydra import (HydraV4, HydraBlock, GatedMoE,
-                                  MLAAttention, RMSNorm, TTMReflex, SovereignLoss)
-from delta_client import DeltaClient
-from fetch_data  import fetch_live_kat_data
-from preprocess  import KATScaler, build_feature_cols, compute_indicators
+from core.hydra import (HydraBlock, GatedMoE, LightningAttention,
+                        RMSNorm, TurboQuant, SwiGLU,
+                        SovereignLoss, CertaintyMetric, SovereignAccuracy)
+from exchange.delta_client import DeltaClient
+from exchange.fetch_data   import fetch_live_kat_data
+from data.preprocess       import KATScaler, build_feature_cols, compute_indicators
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 SYMBOL     = "BTCUSD"
@@ -58,12 +60,18 @@ def load_model_and_scaler():
 
     log(f"🏗️  Loading brain: {MODEL_FILE}...")
     custom_objs = {
-        "HydraV4": HydraV4, "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
-        "MLAAttention": MLAAttention, "RMSNorm": RMSNorm,
-        "TTMReflex": TTMReflex, "SovereignLoss": SovereignLoss,
+        "HydraBlock":        HydraBlock,
+        "GatedMoE":          GatedMoE,
+        "LightningAttention": LightningAttention,
+        "RMSNorm":           RMSNorm,
+        "TurboQuant":        TurboQuant,
+        "SwiGLU":            SwiGLU,
+        "SovereignLoss":     SovereignLoss,
+        "CertaintyMetric":   CertaintyMetric,
+        "SovereignAccuracy": SovereignAccuracy,
     }
     model = keras.models.load_model(
-        str(model_p), custom_objects=custom_objs, compile=False
+        str(model_p), custom_objects=custom_objs, compile=False, safe_mode=False
     )
     log("✅ Brain sync complete.", C_GREEN)
     return model, scaler
@@ -87,8 +95,10 @@ def get_neural_signal(model, scaler):
     scaled = scaler.transform_X(data)
     X_in   = scaled[-CTX_WIN:].reshape(1, CTX_WIN, n_feats).astype("float32")
 
-    # Inference — output shape: (1, 15, 3) → [price, volatility, volume]
-    pred     = model(X_in, training=False).numpy()[0]   # (15, 3)
+    # V10.6 model returns [prediction, consensus, reasoning] — index [0] for price head
+    outputs  = model(X_in, training=False)
+    pred     = outputs[0].numpy()[0]    # (forecast+1, 3) — drop entry-anchor (index 0)
+    pred     = pred[1:]                 # (15, 3) — only future steps
     p_curve  = pred[:, 0]   # 15 price steps
     v_curve  = pred[:, 1]   # 15 volatility steps
     q_curve  = pred[:, 2]   # 15 volume flow steps

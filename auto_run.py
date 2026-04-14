@@ -76,13 +76,21 @@ from exchange.fetch_data     import fetch_live_kat_data
     elif "titan" in args.model: from core.legacy import titan
     elif "causal" in args.model: from core.legacy import causal
     elif "hydra"  in args.model: 
-        from core.hydra import build_kraken, HydraBlock, GatedMoE, MLAAttention, RMSNorm, SovereignLoss, TTMReflex, CertaintyMetric, SovereignAccuracy
+        from core.hydra import (build_kraken, HydraBlock, GatedMoE, LightningAttention,
+                                RMSNorm, TurboQuant, SwiGLU,
+                                SovereignLoss, CertaintyMetric, SovereignAccuracy)
         custom_objs = {
-            "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
-            "MLAAttention": MLAAttention, "RMSNorm": RMSNorm, "SovereignLoss": SovereignLoss,
-            "TTMReflex": TTMReflex, "CertaintyMetric": CertaintyMetric, "SovereignAccuracy": SovereignAccuracy
+            "HydraBlock":         HydraBlock,
+            "GatedMoE":           GatedMoE,
+            "LightningAttention": LightningAttention,
+            "RMSNorm":            RMSNorm,
+            "TurboQuant":         TurboQuant,
+            "SwiGLU":             SwiGLU,
+            "SovereignLoss":      SovereignLoss,
+            "CertaintyMetric":    CertaintyMetric,
+            "SovereignAccuracy":  SovereignAccuracy,
         }
-        # V10.3: Enable unsafe deserialization for Lambda certainty aggregation
+        # V10.6: Enable unsafe deserialization for Lambda certainty aggregation
         model = keras.models.load_model(str(model_file), custom_objects=custom_objs, compile=False, safe_mode=False)
 
     if "hydra" not in args.model:
@@ -291,7 +299,7 @@ def main():
         live_trader.SIZE       = args.size
         live_trader.THRESHOLD  = args.thresh
         live_trader.TIMEFRAME  = args.timeframe
-        live_trader.run_trader()
+        live_trader.run_pilot()
     elif args.mode == "serve":   mode_serve(args)
     elif args.mode == "demo":    mode_demo(args)
 

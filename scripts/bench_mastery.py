@@ -31,7 +31,7 @@ def benchmark_mastery():
     forecast = 15
     n_feat = 27 # V10.3 Singularity Standard
     
-    print(f"🏗️  Re-building Kraken V10.3 (Functional Architecture)...")
+    print(f"🏗️  Re-building Kraken V10.6 (Predator Architecture)...")
     model = build_kraken(n_features=n_feat, context_window=ctx, forecast_steps=forecast)
     
     print(f"🧠 Loading Weights from: {MODEL_PATH.name}")
@@ -50,10 +50,10 @@ def benchmark_mastery():
     ctx = 120 
     ds_info = build_dataset_streaming(df, context_window=ctx, forecast_steps=15, scaler=scaler)
     
-    # Extract data from generator
+    # Extract data from generator — use va_ds for honest OUT-OF-SAMPLE evaluation
     X_test, Y_test = [], []
-    for x, y_all in ds_info["tr_ds"].unbatch().take(1000):
-        y_price, _ = y_all
+    for x, y_all in ds_info["va_ds"].unbatch().take(1000):
+        y_price = y_all["prediction"]
         X_test.append(x.numpy())
         Y_test.append(y_price.numpy())
     

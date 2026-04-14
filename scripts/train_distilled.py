@@ -32,7 +32,7 @@ def run_distillation(args):
                                        scaler_save_path=str(CKPT_DIR / "scaler_base.pkl"))
     
     # ── 2. Build Models ───────────────────────────────────────────────────────
-    print("\n🏗️  Building Teacher (Heavyweight 512-Expert)...")
+    print("\n🏗️  Building Teacher (256-Expert Hydra — load hydra_teacher.keras weights for full effect)...")
     # A deeper/wider teacher for distillation
     teacher = build_kraken(n_features=ds_info["n_features"], context_window=120)
     # (Optional: Load pre-trained teacher weights here if you have them)

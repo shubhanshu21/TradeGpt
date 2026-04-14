@@ -1,11 +1,13 @@
 """
-HYDRA SOVEREIGN KRAKEN (V10.4) - PREDATOR EDITION ⚓🚀⚡
+HYDRA SOVEREIGN KRAKEN (V10.6) - PREDATOR EDITION ⚓🚀⚡
 ==========================================================
-- Architecture: Sparse MoE + Lightning Attention + RoPE + Tactical Reasoning
-- Features: 
+- Architecture: Sparse MoE + Lightning Attention + RoPE + SwiGLU + Tactical Reasoning
+- Features:
     1. Lightning Attention: Linear scaling for massive context windows (up to 2,000 candles).
-    2. DeepSeek MoE: 256 specialized experts with entropy-balancing.
-    3. Tactical Reasoning: Native output head for market regime classification.
+    2. GatedMoE: 256 specialized experts with entropy-balancing.
+    3. SwiGLU Activation: Superior non-linear signal filtering (Gemma/Llama DNA).
+    4. Tactical Reasoning: Native output head for market regime classification.
+    5. Knowledge Distillation: Teacher-Student Distiller class for HFT deployment.
 - Hardware: Auto-Detect (CPU / NVIDIA A40)
 """
 
@@ -30,7 +32,9 @@ class SwiGLU(layers.Layer):
         self.w2 = layers.Dense(self.d_model)
 
     def call(self, x):
-        return self.w1(x) * ops.sigmoid(self.w1(x)) * self.w2(x)
+        # Cache w1(x) to avoid computing it twice (correct SwiGLU: SiLU(gate) * value)
+        gate = self.w1(x)
+        return gate * ops.sigmoid(gate) * self.w2(x)
 
     def get_config(self):
         return super().get_config()

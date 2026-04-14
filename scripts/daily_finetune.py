@@ -12,6 +12,7 @@ Or via cron (midnight UTC daily):
 
 import sys, shutil
 import numpy as np
+import tensorflow as tf
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -20,7 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import keras
 from core.hydra import (build_kraken, HydraBlock, GatedMoE,
-                                  MLAAttention, RMSNorm, TTMReflex, 
+                                  LightningAttention, RMSNorm, TurboQuant, SwiGLU,
                                   SovereignLoss, CertaintyMetric, SovereignAccuracy)
 from data.preprocess import build_dataset_streaming, KATScaler
 from exchange.fetch_data  import fetch_live_kat_data
@@ -104,8 +105,9 @@ log(f"   ✅ {steps_tr} train steps | {steps_va} val steps")
 log(f"🏗️  Loading {MODEL_FILE}...")
 custom_objs = {
     "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
-    "MLAAttention": MLAAttention, "RMSNorm": RMSNorm,
-    "TTMReflex": TTMReflex, "SovereignLoss": SovereignLoss,
+    "LightningAttention": LightningAttention, "RMSNorm": RMSNorm,
+    "TurboQuant": TurboQuant, "SwiGLU": SwiGLU,
+    "SovereignLoss": SovereignLoss,
     "CertaintyMetric": CertaintyMetric, "SovereignAccuracy": SovereignAccuracy
 }
 # V10.3: Enable unsafe deserialization for Lambda certainty aggregation
@@ -128,12 +130,13 @@ log(f"🔒 Frozen {frozen} blocks → {trainable:,} / {total:,} params active")
 model.compile(
     optimizer=keras.optimizers.AdamW(LR, weight_decay=0.01, clipnorm=0.5),
     loss={
-        "prediction": SovereignLoss(direction_weight=10.0, label_smooth=0.1),
-        "certainty": lambda y_true, y_pred: 0.0 * tf.reduce_mean(y_pred) # Neutralize
+        "prediction": SovereignLoss(direction_weight=10.0),
+        "certainty":  None,   # Certainty head is not trained during fine-tune
+        "reasoning":  "sparse_categorical_crossentropy"
     },
     metrics={
         "prediction": [SovereignAccuracy(name="dir_acc"), "mae"],
-        "certainty": [CertaintyMetric(name="certainty")]
+        "certainty":  [CertaintyMetric(name="certainty")]
     }
 )
 
