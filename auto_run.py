@@ -64,19 +64,38 @@ def mode_predict(args):
     import numpy as np
     import tensorflow as tf
     import keras
-from data.preprocess import build_dataset_streaming as build_dataset, KATScaler
-from exchange.fetch_data     import fetch_live_kat_data
+    from data.preprocess import build_dataset_streaming as build_dataset, KATScaler, build_feature_cols
+    from exchange.fetch_data     import fetch_live_kat_data
 
-# ... (lines 70-100 preserved)
+    model_file = SAVED_MODELS / "hydra_best.keras" if "hydra" in args.model else SAVED_MODELS / f"{args.model}_best.keras"
+    scaler_p   = SAVED_MODELS / "scaler_base.pkl"
 
-    print(f"Loading {model_file}...")
+    if not model_file.exists():
+        print(f"❌ Model file not found: {model_file}")
+        return
+    if not scaler_p.exists():
+        print(f"❌ Scaler not found: {scaler_p}")
+        return
 
-    # Ensure custom classes are registered by importing their modules
-    if   "alpha" in args.model: from core.legacy import alpha
-    elif "titan" in args.model: from core.legacy import titan
-    elif "causal" in args.model: from core.legacy import causal
-    elif "hydra"  in args.model: 
-        from core.hydra import (build_kraken, HydraBlock, GatedMoE, LightningAttention,
+    scaler = KATScaler.load(str(scaler_p))
+    print(f"📡 Fetching live data for {args.symbol} {args.model} prediction...")
+    df = fetch_live_kat_data(symbol=args.symbol, n_candles=300, timeframe=args.timeframe)
+    if df is None or len(df) < 120:
+        print("❌ Not enough data for prediction.")
+        return
+
+    from data.preprocess import compute_indicators
+    df = compute_indicators(df)
+    features = build_feature_cols()
+    data = df[features].values.astype("float32")
+    scaled = scaler.transform_X(data)
+    seed = scaled[-120:] # CTX_WIN = 120
+
+    print(f"Loading {model_file.name}...")
+
+    custom_objs = {}
+    if "hydra" in args.model:
+        from core.hydra import (HydraBlock, GatedMoE, LightningAttention,
                                 RMSNorm, TurboQuant, SwiGLU,
                                 SovereignLoss, CertaintyMetric, SovereignAccuracy)
         custom_objs = {
@@ -90,21 +109,23 @@ from exchange.fetch_data     import fetch_live_kat_data
             "CertaintyMetric":    CertaintyMetric,
             "SovereignAccuracy":  SovereignAccuracy,
         }
-        # V10.6: Enable unsafe deserialization for Lambda certainty aggregation
-        model = keras.models.load_model(str(model_file), custom_objects=custom_objs, compile=False, safe_mode=False)
-
-    if "hydra" not in args.model:
-        model = keras.models.load_model(str(model_file))
+    if "hydra" in args.model:
+        from core.hydra import build_kraken
+        model = build_kraken()
+        model.load_weights(str(model_file))
+        print(f"✅ Weights loaded from {model_file.name}")
 
     # ── Predict ──────────────────────────────────────────────────────────────
     if "hydra" in args.model:
         inp = seed[np.newaxis]
-        pred = model.predict(inp, verbose=0)[0] # Shape (15, 3)
+        outputs = model(inp, training=False)
+        pred = outputs[0].numpy()[0] # Shape (16, 3) 
+        pred = pred[1:]             # Future 15 steps
         p_curve = pred[:, 0]
         v_curve = pred[:, 1]
         q_curve = pred[:, 2]
         
-        last_known = scaler.inverse_y(seed[-1:, 3:4].ravel())[0]
+        last_known = (seed[-1, 3] * scaler.std[3]) + scaler.mean[3]
         print(f"\nLast known close: ${last_known:,.2f}")
         print(f"Predicted MTP-15 trajectory ({len(p_curve)} steps):")
         
@@ -112,18 +133,31 @@ from exchange.fetch_data     import fetch_live_kat_data
             import matplotlib.pyplot as plt
             plot_dir = LOG_DIR / "plots"
             plot_dir.mkdir(parents=True, exist_ok=True)
-            hist_close = scaler.inverse_y(seed[-30:, 3:4].ravel())
+            # Manual inverse X[3] for last 30 historical close prices
+            hist_close = (seed[-30:, 3] * scaler.std[3]) + scaler.mean[3]
+            
+            # The model predicts SCALED prices (Z-scores)
+            # To fix the 'Lean Drop' gap during early training, we calculate 
+            # predicted moves relative to the model's own anchor (step 0).
+            pred_all = outputs[0].numpy()[0] # (16, 3)
+            p_anchor = pred_all[0, 0]
+            p_future = pred_all[1:, 0]
+            
+            # Unscaled deltas (USD) = (Future_Scaled - Anchor_Scaled) * Std
+            usd_deltas = (p_future - p_anchor) * scaler.std[3]
+            
+            # Forecast visual starts at last known and applies USD deltas
+            forecast_visual = [last_known]
+            for d in usd_deltas:
+                forecast_visual.append(forecast_visual[-1] + d)
+            
+            forecast_x = range(len(hist_close) - 1, len(hist_close) + len(usd_deltas))
             
             plt.figure(figsize=(10, 6))
             plt.plot(range(len(hist_close)), hist_close, label="History", color="blue", marker="o", markersize=3)
+            plt.plot(forecast_x, forecast_visual, label="Forecast (Hydra V10.6)", color="green", linestyle="--", marker="x", markersize=4)
             
-            forecast_x = range(len(hist_close) - 1, len(hist_close) + len(p_curve))
-            forecast_price = [hist_close[-1]]
-            for delta in p_curve:
-                forecast_price.append(forecast_price[-1] + float(delta))
-                
-            plt.plot(forecast_x, forecast_price, label="Forecast (Hydra V4.2)", color="green", linestyle="--", marker="x", markersize=4)
-            plt.title(f"KAT Prediction: {args.model} MTP-15")
+            plt.title(f"KAT Prediction: {args.model} {args.symbol} MTP-15")
             plt.xlabel("Minutes")
             plt.ylabel("Price ($)")
             plt.legend()
@@ -132,6 +166,11 @@ from exchange.fetch_data     import fetch_live_kat_data
             plt.savefig(plot_file)
             print(f"📈 Visual plot saved to: {plot_file}")
             plt.close()
+            
+            # Update the CLI print-out to show real dollar deltas
+            p_curve = usd_deltas 
+            v_curve = pred_all[1:, 1]
+            q_curve = pred_all[1:, 2]
         except Exception as e:
             print(f"! Could not generate visual plot: {e}")
 
@@ -270,6 +309,7 @@ def main():
     p_pred.add_argument("--steps", type=int, default=60,
         help="Forecast steps (CAUSAL/HYDRA only)")
     p_pred.add_argument("--timeframe", default="1m", help="Timeframe (1m, 5m, 15m, 1h, etc.)")
+    p_pred.add_argument("--symbol",  default="BTCUSD")
     p_pred.add_argument("--live", action="store_true", default=True,
         help="Fetch live data for prediction (default: True)")
 
