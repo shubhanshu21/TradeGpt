@@ -97,11 +97,11 @@ def mode_predict(args):
     if "hydra" in args.model:
         from core.hydra import (HydraBlock, GatedMoE, LightningAttention,
                                 RMSNorm, TurboQuant, SwiGLU,
-                                SovereignLoss, CertaintyMetric, SovereignAccuracy)
+                                SovereignLoss, CertaintyMetric, SovereignAccuracy, MLALayer)
         custom_objs = {
             "HydraBlock":         HydraBlock,
             "GatedMoE":           GatedMoE,
-            "LightningAttention": LightningAttention,
+            "MLALayer":           MLALayer,
             "RMSNorm":            RMSNorm,
             "TurboQuant":         TurboQuant,
             "SwiGLU":             SwiGLU,
@@ -116,38 +116,47 @@ def mode_predict(args):
         print(f"✅ Weights loaded from {model_file.name}")
 
     # ── Predict ──────────────────────────────────────────────────────────────
+    # ── Phase 2: Dynamic Local Scaling (DLS) ─────────────────────────────────
     if "hydra" in args.model:
-        inp = seed[np.newaxis]
-        outputs = model(inp, training=False)
-        pred = outputs[0].numpy()[0] # Shape (16, 3) 
-        pred = pred[1:]             # Future 15 steps
-        p_curve = pred[:, 0]
-        v_curve = pred[:, 1]
-        q_curve = pred[:, 2]
+        # 1. Calculate local stats for the context window
+        local_mean = seed.mean(axis=0)
+        local_std  = seed.std(axis=0) + 1e-8
         
-        last_known = (seed[-1, 3] * scaler.std[3]) + scaler.mean[3]
-        print(f"\nLast known close: ${last_known:,.2f}")
-        print(f"Predicted MTP-15 trajectory ({len(p_curve)} steps):")
+        # 2. Scale locally
+        seed_scaled = (seed - local_mean) / local_std
+        inp = seed_scaled[np.newaxis]
+        
+        # 3. Predict
+        outputs = model(inp, training=False)
+        pred_all = outputs[0].numpy()[0] # (16, 3)
+        
+        # 4. Extract Trajectory
+        p_anchor = pred_all[0, 0]
+        p_future = pred_all[1:, 0]
+        
+        # Unscaled USD Price for reporting
+        last_known = (seed[-1, 3]) # Seed was already raw before local scaling? 
+        # Wait, auto_run data is raw until we scale it.
+        # So seed is raw data.
+        last_known_usd = seed[-1, 3]
+        
+        # Unscaled deltas (USD) = (p_future - p_anchor) * local_std[close]
+        t_close = 3 
+        usd_deltas = (p_future - p_anchor) * local_std[t_close]
+        
+        print(f"\nLast known close: ${last_known_usd:,.2f}")
+        print(f"Predicted MTP-15 trajectory ({len(p_future)} steps):")
         
         try:
             import matplotlib.pyplot as plt
             plot_dir = LOG_DIR / "plots"
             plot_dir.mkdir(parents=True, exist_ok=True)
             # Manual inverse X[3] for last 30 historical close prices
-            hist_close = (seed[-30:, 3] * scaler.std[3]) + scaler.mean[3]
-            
-            # The model predicts SCALED prices (Z-scores)
-            # To fix the 'Lean Drop' gap during early training, we calculate 
-            # predicted moves relative to the model's own anchor (step 0).
-            pred_all = outputs[0].numpy()[0] # (16, 3)
-            p_anchor = pred_all[0, 0]
-            p_future = pred_all[1:, 0]
-            
-            # Unscaled deltas (USD) = (Future_Scaled - Anchor_Scaled) * Std
-            usd_deltas = (p_future - p_anchor) * scaler.std[3]
+            # Manual inverse prices for plotting
+            hist_close = seed[-30:, 3]
             
             # Forecast visual starts at last known and applies USD deltas
-            forecast_visual = [last_known]
+            forecast_visual = [last_known_usd]
             for d in usd_deltas:
                 forecast_visual.append(forecast_visual[-1] + d)
             
@@ -155,7 +164,7 @@ def mode_predict(args):
             
             plt.figure(figsize=(10, 6))
             plt.plot(range(len(hist_close)), hist_close, label="History", color="blue", marker="o", markersize=3)
-            plt.plot(forecast_x, forecast_visual, label="Forecast (Hydra V10.6)", color="green", linestyle="--", marker="x", markersize=4)
+            plt.plot(forecast_x, forecast_visual, label="Forecast (Deep-Predator V10.6)", color="green", linestyle="--", marker="x", markersize=4)
             
             plt.title(f"KAT Prediction: {args.model} {args.symbol} MTP-15")
             plt.xlabel("Minutes")
