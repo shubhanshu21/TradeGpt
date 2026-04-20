@@ -73,11 +73,10 @@ def mode_predict(args):
     if not model_file.exists():
         print(f"❌ Model file not found: {model_file}")
         return
-    if not scaler_p.exists():
-        print(f"❌ Scaler not found: {scaler_p}")
-        return
-
-    scaler = KATScaler.load(str(scaler_p))
+    if scaler_p.exists():
+        scaler = KATScaler.load(str(scaler_p))
+    else:
+        scaler = None # Phase 2 uses DLS
     print(f"📡 Fetching live data for {args.symbol} {args.model} prediction...")
     df = fetch_live_kat_data(symbol=args.symbol, n_candles=300, timeframe=args.timeframe)
     if df is None or len(df) < 120:
@@ -88,14 +87,17 @@ def mode_predict(args):
     df = compute_indicators(df)
     features = build_feature_cols()
     data = df[features].values.astype("float32")
-    scaled = scaler.transform_X(data)
-    seed = scaled[-120:] # CTX_WIN = 120
+    
+    # Phase 2: Dynamic Local Scaling (DLS)
+    # We use the raw data directly. The scale happens inside the model logic.
+    seed = data[-120:] 
+    # CTX_WIN = 120
 
     print(f"Loading {model_file.name}...")
 
     custom_objs = {}
     if "hydra" in args.model:
-        from core.hydra import (HydraBlock, GatedMoE, LightningAttention,
+        from core.hydra import (HydraBlock, GatedMoE, 
                                 RMSNorm, TurboQuant, SwiGLU,
                                 SovereignLoss, CertaintyMetric, SovereignAccuracy, MLALayer)
         custom_objs = {
@@ -111,7 +113,7 @@ def mode_predict(args):
         }
     if "hydra" in args.model:
         from core.hydra import build_kraken
-        model = build_kraken()
+        model = build_kraken(n_features=30)
         model.load_weights(str(model_file))
         print(f"✅ Weights loaded from {model_file.name}")
 

@@ -9,27 +9,27 @@ from pathlib import Path
 ROOT = Path("/var/www/html/ML/kat")
 sys.path.append(str(ROOT / "src"))
 
-from core.hydra import build_kraken, SovereignLoss, CertaintyMetric, SovereignAccuracy
-from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
+from core.hydra import build_kraken, SovereignLoss, CertaintyMetric, SovereignAccuracy, MLALayer
+from data.preprocess import build_dataset_streaming, build_feature_cols
 from exchange.fetch_data import fetch_live_kat_data
 
 def benchmark_mastery():
     print("🎬 Starting Sovereign Mastery Benchmark (Directional Accuracy Test)...")
     
     # 1. Load Model & Scaler
+    # 1. Load Model
     MODEL_PATH = ROOT / "models/hydra_best.keras"
-    SCALER_PATH = ROOT / "models/scaler_base.pkl"
     
-    if not MODEL_PATH.exists() or not SCALER_PATH.exists():
-        print("❌ Error: Model or Scaler not found in /models/")
+    if not MODEL_PATH.exists():
+        print("❌ Error: Model not found in /models/")
         return
 
-    scaler = KATScaler.load(str(SCALER_PATH))
+    # scaler = KATScaler.load(str(SCALER_PATH)) (Phase 2 uses DLS)
     
     # ── 1. Re-Build Kraken Archive (Functional Architecture) ─────────────────
     ctx = 120 
     forecast = 15
-    n_feat = 27 # V10.3 Singularity Standard
+    n_feat = 30 # Phase 2 (MLA + OBI)
     
     print(f"🏗️  Re-building Kraken V10.6 (Predator Architecture)...")
     model = build_kraken(n_features=n_feat, context_window=ctx, forecast_steps=forecast)
@@ -48,7 +48,7 @@ def benchmark_mastery():
 
     # 3. Build Evaluation Dataset
     ctx = 120 
-    ds_info = build_dataset_streaming(df, context_window=ctx, forecast_steps=15, scaler=scaler)
+    ds_info = build_dataset_streaming(df, context_window=ctx, forecast_steps=15)
     
     # Extract data from generator — use va_ds for honest OUT-OF-SAMPLE evaluation
     X_test, Y_test = [], []
