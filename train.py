@@ -116,11 +116,11 @@ def train_kraken(args):
     print(f"  {'🚀 GPU MODE' if IS_GPU else '🐌 CPU MODE'} — SOVEREIGN KRAKEN V4.7")
     print("="*60)
 
-    BATCH_S  = args.batch          # 128 — calibrated for CTX=120 (~14GB)
+    BATCH_S  = args.batch          # 64 — calibrated for CTX=120 5m candles
     EPOCHS   = args.epochs
-    CANDLES  = args.candles        # 120000
-    CTX_WIN  = 120                 # 2-hour context: max safe on 24GB CPU host
-    FORECAST = 15                  # predict next 15 close prices
+    CANDLES  = args.candles        # 120000 5m candles = ~417 days
+    CTX_WIN  = 120                 # 10-hour context (120 × 5m) — optimal for swing setups
+    FORECAST = 15                  # Predict next 75 minutes (15 × 5m)
 
     # ── 1. Fetch / Cache ──────────────────────────────────────────────────────
     DATA_DIR.mkdir(exist_ok=True)
@@ -153,7 +153,28 @@ def train_kraken(args):
 
     print(f"   ✅ {steps_tr} train steps/epoch | {steps_va} val steps")
 
-    # ── 3. Build Model (Singularity Tier: 2e-4 Precision) ────────────────────
+    # ── 2b. Compute Reasoning Class Weights (Anti-Imbalance) ─────────────────
+    # Sideways candles dominate 1m BTC data (~70%). Without class weights,
+    # the model learns to predict "Sideways" for everything.
+    print("   📊 Computing reasoning class weights (anti-imbalance)...")
+    label_counts = np.zeros(4)
+    # Mirror the 80% train split used inside build_dataset_streaming
+    train_end    = int(len(df) * 0.8)
+    sample_limit = min(train_end, 5000)
+    raw_data  = df.iloc[:sample_limit]
+    ret_col   = (raw_data["close"].pct_change(3).fillna(0)).values  # 3×5m = 15min swing
+    for r in ret_col:
+        if   r >  0.003: label_counts[0] += 1   # Bull
+        elif r < -0.003: label_counts[1] += 1   # Bear
+        elif abs(r) < 0.001: label_counts[2] += 1  # Sideways
+        else: label_counts[3] += 1             # Trend
+    label_counts = np.maximum(label_counts, 1)
+    total = label_counts.sum()
+    class_weights = {i: total / (4 * label_counts[i]) for i in range(4)}
+    print(f"   ⚖️  Class weights: Bull={class_weights[0]:.2f} Bear={class_weights[1]:.2f} "
+          f"Sideways={class_weights[2]:.2f} Trend={class_weights[3]:.2f}")
+
+    # ── 3. Build Model ────────────────────────────────────────────────────────
     # For 1,152 experts, we use a slower, higher-quality learning profile.
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN, 
                         forecast_steps=FORECAST)
@@ -179,13 +200,12 @@ def train_kraken(args):
             save_best_only=True, verbose=1),
         keras.callbacks.ModelCheckpoint(
             str(CKPT_DIR / "hydra_checkpoint_E{epoch:03d}.keras"),
-            save_freq=epoch_ckpt_freq, verbose=0),
+            save_freq="epoch", verbose=0),  # Save every epoch for resume support
         keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=30, restore_best_weights=True),
-        # CosineDecay is baked into the optimizer — no ReduceLROnPlateau needed.
-        # Pruner auto-deletes old checkpoints, keeping last 3 + best.
+            monitor="val_loss", patience=7,  # 7 epochs * 12.5h = ~3.6 days max wait
+            restore_best_weights=True, verbose=1),
         CheckpointPruner(ckpt_dir=CKPT_DIR, keep_n=3),
-        MissionControl(log_dir=LOG_DIR),  # Dynamic path
+        MissionControl(log_dir=LOG_DIR),
     ]
 
     # ── 6. Ignite ─────────────────────────────────────────────────────────────
@@ -227,10 +247,10 @@ def train_kraken(args):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--symbol",    default="BTCUSD")
-    p.add_argument("--timeframe", default="1m")
+    p.add_argument("--timeframe", default="5m")    # 5m: optimal SNR for deep learning
     p.add_argument("--epochs",    type=int, default=300)
     p.add_argument("--model",     default="hydra")
-    p.add_argument("--batch",     type=int, default=128)
+    p.add_argument("--batch",     type=int, default=64)
     p.add_argument("--candles",   type=int, default=120000)
     p.add_argument("--resume",    action="store_true")
     args = p.parse_args()

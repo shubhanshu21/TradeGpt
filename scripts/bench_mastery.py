@@ -29,7 +29,7 @@ def benchmark_mastery():
     # ── 1. Re-Build Kraken Archive (Functional Architecture) ─────────────────
     ctx = 120 
     forecast = 15
-    n_feat = 30 # Phase 2 (MLA + OBI)
+    n_feat = 38 # Phase 3 (MLA + OBI + Cross-Asset + MTF)
     
     print(f"🏗️  Re-building Kraken V10.6 (Predator Architecture)...")
     model = build_kraken(n_features=n_feat, context_window=ctx, forecast_steps=forecast)

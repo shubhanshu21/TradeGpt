@@ -113,7 +113,7 @@ def mode_predict(args):
         }
     if "hydra" in args.model:
         from core.hydra import build_kraken
-        model = build_kraken(n_features=30)
+        model = build_kraken(n_features=38)
         model.load_weights(str(model_file))
         print(f"✅ Weights loaded from {model_file.name}")
 

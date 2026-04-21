@@ -20,8 +20,8 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 import keras
-from core.hydra import (build_kraken, HydraBlock, GatedMoE,
-                                  LightningAttention, RMSNorm, TurboQuant, SwiGLU,
+from core.hydra import (build_kraken, HydraBlock, GatedMoE, MLALayer,
+                                  RMSNorm, TurboQuant, SwiGLU,
                                   SovereignLoss, CertaintyMetric, SovereignAccuracy)
 from data.preprocess import build_dataset_streaming, KATScaler
 from exchange.fetch_data  import fetch_live_kat_data
@@ -35,7 +35,7 @@ BATCH        = 64       # Smaller batch for fine-tune stability
 FREEZE_BELOW = 9        # Freeze first N blocks (protect foundational patterns)
 MODEL_FILE   = "hydra_best.keras"
 SYMBOL       = "BTCUSD"
-TIMEFRAME    = "1m"
+TIMEFRAME    = "5m"    # Switched to 5m for better SNR
 KEEP_BACKUPS = 7        # Days of backups to retain
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -101,17 +101,15 @@ steps_tr = ds_info["steps_tr"]
 steps_va = ds_info["steps_va"]
 log(f"   ✅ {steps_tr} train steps | {steps_va} val steps")
 
-# ── 6. Load model ─────────────────────────────────────────────────────────────
-log(f"🏗️  Loading {MODEL_FILE}...")
-custom_objs = {
-    "HydraBlock": HydraBlock, "GatedMoE": GatedMoE,
-    "LightningAttention": LightningAttention, "RMSNorm": RMSNorm,
-    "TurboQuant": TurboQuant, "SwiGLU": SwiGLU,
-    "SovereignLoss": SovereignLoss,
-    "CertaintyMetric": CertaintyMetric, "SovereignAccuracy": SovereignAccuracy
-}
-# V10.3: Enable unsafe deserialization for Lambda certainty aggregation
-model = keras.models.load_model(str(MODEL_PATH), custom_objects=custom_objs, safe_mode=False)
+# V10.6 Phase 3: Re-build from scratch to avoid deserialization issues
+log("🏗️  Re-building Phase 3 architecture and loading weights...")
+model = build_kraken(n_features=38, context_window=CTX_WIN, forecast_steps=15)
+try:
+    model.load_weights(str(MODEL_PATH))
+    log(f"✅ Weights loaded from {MODEL_FILE}")
+except Exception as e:
+    log(f"⚠️  Weight load warning (shape mismatch if upgrading phase): {e}")
+    log("   Starting from scratch for this fine-tune session.")
 
 # ── 7. Freeze bottom blocks ───────────────────────────────────────────────────
 frozen = 0
