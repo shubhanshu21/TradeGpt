@@ -35,7 +35,7 @@ BATCH        = 64       # Smaller batch for fine-tune stability
 FREEZE_BELOW = 9        # Freeze first N blocks (protect foundational patterns)
 MODEL_FILE   = "hydra_best.keras"
 SYMBOL       = "BTCUSD"
-TIMEFRAME    = "5m"    # Switched to 5m for better SNR
+TIMEFRAME    = "15m"   # Switched to 15m for maximum SNR (Phase 5+)
 KEEP_BACKUPS = 7        # Days of backups to retain
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ log(f"   ✅ {steps_tr} train steps | {steps_va} val steps")
 
 # V10.6 Phase 3: Re-build from scratch to avoid deserialization issues
 log("🏗️  Re-building Phase 3 architecture and loading weights...")
-model = build_kraken(n_features=38, context_window=CTX_WIN, forecast_steps=15)
+model = build_kraken(n_features=42, context_window=CTX_WIN, forecast_steps=15)
 try:
     model.load_weights(str(MODEL_PATH))
     log(f"✅ Weights loaded from {MODEL_FILE}")

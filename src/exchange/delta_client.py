@@ -93,21 +93,27 @@ class DeltaClient:
                 "end": end_ts
             }
             
-            data = self._get("/v2/history/candles", params, auth=False)
-            res = data.get("result", [])
+            try:
+                data = self._get("/v2/history/candles", params, auth=False)
+                res = data.get("result", [])
+            except Exception as e:
+                print(f"         ❌ API Request Failed: {e}. Retrying in 1s...")
+                time.sleep(1)
+                continue
             
             if not res:
+                print(f"         ⚠️ End of history reached at batch {len(all_results)}.")
                 break
                 
             # Pivot back using the OLDEST candle in the batch (last item)
-            if res:
-                all_results = res + all_results
-                oldest_res_ts = int(res[-1]["time"]) 
-                end_ts = oldest_res_ts - 1
-            else:
-                break
+            all_results = res + all_results
+            oldest_res_ts = int(res[-1]["time"]) 
+            end_ts = oldest_res_ts - 1
             
-            time.sleep(0.05) 
+            # SHOW PROGRESS EVERY BATCH
+            print(f"         � Fetched {len(all_results):,} / {limit:,} candles... (Back-stepping to {pd.to_datetime(end_ts, unit='s')})")
+            
+            time.sleep(0.01) 
 
         if not all_results: return pd.DataFrame()
         

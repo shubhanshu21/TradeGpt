@@ -113,7 +113,7 @@ def mode_predict(args):
         }
     if "hydra" in args.model:
         from core.hydra import build_kraken
-        model = build_kraken(n_features=38)
+        model = build_kraken(n_features=42)
         model.load_weights(str(model_file))
         print(f"✅ Weights loaded from {model_file.name}")
 
@@ -309,7 +309,7 @@ def main():
     p_train.add_argument("--batch",   type=int, default=128)  # V5.0 calibrated
     p_train.add_argument("--candles", type=int, default=120_000)
     p_train.add_argument("--symbol",  default="BTCUSD")
-    p_train.add_argument("--timeframe", default="1m", help="Timeframe (1m, 5m, 15m, 1h, etc.)")
+    p_train.add_argument("--timeframe", default="15m", help="Timeframe (15m recommended for Phase 5)")
     p_train.add_argument("--finetune", action="store_true", help="Fine-tune existing model")
     p_train.add_argument("--resume", action="store_true", help="Resume from the latest 'Decade Backup' Epoch checkpoint")
 
@@ -319,7 +319,7 @@ def main():
         choices=["alpha", "titan", "causal_base", "causal_lion", "causal_tiger", "hydra"])
     p_pred.add_argument("--steps", type=int, default=60,
         help="Forecast steps (CAUSAL/HYDRA only)")
-    p_pred.add_argument("--timeframe", default="1m", help="Timeframe (1m, 5m, 15m, 1h, etc.)")
+    p_pred.add_argument("--timeframe", default="15m", help="Timeframe (must match training)")
     p_pred.add_argument("--symbol",  default="BTCUSD")
     p_pred.add_argument("--live", action="store_true", default=True,
         help="Fetch live data for prediction (default: True)")
@@ -335,8 +335,11 @@ def main():
     p_trade.add_argument("--symbol", default="BTCUSD")
     p_trade.add_argument("--size",   type=int, default=1)
     p_trade.add_argument("--thresh", type=float, default=0.05)
-    p_trade.add_argument("--timeframe", default="1m", help="Timeframe (1m, 5m, 15m, 1h, etc.)")
-    
+    p_trade.add_argument("--timeframe", default="15m", help="Timeframe (must match training)")
+    p_trade.add_argument("--cert_thresh", type=float, default=0.70,
+        help="Certainty threshold (0-1). Only trade signals above this. "
+             "Higher = fewer trades but higher accuracy. Recommended: 0.70-0.85")
+
     args = parser.parse_args()
 
     MODEL_DIR = ROOT / "src/core"
@@ -345,11 +348,13 @@ def main():
     elif args.mode == "predict": mode_predict(args)
     elif args.mode == "trade":
         from trading import live_trader
-        live_trader.MODEL_NAME = args.model
-        live_trader.SYMBOL     = args.symbol
-        live_trader.SIZE       = args.size
-        live_trader.THRESHOLD  = args.thresh
-        live_trader.TIMEFRAME  = args.timeframe
+        live_trader.MODEL_NAME    = args.model
+        live_trader.SYMBOL        = args.symbol
+        live_trader.SIZE          = args.size
+        live_trader.THRESHOLD     = args.thresh
+        live_trader.TIMEFRAME     = args.timeframe
+        live_trader.CERT_THRESHOLD = args.cert_thresh  # High-conviction filter
+        print(f"⚖️  Certainty Filter: Only trading signals with >{args.cert_thresh*100:.0f}% conviction")
         live_trader.run_pilot()
     elif args.mode == "serve":   mode_serve(args)
     elif args.mode == "demo":    mode_demo(args)

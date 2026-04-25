@@ -414,7 +414,7 @@ def build_kraken(n_features=38, context_window=120, forecast_steps=15,
 
     model = keras.Model(
         inputs, [preds, avg_consensus, reasoning],
-        name="deep_predator_v10_7_phase3")
+        name="iron_oracle_v11_phase5")
 
     # Cosine Decay LR: 1e-5 → 1e-6 over 10,000 steps
     lr_schedule = keras.optimizers.schedules.CosineDecay(

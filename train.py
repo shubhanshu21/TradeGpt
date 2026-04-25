@@ -52,75 +52,43 @@ class CheckpointPruner(keras.callbacks.Callback):
 
 class MissionControl(keras.callbacks.Callback):
     """
-    Early-Warning Diagnostic System (V10.2: Expert Insight).
+    Early-Warning Diagnostic System (V11.0: Real-time console reports).
     """
-    def __init__(self, log_dir: Path):
-        super().__init__()
-        self.log_path = log_dir / "diagnostics.log"
-        log_dir.mkdir(parents=True, exist_ok=True)
-
     def on_train_begin(self, logs=None):
-        if not self.log_path.exists() or self.log_path.stat().st_size == 0:
-            with open(self.log_path, "w") as f:
-                f.write("Time,Epoch,Val_Dir_Acc,Certainty,Status\n")
+        print("\n" + "="*50)
+        print(f"{'Time':<10} | {'Epoch':<5} | {'Val_Acc':<8} | {'Certainty':<10} | {'Status'}")
+        print("-" * 50)
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        # V10.3 Dual Output keys (Synchronized with Keras 3 naming)
         v_acc = logs.get("val_prediction_dir_acc", 0.0)
-        cert  = logs.get("val_certainty_certainty", 0.0)  # Already averaged by CertaintyMetric
+        cert  = logs.get("val_certainty_certainty", 0.0)
         ts    = datetime.now().strftime("%H:%M:%S")
         
-        status = "KEEPING" if v_acc < 0.53 else "🚀 SOVEREIGN EDGE DETECTED"
+        status = "KEEPING" if v_acc < 0.53 else "🚀 SOVEREIGN EDGE"
         
-        with open(self.log_path, "a") as f:
-            f.write(f"{ts},{epoch+1},{v_acc:.4f},{cert:.4f},{status}\n")
+        print(f"{ts:<10} | {epoch+1:<5} | {v_acc:<8.4f} | {cert:<10.3f} | {status}")
         
-        if v_acc > 0.53:
-            print(f"\n[🚀 SOVEREIGN EDGE DETECTED] Win-Rate: {v_acc:.2%} | Certainty: {cert:.2%}")
-            print(f"   Score: {v_acc:.4f} — Entering Profit Zone!")
-        
-        # High-visibility stagnation alert
         if epoch > 10 and v_acc < 0.501:
-            print(f"\n[⚠️  MISSION CONTROL ALERT] Stagnation detected at Epoch {epoch+1}.")
-            print(f"    Current Win-Rate: {v_acc:.4f} (Under Coin-Flip Threshold)")
+            print(f"\n[⚠️  STAGNATION] Epoch {epoch+1} Win-Rate: {v_acc:.4f}")
 
 
 def train_kraken(args):
-    init_kraken_hardware()
-    
-    # ── V6.5 Sovereign Auto-Log ──────────────────────────────────────────────
     # Recreate logs directory if missing
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Auto-redirect output to file if not interactive
-    log_file_path = LOG_DIR / "omni_brain_300.log"
-    print(f"📡 Internal Logging Engaged: {log_file_path}")
-    
-    # We use a custom logger to write to both console and file if possible
-    class Logger(object):
-        def __init__(self, filename):
-            self.terminal = sys.stdout
-            self.log = open(filename, "a", buffering=1)
-        def write(self, message):
-            self.terminal.write(message)
-            self.log.write(message)
-        def flush(self):
-            self.terminal.flush()
-            self.log.flush()
-
-    sys.stdout = Logger(log_file_path)
-    sys.stderr = sys.stdout
+    # ── 0. Hardware Prep ──────────────────────────────────────────────────────
+    init_kraken_hardware()
 
     print("\n" + "="*60)
     print(f"  {'🚀 GPU MODE' if IS_GPU else '🐌 CPU MODE'} — SOVEREIGN KRAKEN V4.7")
     print("="*60)
 
-    BATCH_S  = args.batch          # 64 — calibrated for CTX=120 5m candles
+    BATCH_S  = args.batch          # 64 — calibrated for 15m resolution
     EPOCHS   = args.epochs
-    CANDLES  = args.candles        # 120000 5m candles = ~417 days
-    CTX_WIN  = 120                 # 10-hour context (120 × 5m) — optimal for swing setups
-    FORECAST = 15                  # Predict next 75 minutes (15 × 5m)
+    CANDLES  = args.candles        # 120000 15m candles = ~3.4 years
+    CTX_WIN  = 120                 # 30-hour context (120 × 15m) — stable macro patterns
+    FORECAST = 15                  # Predict next 3.75 hours (15 × 15m)
 
     # ── 1. Fetch / Cache ──────────────────────────────────────────────────────
     DATA_DIR.mkdir(exist_ok=True)
@@ -162,11 +130,11 @@ def train_kraken(args):
     train_end    = int(len(df) * 0.8)
     sample_limit = min(train_end, 5000)
     raw_data  = df.iloc[:sample_limit]
-    ret_col   = (raw_data["close"].pct_change(3).fillna(0)).values  # 3×5m = 15min swing
+    ret_col   = (raw_data["close"].pct_change(1).fillna(0)).values  # 15m candle impact
     for r in ret_col:
-        if   r >  0.003: label_counts[0] += 1   # Bull
-        elif r < -0.003: label_counts[1] += 1   # Bear
-        elif abs(r) < 0.001: label_counts[2] += 1  # Sideways
+        if   r >  0.01: label_counts[0] += 1   # Bull
+        elif r < -0.01: label_counts[1] += 1   # Bear
+        elif abs(r) < 0.002: label_counts[2] += 1  # Sideways
         else: label_counts[3] += 1             # Trend
     label_counts = np.maximum(label_counts, 1)
     total = label_counts.sum()
@@ -205,7 +173,7 @@ def train_kraken(args):
             monitor="val_loss", patience=7,  # 7 epochs * 12.5h = ~3.6 days max wait
             restore_best_weights=True, verbose=1),
         CheckpointPruner(ckpt_dir=CKPT_DIR, keep_n=3),
-        MissionControl(log_dir=LOG_DIR),
+        MissionControl(),
     ]
 
     # ── 6. Ignite ─────────────────────────────────────────────────────────────
@@ -247,7 +215,7 @@ def train_kraken(args):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--symbol",    default="BTCUSD")
-    p.add_argument("--timeframe", default="5m")    # 5m: optimal SNR for deep learning
+    p.add_argument("--timeframe", default="15m")   # 15m: maximum SNR for swing trading
     p.add_argument("--epochs",    type=int, default=300)
     p.add_argument("--model",     default="hydra")
     p.add_argument("--batch",     type=int, default=64)
