@@ -17,6 +17,7 @@ sys.path.append(str(ROOT / "src"))
 
 from core.hydra import build_kraken, SovereignLoss, CertaintyMetric, SovereignAccuracy, MLALayer
 from data.preprocess import build_dataset_streaming, build_feature_cols
+from exchange.fetch_data import fetch_live_kat_data
 
 def benchmark_mastery():
     print("🎬 Starting Sovereign Mastery Benchmark (Certainty Intelligence Test)...")
@@ -34,12 +35,20 @@ def benchmark_mastery():
     model.load_weights(str(MODEL_PATH))
 
     # ── 2. Load History ───────────────────────────────────────────────────────
-    HISTORY_P = ROOT / "data/BTCUSD_5m_history_120000.parquet"
-    print(f"📡 Loading 5,000 candles from [5m] Local History: {HISTORY_P.name}")
-    try:
-        df = pd.read_parquet(str(HISTORY_P)).tail(5000)
-    except Exception as e:
-        print(f"❌ Data Load Error: {e}"); return
+    symbol = "BTCUSD"
+    tf = "15m"
+    n_candles = 5000
+    HISTORY_P = ROOT / f"data/{symbol}_{tf}_history_120000.parquet"
+    
+    if HISTORY_P.exists():
+        print(f"📡 Loading candles from local history: {HISTORY_P.name}")
+        df = pd.read_parquet(str(HISTORY_P)).tail(n_candles)
+    else:
+        print(f"📡 Cache missing. Fetching live {tf} candles for benchmark...")
+        df = fetch_live_kat_data(symbol=symbol, n_candles=n_candles, timeframe=tf)
+        
+    if df is None or len(df) == 0:
+        print("❌ Data Load Failure. Aborting."); return
 
     # ── 3. Build Evaluation Dataset ───────────────────────────────────────────
     ds_info = build_dataset_streaming(df, context_window=ctx, forecast_steps=forecast)
