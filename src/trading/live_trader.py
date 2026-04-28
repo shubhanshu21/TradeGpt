@@ -1,10 +1,11 @@
 """
-SOVEREIGN ALPHA PILOT (V10.6 — PREDATOR) ⚓🚀
-==============================================
-- Timeframe: 1 minute
-- Brain: HYDRA V10.6 (SwiGLU + 256-Expert MoE + TurboQuant)
+SOVEREIGN ALPHA PILOT (V11.0 — IRON ORACLE) ⚓🏛️
+==================================================
+- Timeframe: 15 minutes (Phase 5 — Maximum SNR)
+- Brain: IRON ORACLE V11.0 (256-Expert MoE + MLA + RoPE)
 - Targets: MTP-15 (Price, Volatility, Volume Flow)
 - Exchange: Delta Exchange (Market-Order + SL/TP Brackets)
+- Filter: Certainty threshold (80%+ = Sovereign Edge)
 """
 
 import os, sys, time
@@ -23,16 +24,17 @@ from core.hydra import (HydraBlock, GatedMoE, LightningAttention,
                         SovereignLoss, CertaintyMetric, SovereignAccuracy)
 from exchange.delta_client import DeltaClient
 from exchange.fetch_data   import fetch_live_kat_data
-from data.preprocess       import KATScaler, build_feature_cols, compute_indicators
+from data.preprocess       import build_feature_cols, compute_indicators
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-SYMBOL     = "BTCUSD"
-SIZE       = 1              # Contract size
-THRESHOLD  = 0.05           # Base conviction (Z-score units on scaled output)
-TIMEFRAME  = "1m"
-MODEL_FILE = "hydra_best.keras"
-CTX_WIN    = 120            # Must match training context window
-SLEEP_S    = 60             # Poll every 1 minute
+SYMBOL         = "BTCUSD"
+SIZE           = 1              # Contract size
+THRESHOLD      = 0.05           # Base conviction (Z-score units on scaled output)
+TIMEFRAME      = "15m"          # FIX #2: Must match training timeframe (15m)
+MODEL_FILE     = "hydra_best.keras"
+CTX_WIN        = 120            # Must match training context window (30 hours)
+SLEEP_S        = 900            # Poll every 15 minutes (one 15m candle)
+CERT_THRESHOLD = 0.80           # FIX #3: Default certainty filter (80% = Sovereign Edge)
 
 # ── HUD ───────────────────────────────────────────────────────────────────────
 C_RESET  = "\033[0m"
@@ -46,106 +48,116 @@ def log(msg, color=C_RESET):
     stamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{C_CYAN}{stamp}{C_RESET}] {color}{msg}{C_RESET}", flush=True)
 
-def load_model_and_scaler():
-    """Load the trained brain and fitted scaler. Exits if either is missing."""
-    scaler_p = ROOT / "models" / "scaler_base.pkl"
-    model_p  = ROOT / "models" / MODEL_FILE
+def load_model():
+    """Load the trained Iron Oracle brain. Exits if model is missing."""
+    model_p = ROOT / "models" / MODEL_FILE
 
-    if not scaler_p.exists():
-        log("❌ Scaler missing — run training first.", C_RED); sys.exit(1)
     if not model_p.exists():
         log(f"❌ Model not found: {MODEL_FILE}", C_RED); sys.exit(1)
 
-    scaler = KATScaler.load(str(scaler_p))
-
-    log(f"🏗️  Loading brain: {MODEL_FILE}...")
-    custom_objs = {
-        "HydraBlock":        HydraBlock,
-        "GatedMoE":          GatedMoE,
-        "LightningAttention": LightningAttention,
-        "RMSNorm":           RMSNorm,
-        "TurboQuant":        TurboQuant,
-        "SwiGLU":            SwiGLU,
-        "SovereignLoss":     SovereignLoss,
-        "CertaintyMetric":   CertaintyMetric,
-        "SovereignAccuracy": SovereignAccuracy,
-    }
-    model = keras.models.load_model(
-        str(model_p), custom_objects=custom_objs, compile=False, safe_mode=False
-    )
+    # FIX #1: Iron Oracle uses DLS (Dynamic Local Scaling) — no global scaler needed.
+    # We use build_kraken to reconstruct the architecture and load weights directly.
+    from core.hydra import build_kraken
+    n_feat = 42  # Phase 5 Sovereign Hive (42 features)
+    log(f"🏗️  Re-building Iron Oracle V11.0 ({n_feat} features)...")
+    model = build_kraken(n_features=n_feat, context_window=CTX_WIN)
+    model.load_weights(str(model_p))
     log("✅ Brain sync complete.", C_GREEN)
-    return model, scaler
+    return model
 
-def get_neural_signal(model, scaler):
+def get_neural_signal(model):
     """
-    Fetch latest market data, engineer features, run inference.
-    Returns (mean_price_move, mean_volatility, full_pred_array).
+    Fetch latest 15m market data, engineer features, run inference.
+    FIX #1: Uses Dynamic Local Scaling (DLS) — matching training pipeline.
+    Returns (mean_price_move, certainty_pct, mean_volatility, full_pred_array).
     """
     features = build_feature_cols()
-    n_feats  = len(features)
+    n_feats  = len(features)  # 42
 
-    # Fetch CTX_WIN + small buffer for indicator warm-up
+    # Fetch CTX_WIN + buffer for indicator warm-up
     df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CTX_WIN + 150, timeframe=TIMEFRAME)
-
-    # V5.0 feature engineering (compute_indicators replaces add_derived_features)
     df_feat = compute_indicators(df)
     data    = df_feat[features].values.astype("float32")
 
-    # Scale and take the last CTX_WIN rows
-    scaled = scaler.transform_X(data)
-    X_in   = scaled[-CTX_WIN:].reshape(1, CTX_WIN, n_feats).astype("float32")
+    # FIX #1: DLS — scale using the local window stats (same as training)
+    x_raw  = data[-CTX_WIN:]
+    l_mean = x_raw.mean(axis=0)
+    l_std  = x_raw.std(axis=0) + 1e-8
+    x_scaled = (x_raw - l_mean) / l_std
+    X_in   = x_scaled[np.newaxis].astype("float32")  # (1, 120, 42)
 
-    # V10.6 model returns [prediction, consensus, reasoning] — index [0] for price head
-    outputs  = model(X_in, training=False)
-    pred     = outputs[0].numpy()[0]    # (forecast+1, 3) — drop entry-anchor (index 0)
-    pred     = pred[1:]                 # (15, 3) — only future steps
-    p_curve  = pred[:, 0]   # 15 price steps
-    v_curve  = pred[:, 1]   # 15 volatility steps
-    q_curve  = pred[:, 2]   # 15 volume flow steps
+    # Iron Oracle returns [prediction_trajectory, certainty_map]
+    outputs      = model(X_in, training=False)
+    pred         = outputs[0].numpy()[0]   # (16, 3)
+    certainty_2d = outputs[1].numpy()[0]   # (120,) per-step certainty
 
-    return np.mean(p_curve), np.mean(v_curve), np.mean(q_curve), pred
+    pred_future  = pred[1:]                # (15, 3) — future steps only
+    p_curve      = pred_future[:, 0]       # price trajectory
+    v_curve      = pred_future[:, 1]       # volatility
+    q_curve      = pred_future[:, 2]       # volume flow
+
+    # Normalize certainty to 0–100%
+    cert_mean    = float(np.mean(certainty_2d))
+    # cert_pct is relative — we use the raw value for threshold comparison
+    cert_pct     = cert_mean  # compared against CERT_THRESHOLD in run_pilot
+
+    return np.mean(p_curve), cert_pct, np.mean(v_curve), np.mean(q_curve), pred_future
 
 def run_pilot():
     print("="*60)
-    print(f"  ⚓ SOVEREIGN ALPHA PILOT V5.0 — [ {SYMBOL} ] LIVE")
+    print(f"  ⚓ IRON ORACLE V11.0 — [ {SYMBOL} ] LIVE PILOT")
+    print(f"  📡 Timeframe : {TIMEFRAME}")
+    print(f"  🎯 Certainty : {CERT_THRESHOLD*100:.0f}%+ required to trade")
+    print(f"  💰 Position  : {SIZE} contract(s)")
     print("="*60)
 
-    client        = DeltaClient(testnet=True)
-    model, scaler = load_model_and_scaler()
+    client = DeltaClient(testnet=True)
+    model  = load_model()  # FIX #1: DLS — no scaler needed
 
     while True:
         try:
-            log(f"📡 Polling {SYMBOL} market stream...")
+            log(f"📡 Polling {SYMBOL} [{TIMEFRAME}] market stream...")
 
             # ── Inference ────────────────────────────────────────────────────
-            mean_price, mean_vol, mean_q, pred = get_neural_signal(model, scaler)
+            mean_price, cert_raw, mean_vol, mean_q, pred = get_neural_signal(model)
+
+            # Normalize certainty to 0–1 range for threshold comparison
+            # We use a simple sigmoid-style normalization against a known baseline
+            cert_norm = min(1.0, max(0.0, (cert_raw - 100.0) / 30.0 + 0.5))
 
             p_str = " | ".join([f"{x:+.3f}" for x in pred[:5, 0]])
-            log(f"🔮 PRICE CURVE : [ {p_str}... ]  AVG: {mean_price:+.4f}")
-            log(f"📊 VOLATILITY  : {mean_vol:.4f}  |  VOLUME FLOW: {mean_q:.4f}")
+            log(f"🔮 PRICE CURVE  : [ {p_str}... ]  AVG: {mean_price:+.4f}")
+            log(f"🧠 CERTAINTY    : {cert_norm*100:.1f}%  (threshold: {CERT_THRESHOLD*100:.0f}%)")
+            log(f"📊 VOLATILITY   : {mean_vol:.4f}  |  VOLUME FLOW: {mean_q:.4f}")
+
+            # ── FIX #3: Certainty Gate — only trade high-conviction signals ──
+            if cert_norm < CERT_THRESHOLD:
+                log(f"🔕 CERTAINTY TOO LOW ({cert_norm*100:.1f}% < {CERT_THRESHOLD*100:.0f}%) — HOLDING CASH", C_YELLOW)
+                log(f"💤 Next poll in {SLEEP_S}s...")
+                time.sleep(SLEEP_S)
+                continue
 
             # ── Dynamic threshold (scale with volatility) ─────────────────────
             dynamic_thresh = THRESHOLD * (1.0 + max(0.0, mean_vol))
 
             # ── Position check ────────────────────────────────────────────────
-            pos         = client.get_positions()
-            product_id  = client._resolve_product_id(SYMBOL)
-            my_pos      = [p for p in pos if int(p["product_id"]) == product_id]
+            pos        = client.get_positions()
+            product_id = client._resolve_product_id(SYMBOL)
+            my_pos     = [p for p in pos if int(p["product_id"]) == product_id]
             is_in_long  = any(float(p["size"]) > 0 for p in my_pos)
             is_in_short = any(float(p["size"]) < 0 for p in my_pos)
-            in_position = is_in_long or is_in_short
 
             # ── Signal Logic ──────────────────────────────────────────────────
             if mean_price > dynamic_thresh:
                 if not is_in_long:
-                    log(f"📈 LONG  ({mean_price:+.4f} > +{dynamic_thresh:.4f})", C_GREEN)
+                    log(f"📈 LONG  signal ({mean_price:+.4f} > +{dynamic_thresh:.4f}) @ {cert_norm*100:.1f}% certainty", C_GREEN)
                     client.place_order(SYMBOL, SIZE, "buy", sl_pct=1.0, tp_pct=2.5)
                 else:
                     log(f"✅ Already LONG — holding.", C_GREEN)
 
             elif mean_price < -dynamic_thresh:
                 if not is_in_short:
-                    log(f"📉 SHORT ({mean_price:+.4f} < -{dynamic_thresh:.4f})", C_RED)
+                    log(f"📉 SHORT signal ({mean_price:+.4f} < -{dynamic_thresh:.4f}) @ {cert_norm*100:.1f}% certainty", C_RED)
                     client.place_order(SYMBOL, SIZE, "sell", sl_pct=1.0, tp_pct=2.5)
                 else:
                     log(f"✅ Already SHORT — holding.", C_RED)
@@ -154,7 +166,7 @@ def run_pilot():
                 log(f"⏸️  HOLD — weak signal ({mean_price:+.4f}, thresh ±{dynamic_thresh:.4f})", C_YELLOW)
 
             # ── Cycle ─────────────────────────────────────────────────────────
-            log(f"💤 Next poll in {SLEEP_S}s...")
+            log(f"💤 Next poll in {SLEEP_S}s (one 15m candle)...")
             time.sleep(SLEEP_S)
 
         except KeyboardInterrupt:
@@ -162,7 +174,7 @@ def run_pilot():
             break
         except Exception as e:
             log(f"⚠️  Loop error: {e}", C_RED)
-            time.sleep(10)
+            time.sleep(30)
 
 if __name__ == "__main__":
     run_pilot()

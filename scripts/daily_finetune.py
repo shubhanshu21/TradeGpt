@@ -23,7 +23,7 @@ import keras
 from core.hydra import (build_kraken, HydraBlock, GatedMoE, MLALayer,
                                   RMSNorm, TurboQuant, SwiGLU,
                                   SovereignLoss, CertaintyMetric, SovereignAccuracy)
-from data.preprocess import build_dataset_streaming, KATScaler
+from data.preprocess import build_dataset_streaming
 from exchange.fetch_data  import fetch_live_kat_data
 
 # ── DEFAULTS ──────────────────────────────────────────────────────────────────
@@ -86,15 +86,10 @@ except Exception as e:
 if len(df) < CTX_WIN + 50:
     log(f"❌ Insufficient data: {len(df)} candles"); sys.exit(1)
 
-# ── 4. Load scaler ────────────────────────────────────────────────────────────
-scaler_path = ROOT / "models" / "scaler_base.pkl"
-scaler = KATScaler.load(str(scaler_path)) if scaler_path.exists() else None
-log("📐 Scaler: " + ("loaded from training" if scaler else "fitting fresh (no saved scaler)"))
-
-# ── 5. Streaming dataset ──────────────────────────────────────────────────────
-log("🌊 Building fine-tune stream...")
+# ── 4. Streaming dataset (DLS — no global scaler needed) ──────────────────────
+log("🌊 Building fine-tune stream (DLS — Dynamic Local Scaling)...")
 ds_info  = build_dataset_streaming(df, context_window=CTX_WIN, forecast_steps=15,
-                                    batch_size=BATCH, scaler=scaler)
+                                    batch_size=BATCH)
 tr_ds    = ds_info["tr_ds"]
 va_ds    = ds_info["va_ds"]
 steps_tr = ds_info["steps_tr"]

@@ -24,7 +24,7 @@ from core.hydra import (SovereignLoss, build_kraken, CertaintyMetric, SovereignA
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 p = argparse.ArgumentParser(description="Sovereign Kraken INT8 Quantizer")
-p.add_argument("--model",  default=str(ROOT / "models" / "hydra_final.keras"))
+p.add_argument("--model",  default=str(ROOT / "models" / "hydra_best.keras"))
 p.add_argument("--data",   default=str(ROOT / "data"))
 p.add_argument("--ctx",    type=int, default=120, help="Context window used during training")
 p.add_argument("--n_cal",  type=int, default=200, help="Calibration samples for INT8 range")
