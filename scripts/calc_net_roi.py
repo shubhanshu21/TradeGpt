@@ -30,18 +30,23 @@ def calc_pnl_fees():
     fee_rate = 0.0006 # 0.06% round trip
     
     print("-" * 40)
-    print("NET ROI REPORT (POST-FEES) - $200 Account")
-    print("-" * 40)
+    
+    # Save for Dashboard
+    import json
+    roi_data = {"tiers": {}}
     for th in [80, 85, 90]:
         mask = c_pct >= th
-        n_t = mask.sum()
+        n_t = int(mask.sum())
         if n_t > 0:
             e_p = raw_prices[np.array(indices)[mask] + ctx - 1]
-            gross = (np.sign(traj[mask]) * (usd_diffs[mask] / e_p) * pos_size_usd).sum()
-            fees = n_t * (pos_size_usd * fee_rate)
+            gross = float((np.sign(traj[mask]) * (usd_diffs[mask] / e_p) * pos_size_usd).sum())
+            fees = float(n_t * (pos_size_usd * fee_rate))
             net = gross - fees
-            print(f"Tier {th}% | Trades: {n_t} | Gross: ${gross:.2f} | Fees: ${fees:.2f} | NET: ${net:.2f}")
-    print("-" * 40)
+            roi_data["tiers"][str(th)] = {"trades": n_t, "gross": gross, "fees": fees, "net": net}
+    
+    with open(ROOT / "logs" / "latest_roi.json", "w") as f:
+        json.dump(roi_data, f, indent=4)
+    print(f"✅ Saved results to logs/latest_roi.json")
 
 if __name__ == "__main__":
     calc_pnl_fees()

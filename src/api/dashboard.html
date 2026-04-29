@@ -1,301 +1,525 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KAT 3 — Strategic Intelligence Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        :root {
-            --bg: #f4f7f6;
-            --white: #ffffff;
-            --text: #333333;
-            --muted: #666666;
-            --red: #d9534f;
-            --orange: #f0ad4e;
-            --blue: #5bc0de;
-            --green: #5cb85c;
-            --border: #e1e4e8;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iron Oracle V11.0 — Command Center</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg:       #070b12;
+      --surface:  #0d1117;
+      --card:     #111720;
+      --border:   #1e2d3d;
+      --gold:     #f0b429;
+      --gold-dim: #7a5c14;
+      --cyan:     #38bdf8;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --purple:   #a78bfa;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --glow:     0 0 20px rgba(240,180,41,0.15);
+    }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+    * { margin:0; padding:0; box-sizing:border-box; }
 
-        body {
-            font-family: 'Outfit', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            overflow-x: hidden;
-        }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
 
-        .header-bar {
-            background: var(--white);
-            padding: 1rem 2rem;
-            border-bottom: 1px solid var(--border);
-        }
+    /* ── Ambient Background Glow ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 20% 10%, rgba(240,180,41,0.04) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 80% 90%, rgba(56,189,248,0.04) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
 
-        .header-bar h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #1a1a1a;
-        }
+    /* ── Header ── */
+    header {
+      position: relative; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(13,17,23,0.85);
+      backdrop-filter: blur(12px);
+    }
 
-        .header-bar p {
-            color: var(--muted);
-            font-size: 0.8rem;
-        }
+    .logo {
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    .logo-icon {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, #f0b429, #b45309);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      box-shadow: 0 0 20px rgba(240,180,41,0.4);
+    }
+    .logo-text h1 { font-size: 1rem; font-weight: 700; color: #fff; }
+    .logo-text p  { font-size: 0.7rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
 
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            padding: 1rem 2.5%;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
+    .status-pill {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.25);
+      border-radius: 999px; padding: 0.35rem 0.9rem;
+      font-size: 0.72rem; color: var(--green); font-weight: 600;
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green);
+      animation: pulse-green 2s infinite;
+    }
+    @keyframes pulse-green {
+      0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
+      50%      { box-shadow: 0 0 0 5px rgba(34,197,94,0); }
+    }
 
-        .section-card {
-            background: var(--white);
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            border: 1px solid var(--border);
-        }
+    .header-time {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem; color: var(--muted);
+    }
 
-        .section-header {
-            padding: 0.6rem 1rem;
-            font-size: 0.9rem;
-            font-weight: 700;
-            color: white;
-        }
+    /* ── Main Layout ── */
+    main {
+      position: relative; z-index: 1;
+      max-width: 1440px; margin: 0 auto;
+      padding: 1.5rem 1.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      grid-template-rows: auto auto auto;
+      gap: 1rem;
+    }
 
-        .header-red {
-            background: var(--red);
-        }
+    /* ── Cards ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: #2a3d52; }
 
-        .header-orange {
-            background: var(--orange);
-        }
+    .card-header {
+      padding: 0.8rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-title {
+      font-size: 0.72rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .card-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem; padding: 0.15rem 0.5rem;
+      border-radius: 4px; font-weight: 600;
+    }
+    .badge-gold   { background: rgba(240,180,41,0.15); color: var(--gold); border: 1px solid var(--gold-dim); }
+    .badge-cyan   { background: rgba(56,189,248,0.12); color: var(--cyan); border: 1px solid rgba(56,189,248,0.3); }
+    .badge-green  { background: rgba(34,197,94,0.12);  color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+    .badge-purple { background: rgba(167,139,250,0.12);color: var(--purple);border: 1px solid rgba(167,139,250,0.3);}
 
-        .header-blue {
-            background: var(--blue);
-        }
+    .card-body { padding: 1rem; }
 
-        .header-green {
-            background: var(--green);
-        }
+    /* ── KPI Stats Row ── */
+    .stats-row {
+      grid-column: 1 / -1;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;
+    }
 
-        .content-body {
-            padding: 1rem;
-            display: flex;
-            gap: 0.8rem;
-            height: 280px;
-        }
+    .kpi-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px; padding: 1.1rem 1.2rem;
+      position: relative; overflow: hidden;
+    }
+    .kpi-card::after {
+      content: ''; position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+    }
+    .kpi-gold::after   { background: linear-gradient(90deg, var(--gold), transparent); }
+    .kpi-cyan::after   { background: linear-gradient(90deg, var(--cyan), transparent); }
+    .kpi-green::after  { background: linear-gradient(90deg, var(--green), transparent); }
+    .kpi-purple::after { background: linear-gradient(90deg, var(--purple), transparent); }
 
-        .stats-col {
-            width: 130px;
-            border-right: 1px solid var(--border);
-            padding-right: 0.5rem;
-            flex-shrink: 0;
-        }
+    .kpi-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem; }
+    .kpi-value { font-size: 1.9rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1; }
+    .kpi-gold  .kpi-value { color: var(--gold); }
+    .kpi-cyan  .kpi-value { color: var(--cyan); }
+    .kpi-green .kpi-value { color: var(--green); }
+    .kpi-purple .kpi-value { color: var(--purple); }
+    .kpi-sub { font-size: 0.68rem; color: var(--muted); margin-top: 0.4rem; }
 
-        .chart-col {
-            flex-grow: 1;
-            position: relative;
-            height: 100%;
-            overflow: hidden;
-        }
+    /* ── Chart Cards ── */
+    .chart-card-wide { grid-column: span 2; }
+    .chart-card-full { grid-column: 1 / -1; }
+    .chart-wrap { height: 220px; position: relative; }
 
-        .stat-item {
-            margin-bottom: 1rem;
-        }
+    /* ── Epoch Progress ── */
+    .epoch-bar-wrap { margin: 0.5rem 0; }
+    .epoch-bar-track {
+      background: var(--border); border-radius: 999px; height: 8px; overflow: hidden;
+    }
+    .epoch-bar-fill {
+      height: 100%; border-radius: 999px;
+      background: linear-gradient(90deg, #b45309, #f0b429);
+      transition: width 1s ease;
+      box-shadow: 0 0 10px rgba(240,180,41,0.5);
+    }
 
-        .stat-val {
-            font-size: 1.2rem;
-            font-weight: 700;
-            display: block;
-        }
+    /* ── Certainty Gauge ── */
+    .gauge-container { display: flex; align-items: center; justify-content: center; padding: 1rem 0; }
+    .gauge-svg { width: 140px; height: 90px; }
 
-        .stat-lbl {
-            font-size: 0.65rem;
-            color: var(--muted);
-            text-transform: uppercase;
-        }
+    /* ── Trade Table ── */
+    .trade-log {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.72rem; font-family: 'JetBrains Mono', monospace;
+    }
+    .trade-log th {
+      color: var(--muted); text-transform: uppercase;
+      font-size: 0.62rem; letter-spacing: 0.06em;
+      padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .trade-log td { padding: 0.45rem 0.6rem; border-bottom: 1px solid rgba(30,45,61,0.5); }
+    .trade-log tr:last-child td { border: none; }
+    .tag-long  { color: var(--green); }
+    .tag-short { color: var(--red); }
+    .tag-hold  { color: var(--muted); }
 
-        .gauge-area {
-            text-align: center;
-            margin-top: 1.5rem;
-        }
+    /* ── Sparkline / Mini bars ── */
+    .mini-bars { display: flex; align-items: flex-end; gap: 2px; height: 40px; margin-top: 0.5rem; }
+    .mini-bar { flex: 1; border-radius: 2px 2px 0 0; background: var(--border); transition: height 0.5s; }
 
-        .gauge-val {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: var(--red);
-        }
+    /* ── Footer ── */
+    footer {
+      position: relative; z-index: 1;
+      text-align: center; padding: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.68rem; color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
 
-        canvas {
-            width: 100% !important;
-            height: 100% !important;
-        }
-
-        footer {
-            text-align: center;
-            padding: 1rem;
-            color: var(--muted);
-            font-size: 0.75rem;
-        }
-    </style>
+    /* ── Blinking cursor effect ── */
+    .blink { animation: blink 1.2s step-end infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  </style>
 </head>
-
 <body>
-    <div class="header-bar">
-        <h1>KAT 3 Neural Performance Dashboard — Strategic Insights</h1>
-        <p>Real-time analytics for Multi-Token Prediction and Mixture of Experts training cycles.</p>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚓</div>
+    <div class="logo-text">
+      <h1>Iron Oracle V11.0</h1>
+      <p>SOVEREIGN NEURAL COMMAND CENTER</p>
+    </div>
+  </div>
+  <div class="status-pill"><span class="status-dot"></span>TRAINING ACTIVE</div>
+  <div class="header-time" id="clockDisplay">--:--:-- UTC</div>
+</header>
+
+<!-- ── MAIN GRID ── -->
+<main>
+
+  <!-- ── ROW 1: KPI Cards ── -->
+  <div class="stats-row">
+
+    <div class="kpi-card kpi-gold">
+      <div class="kpi-label">Current Epoch</div>
+      <div class="kpi-value" id="kpiEpoch">--</div>
+      <div class="kpi-sub">of 300 target epochs</div>
+      <div class="epoch-bar-wrap" style="margin-top:0.7rem">
+        <div class="epoch-bar-track">
+          <div class="epoch-bar-fill" id="epochBar" style="width:0%"></div>
+        </div>
+      </div>
     </div>
 
-    <div class="dashboard-grid">
-        <!-- Top Left -->
-        <div class="section-card">
-            <div class="section-header header-red">Training Progress & Status</div>
-            <div class="content-body">
-                <div class="stats-col">
-                    <div class="stat-item">
-                        <span class="stat-val" id="totalEpochs">0</span>
-                        <span class="stat-lbl">Epochs Done</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-val">300</span>
-                        <span class="stat-lbl">Target</span>
-                    </div>
-                    <div class="gauge-area">
-                        <div class="stat-lbl">CURR MAE</div>
-                        <div class="gauge-val" id="lossVal">0.00</div>
-                    </div>
-                </div>
-                <div class="chart-col">
-                    <canvas id="absChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <!-- Top Right -->
-        <div class="section-card">
-            <div class="section-header header-orange">Neural Horizons (MTP)</div>
-            <div class="content-body">
-                <div class="stats-col">
-                    <div class="stat-item">
-                        <span class="stat-val">5</span>
-                        <span class="stat-lbl">MTP Tokens</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-val">24GB</span>
-                        <span class="stat-lbl">VRAM</span>
-                    </div>
-                </div>
-                <div class="chart-col">
-                    <canvas id="overtimeChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <!-- Bottom Left -->
-        <div class="section-card">
-            <div class="section-header header-blue">Error Reduction Analytics</div>
-            <div class="content-body">
-                <div class="chart-col">
-                    <canvas id="costChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <!-- Bottom Right -->
-        <div class="section-card">
-            <div class="section-header header-green">Overall Neural Effectiveness (ONE)</div>
-            <div class="content-body">
-                <div class="chart-col">
-                    <canvas id="oleChart"></canvas>
-                </div>
-            </div>
-        </div>
+    <div class="kpi-card kpi-cyan">
+      <div class="kpi-label">Val Accuracy</div>
+      <div class="kpi-value" id="kpiAcc">--%</div>
+      <div class="kpi-sub">Directional accuracy (val set)</div>
     </div>
 
-    <footer>
-        Linked to Live KAT 3 Engine · Generated by DeepSeek Quant Solutions.
-    </footer>
+    <div class="kpi-card kpi-green">
+      <div class="kpi-label">Val Loss</div>
+      <div class="kpi-value" id="kpiLoss">--</div>
+      <div class="kpi-sub">Best: <span id="kpiBestLoss">--</span></div>
+    </div>
 
-    <script>
-        const chartOptions = {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            animation: false
-        };
+    <div class="kpi-card kpi-purple">
+      <div class="kpi-label">Certainty Score</div>
+      <div class="kpi-value" id="kpiCert">--</div>
+      <div class="kpi-sub">Expert consensus strength</div>
+    </div>
 
-        const ctxAbs = document.getElementById('absChart').getContext('2d');
-        const absChart = new Chart(ctxAbs, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{ label: 'MAE', data: [], borderColor: '#d9534f', backgroundColor: 'rgba(217, 83, 79, 0.1)', fill: true, tension: 0.3 }]
-            },
-            options: chartOptions
-        });
+  </div>
 
-        const ctxOt = document.getElementById('overtimeChart').getContext('2d');
-        new Chart(ctxOt, {
-            type: 'bar',
-            data: {
-                labels: ['1m', '5m', '15m', '30m', '60m'],
-                datasets: [{ data: [3.8, 3.5, 3.2, 2.9, 2.6], backgroundColor: '#f0ad4e' }]
-            },
-            options: chartOptions
-        });
+  <!-- ── ROW 2: Charts ── -->
 
-        const ctxCost = document.getElementById('costChart').getContext('2d');
-        new Chart(ctxCost, {
-            type: 'bar',
-            data: {
-                labels: ['Block 1', 'Block 2', 'Block 3'],
-                datasets: [
-                    { label: 'Returns', data: [12, 14, 17], backgroundColor: '#5bc0de' },
-                    { label: 'Loss', data: [4, 3, 2], backgroundColor: '#2a6496' }
-                ]
-            },
-            options: { ...chartOptions, plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
-        });
+  <!-- Accuracy Over Epochs -->
+  <div class="card chart-card-wide">
+    <div class="card-header">
+      <span class="card-title">📈 Validation Accuracy — Epoch History</span>
+      <span class="card-badge badge-cyan" id="latestAccBadge">LIVE</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap"><canvas id="accChart"></canvas></div>
+    </div>
+  </div>
 
-        const ctxOle = document.getElementById('oleChart').getContext('2d');
-        new Chart(ctxOle, {
-            type: 'line',
-            data: {
-                labels: ['D1', 'D2', 'D3', 'D4', 'D5'],
-                datasets: [{ data: [40, 80, 50, 50, 20], borderColor: '#5cb85c', tension: 0.4 }]
-            },
-            options: chartOptions
-        });
+  <!-- Loss Over Epochs -->
+  <div class="card chart-card-wide">
+    <div class="card-header">
+      <span class="card-title">📉 Validation Loss — Convergence</span>
+      <span class="card-badge badge-gold">LOWER = BETTER</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap"><canvas id="lossChart"></canvas></div>
+    </div>
+  </div>
 
-        async function updateDashboard() {
-            try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
-                if (data.history && data.history.length > 0) {
-                    document.getElementById('totalEpochs').innerText = data.history.length;
-                    document.getElementById('lossVal').innerText = data.latest_loss.toFixed(4);
-                    absChart.data.labels = data.history.map(h => h.epoch).slice(-30);
-                    absChart.data.datasets[0].data = data.history.map(h => h.mae).slice(-30);
-                    absChart.update();
-                }
-            } catch (err) { console.error("Feed Lost:", err); }
+  <!-- ── ROW 3 ── -->
+
+  <!-- Certainty Distribution -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">🧠 Certainty Distribution</span>
+      <span class="card-badge badge-purple">256 EXPERTS</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap"><canvas id="certChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Net ROI Tracker -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">💰 Net ROI at 80% Threshold</span>
+      <span class="card-badge badge-green">$200 ACCOUNT</span>
+    </div>
+    <div class="card-body" style="padding-top:0.5rem">
+      <div style="display:flex;flex-direction:column;gap:0.6rem;margin-top:0.5rem">
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:0.72rem;margin-bottom:0.25rem">
+            <span style="color:var(--muted)">80% Tier Profit</span>
+            <span id="roi80" style="color:var(--green);font-family:'JetBrains Mono',monospace">Calculating...</span>
+          </div>
+          <div style="background:var(--border);border-radius:4px;height:6px">
+            <div id="roi80bar" style="height:100%;border-radius:4px;background:var(--green);width:0%;transition:width 1s"></div>
+          </div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:0.72rem;margin-bottom:0.25rem">
+            <span style="color:var(--muted)">Trades Fired (80%)</span>
+            <span id="trades80" style="color:var(--cyan);font-family:'JetBrains Mono',monospace">--</span>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:0.6rem;margin-top:0.2rem">
+          <div style="font-size:0.68rem;color:var(--muted);margin-bottom:0.3rem">STATUS</div>
+          <div id="deployStatus" style="font-size:0.8rem;font-weight:600;color:var(--gold)">⏳ Training in progress...</div>
+        </div>
+        <div style="font-size:0.68rem;color:var(--muted);margin-top:0.4rem;font-family:'JetBrains Mono',monospace" id="lastUpdated">Last updated: --</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Epoch Log Table -->
+  <div class="card chart-card-wide">
+    <div class="card-header">
+      <span class="card-title">📋 Epoch Log</span>
+      <span class="card-badge badge-gold">REAL-TIME</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <table class="trade-log">
+        <thead>
+          <tr>
+            <th>Epoch</th>
+            <th>Val Accuracy</th>
+            <th>Val Loss</th>
+            <th>Certainty</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="epochTableBody">
+          <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">Loading epoch history...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  ⚓ Iron Oracle V11.0 &nbsp;|&nbsp; 256-Expert MoE &nbsp;|&nbsp; 42-Feature Sovereign Hive &nbsp;|&nbsp; 15m Swing Trading
+  &nbsp;<span class="blink">|</span>
+</footer>
+
+<script>
+  // ── Clock ──────────────────────────────────────────────────────
+  function updateClock() {
+    document.getElementById('clockDisplay').textContent =
+      new Date().toUTCString().split(' ').slice(4,5)[0] + ' UTC';
+  }
+  setInterval(updateClock, 1000); updateClock();
+
+  // ── Chart defaults ─────────────────────────────────────────────
+  const base = {
+    responsive: true, maintainAspectRatio: false, animation: { duration: 600 },
+    plugins: { legend: { display: false }, tooltip: {
+      backgroundColor: '#0d1117', borderColor: '#1e2d3d', borderWidth: 1,
+      titleColor: '#e2e8f0', bodyColor: '#94a3b8', padding: 10
+    }},
+    scales: {
+      x: { grid: { color: '#1e2d3d' }, ticks: { color: '#64748b', font: { size: 10 } } },
+      y: { grid: { color: '#1e2d3d' }, ticks: { color: '#64748b', font: { size: 10 } } }
+    }
+  };
+
+  // ── Accuracy Chart ─────────────────────────────────────────────
+  const accChart = new Chart(document.getElementById('accChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        data: [], borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.08)',
+        fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#38bdf8'
+      }]
+    },
+    options: { ...base, scales: { ...base.scales, y: { ...base.scales.y, min: 0.5, max: 0.6 } } }
+  });
+
+  // ── Loss Chart ─────────────────────────────────────────────────
+  const lossChart = new Chart(document.getElementById('lossChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        data: [], borderColor: '#f0b429', backgroundColor: 'rgba(240,180,41,0.08)',
+        fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#f0b429'
+      }]
+    },
+    options: base
+  });
+
+  // ── Certainty Chart ────────────────────────────────────────────
+  const certChart = new Chart(document.getElementById('certChart'), {
+    type: 'bar',
+    data: {
+      labels: ['<60%','60-65%','65-70%','70-75%','75-80%','80-85%','85-90%','>90%'],
+      datasets: [{
+        data: [45, 60, 72, 55, 30, 20, 12, 8],
+        backgroundColor: [
+          '#1e2d3d','#1e2d3d','#1e2d3d','#1e2d3d',
+          'rgba(240,180,41,0.3)','rgba(240,180,41,0.5)',
+          'rgba(240,180,41,0.7)','#f0b429'
+        ],
+        borderRadius: 4, borderWidth: 0
+      }]
+    },
+    options: { ...base, plugins: { ...base.plugins,
+      annotation: { annotations: {
+        line1: { type:'line', x: 4.5, borderColor:'#f0b429', borderWidth:2, borderDash:[4,4] }
+      }}
+    }}
+  });
+
+  // ── Parse log file via /api/stats ──────────────────────────────
+  async function refresh() {
+    try {
+      const r = await fetch('/api/stats'); const d = await r.json();
+
+      if (d.epochs && d.epochs.length > 0) {
+        const epochs = d.epochs;
+        const latest = epochs[epochs.length - 1];
+
+        // KPIs
+        document.getElementById('kpiEpoch').textContent = latest.epoch;
+        document.getElementById('epochBar').style.width = (latest.epoch / 300 * 100).toFixed(1) + '%';
+        document.getElementById('kpiAcc').textContent   = (latest.val_acc * 100).toFixed(2) + '%';
+        document.getElementById('kpiLoss').textContent  = latest.val_loss.toFixed(4);
+        document.getElementById('kpiCert').textContent  = latest.certainty.toFixed(1);
+
+        // Best loss ignoring 0.0 (unrecorded epochs)
+        const validLosses = epochs.map(e => e.val_loss).filter(l => l > 0);
+        const bestLoss = validLosses.length > 0 ? Math.min(...validLosses) : 0;
+        document.getElementById('kpiBestLoss').textContent = bestLoss.toFixed(4);
+
+        // ... Accuracy chart ...
+        accChart.data.labels = epochs.map(e => 'E' + e.epoch);
+        accChart.data.datasets[0].data = epochs.map(e => e.val_acc);
+        accChart.update();
+
+        // ... Loss chart ...
+        lossChart.data.labels = epochs.map(e => 'E' + e.epoch);
+        lossChart.data.datasets[0].data = epochs.map(e => e.val_loss);
+        lossChart.update();
+
+        // ... Epoch table ...
+        const tbody = document.getElementById('epochTableBody');
+        const rows = [...epochs].reverse().slice(0, 8);
+        tbody.innerHTML = rows.map(e => {
+          const status = e.val_acc >= 0.535 ? '<span style="color:var(--gold)">🏆 SOVEREIGN</span>'
+                       : e.val_acc >= 0.53  ? '<span style="color:var(--green)">✅ IMPROVING</span>'
+                       : '<span style="color:var(--muted)">⏳ TRAINING</span>';
+          return `<tr>
+            <td style="color:var(--gold)">#${e.epoch}</td>
+            <td style="color:var(--cyan)">${(e.val_acc*100).toFixed(2)}%</td>
+            <td>${e.val_loss.toFixed(4)}</td>
+            <td style="color:var(--purple)">${e.certainty.toFixed(2)}</td>
+            <td>${status}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      // ROI data
+      if (d.roi) {
+        const roi = d.roi;
+        if (roi.net !== null) {
+            const color = roi.net >= 0 ? 'var(--green)' : 'var(--red)';
+            document.getElementById('roi80').textContent   = (roi.net >= 0 ? '+' : '') + '$' + roi.net.toFixed(2);
+            document.getElementById('roi80').style.color   = color;
+            const barPct = Math.min(100, Math.max(0, (roi.net + 100) / 200 * 100));
+            document.getElementById('roi80bar').style.width = barPct + '%';
+            document.getElementById('roi80bar').style.background = roi.net >= 0 ? 'var(--green)' : 'var(--red)';
+        } else {
+            document.getElementById('roi80').textContent = "PENDING";
+            document.getElementById('roi80').style.color = "var(--muted)";
+            document.getElementById('roi80bar').style.width = "0%";
         }
+        
+        document.getElementById('trades80').textContent = roi.trades ? roi.trades + ' trades' : 'Waiting for bench...';
+        
+        if (roi.note) {
+            document.getElementById('deployStatus').textContent = "📝 " + roi.note;
+            document.getElementById('deployStatus').style.color = "var(--gold)";
+        }
+        document.getElementById('deployStatus').style.color  = roi.net > 0 ? 'var(--green)' : 'var(--gold)';
+      }
 
-        setInterval(updateDashboard, 5000);
-        updateDashboard();
-    </script>
+      document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+
+    } catch(e) {
+      console.warn('Feed offline — server may be loading.', e);
+    }
+  }
+
+  setInterval(refresh, 10000);
+  refresh();
+</script>
 </body>
-
 </html>

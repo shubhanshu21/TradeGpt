@@ -29,14 +29,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # ── Path setup ───────────────────────────────────────────────────────────────
-SRC_ROOT = Path(__file__).parent.parent
+SRC_ROOT  = Path(__file__).parent.parent
 PROJ_ROOT = SRC_ROOT.parent
 sys.path.insert(0, str(SRC_ROOT))
-sys.path.insert(0, str(SRC_ROOT / "architectures"))
 
-from preprocess import KATScaler, add_derived_features, build_feature_cols
+from data.preprocess import build_feature_cols, compute_indicators
 import pandas as pd
-import tensorflow as tf
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MODEL REGISTRY
@@ -56,48 +54,61 @@ def load_model(name: str):
     if not path.exists():
         raise FileNotFoundError(f"Model checkpoint not found: {path}")
 
+    import keras
     print(f"Loading {name} from {path}...")
-    _models[name] = tf.keras.models.load_model(str(path))
+    _models[name] = keras.models.load_model(str(path), compile=False, safe_mode=False)
     return _models[name]
-
-
-def load_scaler(variant: str = "base") -> KATScaler:
-    if variant in _scalers:
-        return _scalers[variant]
-    path = CKPT_DIR / f"scaler_{variant}.pkl"
-    if not path.exists():
-        path = CKPT_DIR / "scaler_base.pkl"
-    if not path.exists():
-        # Fallback to current project root scaler location if any
-        path = PROJ_ROOT / "models" / "scaler_base.pkl"
-        
-    scaler = KATScaler.load(str(path))
-    _scalers[variant] = scaler
-    return scaler
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DASHBOARD LOGIC
 # ──────────────────────────────────────────────────────────────────────────────
 
-def get_latest_history():
-    """Scans logs/ for the newest training history."""
+def parse_training_log():
+    """
+    Parse logs/iron_oracle_v11.log using the MissionControl table rows
+    for epoch/acc/certainty, and the Keras summary lines for val_loss.
+    """
+    import re
+    log_path = PROJ_ROOT / "logs" / "iron_oracle_v11.log"
+    epochs = []
+    if not log_path.exists():
+        return epochs
     try:
-        log_root = PROJ_ROOT / "logs" / "kat3"
-        if not log_root.exists(): return []
-        
-        # Get newest folder
-        sessions = sorted([d for d in log_root.iterdir() if d.is_dir()])
-        if not sessions: return []
-        
-        hist_file = sessions[-1] / "history.csv"
-        if not hist_file.exists(): return []
-        
-        df = pd.read_csv(hist_file)
-        # Format for JS: [{epoch: 0, mae: 1.2}, ...]
-        return df[['epoch', 'mae', 'loss']].to_dict(orient='records')
-    except:
-        return []
+        with open(log_path, "rb") as f:
+            raw = f.read().decode("utf-8", errors="ignore")
+
+        # ── Step 1: MissionControl table rows — ground truth for epoch number ──
+        # Format: "07:11:29   | 13    | 0.5345   | 111.894    | SOVEREIGN EDGE"
+        table_pat = re.compile(
+            r"\d{2}:\d{2}:\d{2}\s*\|\s*(\d+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)"
+        )
+        seen = {}
+        for m in table_pat.finditer(raw):
+            ep_int = int(m.group(1))
+            if ep_int > 0:
+                seen[ep_int] = {
+                    "epoch":     ep_int,
+                    "val_acc":   float(m.group(2)),
+                    "certainty": float(m.group(3)),
+                    "val_loss":  0.0,
+                }
+
+        # ── Step 2: Keras summary lines — extract val_loss per epoch ──
+        # Each line contains: val_loss: X ... val_prediction_dir_acc: Y ... val_certainty_certainty: Z
+        # There are 2 per epoch (one interim, one final) — keep unique val_loss per epoch
+        keras_pat = re.compile(
+            r"Epoch (\d+)/300.*?val_loss:\s*([\d.]+)", re.DOTALL
+        )
+        for m in keras_pat.finditer(raw):
+            ep_int = int(m.group(1))
+            if ep_int in seen and seen[ep_int]["val_loss"] == 0.0:
+                seen[ep_int]["val_loss"] = float(m.group(2))
+
+        epochs = [seen[ep] for ep in sorted(seen)]
+    except Exception as e:
+        print(f"Log parse error: {e}")
+    return epochs
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -156,14 +167,16 @@ app.add_middleware(
 )
 
 
-def candles_to_array(candles: List[CandleRow], scaler: KATScaler) -> np.ndarray:
-    """Convert candle list → scaled feature array (N, n_features)."""
+def candles_to_array(candles: List[CandleRow]) -> np.ndarray:
+    """Convert candle list → DLS-scaled feature array (N, n_features)."""
     rows = [c.dict() for c in candles]
     df   = pd.DataFrame(rows)
-    df   = add_derived_features(df)
+    df   = compute_indicators(df)
     feature_cols = [c for c in build_feature_cols() if c in df.columns]
-    X = df[feature_cols].values
-    return scaler.transform_X(X), feature_cols
+    X = df[feature_cols].values.astype("float32")
+    # Dynamic Local Scaling — same as training pipeline
+    mean = X.mean(axis=0); std = X.std(axis=0) + 1e-8
+    return (X - mean) / std, feature_cols
 
 
 # ── Dashboard (The Visual HUD) ────────────────────────────────────────────────
@@ -178,15 +191,40 @@ async def dashboard_home():
 
 @app.get("/api/stats")
 async def get_stats():
-    """Neural Pulse: Feeds the dashboard with live data."""
-    history = get_latest_history()
-    latest_loss = history[-1]['mae'] if history else 0.0
-    status = "MODEL TRAINING" if history else "ARCHIVE READY"
-    
+    """Neural Pulse: Feeds the dashboard with live epoch data."""
+    epochs = parse_training_log()
+    latest = epochs[-1] if epochs else {}
+    epoch_num = latest.get("epoch", 0)
+
+    # Default ROI status
+    roi_net, roi_trades, roi_status = None, None, "measure"
+
+    # Try to load real ROI from bench script
+    real_roi_path = PROJ_ROOT / "logs" / "latest_roi.json"
+    if real_roi_path.exists():
+        try:
+            import json
+            with open(real_roi_path, "r") as f:
+                rd = json.load(f)
+            t80 = rd["tiers"].get("80")
+            if t80:
+                roi_net = t80["net"]
+                roi_trades = t80["trades"]
+                roi_status = "live"
+        except: pass
+
+    roi_block = {
+        "net":    roi_net,
+        "trades": roi_trades,
+        "status": roi_status,
+        "note":   f"Epoch {epoch_num}/300 — Bench: {roi_status.upper()}"
+    }
+
     return {
-        "status": status,
-        "latest_loss": latest_loss,
-        "history": history[-200:] # Last 200 epochs only for performance
+        "status": "TRAINING" if epochs else "IDLE",
+        "epochs": epochs,
+        "latest": latest,
+        "roi":    roi_block,
     }
 
 
@@ -196,10 +234,15 @@ async def get_stats():
 
 @app.get("/health")
 async def health():
+    try:
+        import tensorflow as tf
+        gpu = bool(tf.config.list_physical_devices("GPU"))
+    except Exception:
+        gpu = False
     return {
         "status": "ok",
         "loaded_models": list(_models.keys()),
-        "gpu": bool(tf.config.list_physical_devices("GPU")),
+        "gpu": gpu,
     }
 
 
@@ -300,4 +343,4 @@ async def predict_kat2(variant: str, req: PredictRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("serve:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("serve:app", host="0.0.0.0", port=5000, reload=True)
