@@ -65,12 +65,56 @@ class MissionControl(keras.callbacks.Callback):
         cert  = logs.get("val_certainty_certainty", 0.0)
         ts    = datetime.now().strftime("%H:%M:%S")
         
-        status = "KEEPING" if v_acc < 0.53 else "🚀 SOVEREIGN EDGE"
+        status = "⚓ LEARNING"
+        if v_acc >= 0.54: status = "🏛️ SOVEREIGN"
+        elif v_acc >= 0.53: status = "⚡ ALPHA FLOW"
         
         print(f"{ts:<10} | {epoch+1:<5} | {v_acc:<8.4f} | {cert:<10.3f} | {status}")
         
-        if epoch > 10 and v_acc < 0.501:
-            print(f"\n[⚠️  STAGNATION] Epoch {epoch+1} Win-Rate: {v_acc:.4f}")
+        # ── Automated Sovereign Benchmarking (V11.1) ────────────────────────
+        # This runs every epoch to update the dashboard ROI card automatically
+        try:
+            import json
+            from data.preprocess import compute_indicators, build_feature_cols
+            from exchange.fetch_data import fetch_live_kat_data
+            
+            # 1. Fetch live slice for bench (Last 500 candles)
+            df_raw = fetch_live_kat_data('BTCUSD', 500, '15m')
+            if df_raw is not None:
+                df = compute_indicators(df_raw)
+                features = build_feature_cols()
+                data = df[features].values.astype('float32')
+                raw_prices = df['close'].values
+                
+                ctx = 120; f = 15
+                # Slice indices for a quick backtest
+                indices = range(len(df) - ctx - f - 100, len(df) - ctx - f)
+                X = np.array([(data[i:i+ctx] - data[i:i+ctx].mean(0)) / (data[i:i+ctx].std(0) + 1e-8) for i in indices])
+                usd_diffs = np.array([raw_prices[i + ctx + f - 1] - raw_prices[i + ctx - 1] for i in indices])
+                
+                # Inference using CURRENT weights
+                outputs = self.model(X, training=False)
+                traj    = outputs[0].numpy()[:, -1, 0] # Price at end of forecast
+                certs   = np.mean(outputs[1].numpy(), axis=1) # Avg certainty
+                
+                # Normalize certainty for bench (80-100% range)
+                c_pct = (certs - certs.min()) / (certs.max() - certs.min() + 1e-9) * 100
+                
+                roi_data = {"tiers": {}, "last_update": ts}
+                pos_size = 2000.0; fee_rate = 0.0006
+                for th in [80, 85, 90]:
+                    mask = c_pct >= th
+                    n_t  = int(mask.sum())
+                    if n_t > 0:
+                        e_p = raw_prices[np.array(indices)[mask] + ctx - 1]
+                        gross = float((np.sign(traj[mask]) * (usd_diffs[mask] / e_p) * pos_size).sum())
+                        fees = float(n_t * (pos_size * fee_rate))
+                        roi_data["tiers"][str(th)] = {"trades": n_t, "net": gross - fees}
+                
+                with open(ROOT / "logs" / "latest_roi.json", "w") as f_json:
+                    json.dump(roi_data, f_json, indent=4)
+        except Exception as e:
+            pass # Bench failed, don't crash the training run
 
 
 def train_kraken(args):

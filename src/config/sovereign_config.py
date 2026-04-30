@@ -6,9 +6,8 @@ Changing values here will update the Data Engine (Preprocess) and the Trader.
 """
 
 # ── EXCHANGE FEES ─────────────────────────────────────────────────────────────
-# Default for Delta Exchange India is ~0.06% (round trip)
-# Update this if the exchange changes their fee structure.
-CURRENT_FEE_PCT = 0.0006  
+# Default for Delta Exchange India: 0% Buy / 0.1% Sell + 18% GST ≈ 0.12%
+CURRENT_FEE_PCT = 0.0012  
 
 # ── SOVEREIGN GATES ───────────────────────────────────────────────────────────
 # How much profit (after fees) do we need to see to consider it a "Win"?

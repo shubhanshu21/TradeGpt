@@ -220,11 +220,24 @@ async def get_stats():
         "note":   f"Epoch {epoch_num}/300 — Bench: {roi_status.upper()}"
     }
 
+    # Try to detect total epochs from log
+    total_epochs = 300
+    try:
+        log_path = PROJ_ROOT / "logs" / "iron_oracle_v11.log"
+        if log_path.exists():
+            import re
+            with open(log_path, "rb") as f:
+                header = f.read(5000).decode("utf-8", errors="ignore")
+                m = re.search(r"Epoch \d+/(\d+)", header)
+                if m: total_epochs = int(m.group(1))
+    except: pass
+
     return {
         "status": "TRAINING" if epochs else "IDLE",
         "epochs": epochs,
         "latest": latest,
         "roi":    roi_block,
+        "total_epochs": total_epochs
     }
 
 

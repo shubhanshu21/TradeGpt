@@ -239,9 +239,9 @@
   <div class="stats-row">
 
     <div class="kpi-card kpi-gold">
-      <div class="kpi-label">Current Epoch</div>
+      <div class="kpi-label">AI Brain Growth</div>
       <div class="kpi-value" id="kpiEpoch">--</div>
-      <div class="kpi-sub">of 300 target epochs</div>
+      <div class="kpi-sub">Step <span id="kpiStepNum">--</span> of <span id="kpiTotalSteps">--</span></div>
       <div class="epoch-bar-wrap" style="margin-top:0.7rem">
         <div class="epoch-bar-track">
           <div class="epoch-bar-fill" id="epochBar" style="width:0%"></div>
@@ -250,21 +250,21 @@
     </div>
 
     <div class="kpi-card kpi-cyan">
-      <div class="kpi-label">Val Accuracy</div>
+      <div class="kpi-label">Win Chance</div>
       <div class="kpi-value" id="kpiAcc">--%</div>
-      <div class="kpi-sub">Directional accuracy (val set)</div>
+      <div class="kpi-sub">Current accuracy target</div>
     </div>
 
     <div class="kpi-card kpi-green">
-      <div class="kpi-label">Val Loss</div>
+      <div class="kpi-label">Confusion Level</div>
       <div class="kpi-value" id="kpiLoss">--</div>
-      <div class="kpi-sub">Best: <span id="kpiBestLoss">--</span></div>
+      <div class="kpi-sub">Best (Lowest): <span id="kpiBestLoss">--</span></div>
     </div>
 
     <div class="kpi-card kpi-purple">
-      <div class="kpi-label">Certainty Score</div>
+      <div class="kpi-label">Conviction Strength</div>
       <div class="kpi-value" id="kpiCert">--</div>
-      <div class="kpi-sub">Expert consensus strength</div>
+      <div class="kpi-sub">Expert agreement level</div>
     </div>
 
   </div>
@@ -274,8 +274,8 @@
   <!-- Accuracy Over Epochs -->
   <div class="card chart-card-wide">
     <div class="card-header">
-      <span class="card-title">📈 Validation Accuracy — Epoch History</span>
-      <span class="card-badge badge-cyan" id="latestAccBadge">LIVE</span>
+      <span class="card-title">📈 Win Streak — Learning History</span>
+      <span class="card-badge badge-cyan">CLIMBING = GOOD</span>
     </div>
     <div class="card-body">
       <div class="chart-wrap"><canvas id="accChart"></canvas></div>
@@ -285,8 +285,8 @@
   <!-- Loss Over Epochs -->
   <div class="card chart-card-wide">
     <div class="card-header">
-      <span class="card-title">📉 Validation Loss — Convergence</span>
-      <span class="card-badge badge-gold">LOWER = BETTER</span>
+      <span class="card-title">📉 Confusion Level — Master Data</span>
+      <span class="card-badge badge-gold">FALLING = BETTER</span>
     </div>
     <div class="card-body">
       <div class="chart-wrap"><canvas id="lossChart"></canvas></div>
@@ -298,8 +298,8 @@
   <!-- Certainty Distribution -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">🧠 Certainty Distribution</span>
-      <span class="card-badge badge-purple">256 EXPERTS</span>
+      <span class="card-title">🧠 Expert Consensus</span>
+      <span class="card-badge badge-purple">256 AI VOICES</span>
     </div>
     <div class="card-body">
       <div class="chart-wrap"><canvas id="certChart"></canvas></div>
@@ -309,14 +309,14 @@
   <!-- Net ROI Tracker -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">💰 Net ROI at 80% Threshold</span>
-      <span class="card-badge badge-green">$200 ACCOUNT</span>
+      <span class="card-title">💰 Net Profit (After Fees)</span>
+      <span class="card-badge badge-green" id="roiNote">$200 ACCOUNT</span>
     </div>
     <div class="card-body" style="padding-top:0.5rem">
       <div style="display:flex;flex-direction:column;gap:0.6rem;margin-top:0.5rem">
         <div>
           <div style="display:flex;justify-content:space-between;font-size:0.72rem;margin-bottom:0.25rem">
-            <span style="color:var(--muted)">80% Tier Profit</span>
+            <span style="color:var(--muted)">High-Confidence Profit</span>
             <span id="roi80" style="color:var(--green);font-family:'JetBrains Mono',monospace">Calculating...</span>
           </div>
           <div style="background:var(--border);border-radius:4px;height:6px">
@@ -325,12 +325,12 @@
         </div>
         <div>
           <div style="display:flex;justify-content:space-between;font-size:0.72rem;margin-bottom:0.25rem">
-            <span style="color:var(--muted)">Trades Fired (80%)</span>
+            <span style="color:var(--muted)">Total Trade Decisions</span>
             <span id="trades80" style="color:var(--cyan);font-family:'JetBrains Mono',monospace">--</span>
           </div>
         </div>
         <div style="border-top:1px solid var(--border);padding-top:0.6rem;margin-top:0.2rem">
-          <div style="font-size:0.68rem;color:var(--muted);margin-bottom:0.3rem">STATUS</div>
+          <div style="font-size:0.68rem;color:var(--muted);margin-bottom:0.3rem">MARKET STRATEGY</div>
           <div id="deployStatus" style="font-size:0.8rem;font-weight:600;color:var(--gold)">⏳ Training in progress...</div>
         </div>
         <div style="font-size:0.68rem;color:var(--muted);margin-top:0.4rem;font-family:'JetBrains Mono',monospace" id="lastUpdated">Last updated: --</div>
@@ -341,24 +341,45 @@
   <!-- Epoch Log Table -->
   <div class="card chart-card-wide">
     <div class="card-header">
-      <span class="card-title">📋 Epoch Log</span>
-      <span class="card-badge badge-gold">REAL-TIME</span>
+      <span class="card-title">📋 AI Memory History</span>
+      <span class="card-badge badge-gold">STEP BY STEP</span>
     </div>
     <div class="card-body" style="padding:0">
       <table class="trade-log">
         <thead>
           <tr>
-            <th>Epoch</th>
-            <th>Val Accuracy</th>
-            <th>Val Loss</th>
-            <th>Certainty</th>
+            <th>Step #</th>
+            <th>Win Rate</th>
+            <th>Confusion</th>
+            <th>Conviction</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody id="epochTableBody">
-          <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">Loading epoch history...</td></tr>
+          <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">Loading AI memory...</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- Help Guide -->
+  <div class="card chart-card-full" style="background:rgba(56,189,248,0.02)">
+    <div class="card-header">
+      <span class="card-title">❓ Quick Help Guide — What am I looking at?</span>
+    </div>
+    <div class="card-body" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:1.5rem">
+      <div style="font-size:0.75rem">
+        <strong style="color:var(--gold)">AI Brain Growth:</strong> This shows how far the AI is into its training journey. It's like a student in school.
+      </div>
+      <div style="font-size:0.75rem">
+        <strong style="color:var(--cyan)">Win Chance:</strong> The AI's accuracy. Anything over 50% is profitable for our strategy.
+      </div>
+      <div style="font-size:0.75rem">
+        <strong style="color:var(--green)">Confusion:</strong> Lower is better! As this number falls, the AI is "understanding" the market better.
+      </div>
+      <div style="font-size:0.75rem">
+        <strong style="color:var(--purple)">Expert Consensus:</strong> We have 256 "Experts" inside the AI. This shows how many of them agree on the move.
+      </div>
     </div>
   </div>
 
@@ -370,10 +391,17 @@
 </footer>
 
 <script>
-  // ── Clock ──────────────────────────────────────────────────────
+  // ── Clock (Localized to IST) ──────────────────────────────────
   function updateClock() {
-    document.getElementById('clockDisplay').textContent =
-      new Date().toUTCString().split(' ').slice(4,5)[0] + ' UTC';
+    const options = { 
+      timeZone: 'Asia/Kolkata', 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit', 
+      hour12: true 
+    };
+    const istTime = new Intl.DateTimeFormat('en-IN', options).format(new Date());
+    document.getElementById('clockDisplay').textContent = istTime + ' IST';
   }
   setInterval(updateClock, 1000); updateClock();
 
@@ -448,8 +476,11 @@
         const latest = epochs[epochs.length - 1];
 
         // KPIs
+        const totalEp = d.total_epochs || 300;
         document.getElementById('kpiEpoch').textContent = latest.epoch;
-        document.getElementById('epochBar').style.width = (latest.epoch / 300 * 100).toFixed(1) + '%';
+        document.getElementById('kpiStepNum').textContent = latest.epoch;
+        document.getElementById('kpiTotalSteps').textContent = totalEp;
+        document.getElementById('epochBar').style.width = (latest.epoch / totalEp * 100).toFixed(1) + '%';
         document.getElementById('kpiAcc').textContent   = (latest.val_acc * 100).toFixed(2) + '%';
         document.getElementById('kpiLoss').textContent  = latest.val_loss.toFixed(4);
         document.getElementById('kpiCert').textContent  = latest.certainty.toFixed(1);
@@ -471,16 +502,24 @@
 
         // ... Epoch table ...
         const tbody = document.getElementById('epochTableBody');
-        const rows = [...epochs].reverse().slice(0, 8);
+        const rows = [...epochs].reverse().slice(0, 10);
         tbody.innerHTML = rows.map(e => {
-          const status = e.val_acc >= 0.535 ? '<span style="color:var(--gold)">🏆 SOVEREIGN</span>'
-                       : e.val_acc >= 0.53  ? '<span style="color:var(--green)">✅ IMPROVING</span>'
-                       : '<span style="color:var(--muted)">⏳ TRAINING</span>';
+          let status;
+          if (e.val_acc >= 0.54) {
+            status = '<span style="color:var(--gold)">🏛️ SOVEREIGN PRIME</span>';
+          } else if (e.val_acc >= 0.53) {
+            status = '<span style="color:var(--green)">⚡ ALPHA FLOW</span>';
+          } else if (e.val_acc > 0) {
+            status = '<span style="color:var(--cyan)">⚓ LEARNING PHYSICS</span>';
+          } else {
+            status = '<span style="color:var(--muted)">🧬 SEQUENCING...</span>';
+          }
+          
           return `<tr>
             <td style="color:var(--gold)">#${e.epoch}</td>
-            <td style="color:var(--cyan)">${(e.val_acc*100).toFixed(2)}%</td>
-            <td>${e.val_loss.toFixed(4)}</td>
-            <td style="color:var(--purple)">${e.certainty.toFixed(2)}</td>
+            <td style="color:var(--cyan)">${e.val_acc > 0 ? (e.val_acc*100).toFixed(2) + '%' : '---'}</td>
+            <td>${e.val_loss > 0 ? e.val_loss.toFixed(4) : '---'}</td>
+            <td style="color:var(--purple)">${e.certainty > 0 ? e.certainty.toFixed(2) : '---'}</td>
             <td>${status}</td>
           </tr>`;
         }).join('');
@@ -489,6 +528,12 @@
       // ROI data
       if (d.roi) {
         const roi = d.roi;
+        // Always update the note to reflect Sovereign Phase
+        if (document.getElementById('roiNote')) {
+            document.getElementById('roiNote').textContent = `FEE GATE: 0.12%`;
+            document.getElementById('roiNote').style.color = 'var(--gold)';
+        }
+        
         if (roi.net !== null) {
             const color = roi.net >= 0 ? 'var(--green)' : 'var(--red)';
             document.getElementById('roi80').textContent   = (roi.net >= 0 ? '+' : '') + '$' + roi.net.toFixed(2);
