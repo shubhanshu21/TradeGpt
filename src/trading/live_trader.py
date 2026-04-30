@@ -60,7 +60,7 @@ def load_model():
     # FIX #1: Iron Oracle uses DLS (Dynamic Local Scaling) — no global scaler needed.
     # We use build_kraken to reconstruct the architecture and load weights directly.
     from core.hydra import build_kraken
-    n_feat = 42  # Phase 5 Sovereign Hive (42 features)
+    n_feat = 45  # Phase 5 Sovereign Hive (45 features)
     log(f"🏗️  Re-building Iron Oracle V11.0 ({n_feat} features)...")
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN)
     model.load_weights(str(model_p))
@@ -159,6 +159,16 @@ def run_pilot():
                 log(f"⏳ COOLDOWN ACTIVE — Saving fees.", C_YELLOW)
                 time.sleep(SLEEP_S); continue
 
+            # ── Dynamic Armor (Mastery Enhancement) ──────────────────────────
+            # Armor widens during high volatility to prevent "Stop Loss Hunting"
+            # and narrows during low volatility to lock in profits.
+            base_sl = 1.2
+            base_tp = 2.8
+            vol_multiplier = 1.0 + min(0.5, abs(mean_vol)) # Max +50% widening
+            
+            dyn_sl = base_sl * vol_multiplier
+            dyn_tp = base_tp * vol_multiplier
+
             # ── Signal Logic ──────────────────────────────────────────────────
             dynamic_thresh = THRESHOLD * (1.0 + max(0.0, mean_vol))
             
@@ -171,14 +181,16 @@ def run_pilot():
             if mean_price > dynamic_thresh:
                 if not is_in_long:
                     log(f"📈 LONG signal (+${est_swing:.2f}) @ {cert_norm*100:.1f}%", C_GREEN)
-                    client.place_order(SYMBOL, SIZE, "buy", sl_pct=1.0, tp_pct=2.5)
+                    log(f"🛡️  DYNAMIC ARMOR: SL {dyn_sl:.2f}% | TP {dyn_tp:.2f}%")
+                    client.place_order(SYMBOL, SIZE, "buy", sl_pct=dyn_sl, tp_pct=dyn_tp)
                     last_trade_time = time.time()
                 else: log(f"✅ Already LONG", C_GREEN)
 
             elif mean_price < -dynamic_thresh:
                 if not is_in_short:
                     log(f"📉 SHORT signal (-${est_swing:.2f}) @ {cert_norm*100:.1f}%", C_RED)
-                    client.place_order(SYMBOL, SIZE, "sell", sl_pct=1.0, tp_pct=2.5)
+                    log(f"🛡️  DYNAMIC ARMOR: SL {dyn_sl:.2f}% | TP {dyn_tp:.2f}%")
+                    client.place_order(SYMBOL, SIZE, "sell", sl_pct=dyn_sl, tp_pct=dyn_tp)
                     last_trade_time = time.time()
                 else: log(f"✅ Already SHORT", C_RED)
             else:
