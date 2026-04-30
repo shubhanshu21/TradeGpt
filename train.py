@@ -111,8 +111,38 @@ class MissionControl(keras.callbacks.Callback):
                         fees = float(n_t * (pos_size * fee_rate))
                         roi_data["tiers"][str(th)] = {"trades": n_t, "net": gross - fees}
                 
+                # 3. Save detailed recent trades for dashboard feed
+                recent_trades = []
+                # Look at the last 10 trades that passed the 80% threshold
+                mask80 = c_pct >= 80
+                if mask80.any():
+                    t_indices = np.array(indices)[mask80]
+                    t_traj = traj[mask80]
+                    t_usd = usd_diffs[mask80]
+                    
+                    # Take the last 10
+                    for i in range(max(0, len(t_indices)-10), len(t_indices)):
+                        idx = t_indices[i]
+                        entry_p = raw_prices[idx + ctx - 1]
+                        price_move_pct = (t_usd[i] / entry_p)
+                        side = "LONG" if t_traj[i] > 0 else "SHORT"
+                        
+                        # Net profit calculation
+                        raw_ret = price_move_pct if side == "LONG" else -price_move_pct
+                        net_ret = raw_ret - fee_rate
+                        
+                        recent_trades.append({
+                            "timestamp": pd.to_datetime(df.index[idx + ctx - 1]).strftime("%H:%M"),
+                            "side": side,
+                            "entry": float(entry_p),
+                            "net_pct": float(net_ret * 100)
+                        })
+                
                 with open(ROOT / "logs" / "latest_roi.json", "w") as f_json:
                     json.dump(roi_data, f_json, indent=4)
+                    
+                with open(ROOT / "logs" / "recent_sim_trades.json", "w") as f_trades:
+                    json.dump(recent_trades[::-1], f_trades, indent=4) # Newest first
         except Exception as e:
             pass # Bench failed, don't crash the training run
 
@@ -223,21 +253,20 @@ def train_kraken(args):
     # ── 6. Ignite ─────────────────────────────────────────────────────────────
     print(f"\n🚀 IGNITION: {EPOCHS}-Epoch Mission | Batch {BATCH_S} | CTX {CTX_WIN} candles (2h) | ~14GB RAM Target")
     
-    # V10.3: Robust Epoch Detection
+    # V10.4: Smart Epoch Detection from Checkpoint Filenames
     current_epoch = 0
-    if args.resume:
-        diag_p = LOG_DIR / "diagnostics.log"
-        if diag_p.exists():
-            try:
-                # Read last line to get epoch
-                with open(diag_p, "r") as f:
-                    lines = f.readlines()
-                    if len(lines) > 1:
-                        last_line = lines[-1].strip()
-                        current_epoch = int(last_line.split(",")[1]) # Time,Epoch,Val...
-            except: 
-                # Fallback to model count
-                current_epoch = len(saved)
+    if args.resume and saved:
+        try:
+            # Parse 'E004' from 'hydra_checkpoint_E004.keras'
+            latest_file = os.path.basename(saved[-1])
+            import re
+            match = re.search(r"E(\d+)", latest_file)
+            if match:
+                current_epoch = int(match.group(1)) # This is the FINISHED epoch
+                print(f"   🎯 RESUMPTION: Detected finished epoch {current_epoch}. Starting Epoch {current_epoch+1}...")
+        except Exception as e:
+            print(f"   ⚠️ Could not parse epoch from filename: {e}")
+            current_epoch = len(saved)
     
     # Standard Keras model.fit resumption
 

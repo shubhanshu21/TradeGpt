@@ -306,10 +306,33 @@
     </div>
   </div>
 
+  <!-- Latest AI Strikes Feed -->
+  <div class="card chart-card-wide">
+    <div class="card-header">
+      <span class="card-title">🎯 Latest AI Strikes — Simulated Live Feed</span>
+      <span class="card-badge badge-cyan">REAL-TIME BLIND REPLAY</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <table class="trade-log">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Move</th>
+            <th>Entry Price</th>
+            <th>Net ROI</th>
+          </tr>
+        </thead>
+        <tbody id="strikeTableBody">
+          <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:1.5rem">Waiting for next AI strike...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- Net ROI Tracker -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">💰 Net Profit (After Fees)</span>
+      <span class="card-title">💰 Net Profit</span>
       <span class="card-badge badge-green" id="roiNote">$200 ACCOUNT</span>
     </div>
     <div class="card-body" style="padding-top:0.5rem">
@@ -428,7 +451,7 @@
         fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#38bdf8'
       }]
     },
-    options: { ...base, scales: { ...base.scales, y: { ...base.scales.y, min: 0.5, max: 0.6 } } }
+    options: { ...base }
   });
 
   // ── Loss Chart ─────────────────────────────────────────────────
@@ -554,6 +577,21 @@
             document.getElementById('deployStatus').style.color = "var(--gold)";
         }
         document.getElementById('deployStatus').style.color  = roi.net > 0 ? 'var(--green)' : 'var(--gold)';
+      }
+
+      // Recent Strike Feed
+      if (d.trades && d.trades.length > 0) {
+        const tBody = document.getElementById('strikeTableBody');
+        tBody.innerHTML = d.trades.map(t => {
+          const color = t.net_pct >= 0 ? 'var(--green)' : 'var(--red)';
+          const sideColor = t.side === 'LONG' ? 'var(--green)' : 'var(--red)';
+          return `<tr>
+            <td style="color:var(--muted)">${t.timestamp}</td>
+            <td style="color:${sideColor};font-weight:600">${t.side}</td>
+            <td>$${t.entry.toFixed(2)}</td>
+            <td style="color:${color};font-weight:600">${t.net_pct >= 0 ? '+' : ''}${t.net_pct.toFixed(2)}%</td>
+          </tr>`;
+        }).join('');
       }
 
       document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();

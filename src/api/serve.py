@@ -232,11 +232,21 @@ async def get_stats():
                 if m: total_epochs = int(m.group(1))
     except: pass
 
+    # Try to load recent trades
+    recent_trades = []
+    trades_path = PROJ_ROOT / "logs" / "recent_sim_trades.json"
+    if trades_path.exists():
+        try:
+            with open(trades_path, "r") as f:
+                recent_trades = json.load(f)
+        except: pass
+
     return {
         "status": "TRAINING" if epochs else "IDLE",
         "epochs": epochs,
         "latest": latest,
         "roi":    roi_block,
+        "trades": recent_trades,
         "total_epochs": total_epochs
     }
 
