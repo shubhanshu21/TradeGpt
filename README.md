@@ -70,12 +70,31 @@ The model is now trained to classify every market condition into four "Business 
 
 ---
 
+## 🌉 Genesis Bridge: Multi-Exchange Synchronization
+To ensure "Best-in-Class" training, the Kraken utilizes a **Genesis Bridge** to synchronize history from multiple sources into a single "Ultimate Dataset."
+
+### 🏛️ Historical Depth:
+- **Total Candles**: 303,269 (15-Minute Resolution).
+*   **Time Depth**: ~8.7 Years (August 2017 – Present).
+*   **Sources**: Delta Exchange India + Binance Global.
+- **Feature Synthesis**: Uses stochastic L2 simulation to reconstruct Order Book (OB) features for historical data lacking native depth.
+
+### 🚀 Building the Foundation:
+To rebuild the 303k Genesis dataset from scratch:
+```bash
+sudo /root/miniconda3/bin/python scripts/bridge_history.py
+```
+*Note: This script bridges the gap between Delta's local history and Binance's global archives.*
+
+---
+
 ## 🚀 Quick Start Commands
 
 | Task | Command |
 | :--- | :--- |
-| 🔥 **Start Sovereign Training** | `nohup sudo /root/miniconda3/bin/python train.py --symbol BTCUSD --timeframe 15m --epochs 300 --batch 64 > logs/iron_oracle_v11.log 2>&1 &` |
-| ◀️ **Restart Dashboard** | `sudo kill $(sudo lsof -t -i:5000) && sudo nohup /root/miniconda3/bin/uvicorn src.api.serve:app --host 0.0.0.0 --port 5000 > logs/dashboard.log 2>&1 &` |
+| 🌉 **Run Genesis Bridge** | `sudo /root/miniconda3/bin/python scripts/bridge_history.py` |
+| 🔥 **Sovereign Training (303k)** | `nohup sudo /root/miniconda3/bin/python -u train.py --candles 400000 --symbol BTCUSD --timeframe 15m --epochs 300 --batch 32 > logs/iron_oracle_v11.log 2>&1 &` |
+| ◀️ **Start Dashboard (5000)** | `nohup sudo /root/miniconda3/bin/python -u auto_run.py serve --port 5000 > logs/dashboard.log 2>&1 &` |
 | 📡 **Watch Live Status** | `tail -f logs/iron_oracle_v11.log` |
 | 💰 **Run ROI Benchmark** | `sudo /root/miniconda3/bin/python scripts/calc_net_roi.py` |
 
