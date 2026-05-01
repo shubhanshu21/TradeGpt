@@ -1,5 +1,5 @@
-# ⚓ Sovereign Kraken (KAT) Engine — V11.1 SOVEREIGN ALPHA 🏛️
-> **Autonomous 15-Minute BTC Swing Trading | 256-Expert MoE | Fee-Aware Reasoning (FAR) | Sovereign Goal Paradigm**
+# ⚓ Sovereign Kraken Engine — V11.1 SOVEREIGN ALPHA 🏛️
+> **Autonomous 15-Minute BTC Perpetual Futures Trading | 256-Expert MoE | Fee-Aware Reasoning (FAR) | Sovereign Goal Paradigm**
 
 <p align="center">
   <img src="media/kraken_core.png" width="100%" alt="Sovereign Kraken Core">
@@ -16,6 +16,7 @@ V11.1 marks the evolution from simple prediction to **Sovereign Decision Making*
 - 🎯 **Sovereign Goal Paradigm**: Model is trained to ignore "Noise" (small moves) and focus exclusively on signals with >2x Fee Advantage.
 - ⚙️ **Dynamic Sovereign Config**: Centralized control over fees and "Greed Level" via `src/config/sovereign_config.py`.
 - 🧠 **MLA + RoPE + MoE**: 256-Expert Mixture-of-Experts with **Rotary Positional Encoding** for 30-hour temporal context.
+- 📉 **Perpetual Mastery**: Native support for Bi-Directional (Long/Short) trading with automated SL/TP brackets optimized for Perpetual funding and fees.
 
 ---
 

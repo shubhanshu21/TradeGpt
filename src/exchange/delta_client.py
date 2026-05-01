@@ -105,13 +105,13 @@ class DeltaClient:
                 print(f"         ⚠️ End of history reached at batch {len(all_results)}.")
                 break
                 
-            # Pivot back using the OLDEST candle in the batch (last item)
+            # Pivot back using the OLDEST candle in the batch (first item in ascending order)
             all_results = res + all_results
-            oldest_res_ts = int(res[-1]["time"]) 
+            oldest_res_ts = int(res[0]["time"]) 
             end_ts = oldest_res_ts - 1
             
             # SHOW PROGRESS EVERY BATCH
-            print(f"         � Fetched {len(all_results):,} / {limit:,} candles... (Back-stepping to {pd.to_datetime(end_ts, unit='s')})")
+            print(f"  Fetched {len(all_results):,} / {limit:,} candles... (Back-stepping to {pd.to_datetime(end_ts, unit='s')})")
             
             time.sleep(0.01) 
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-KAT Auto-Run
-============
-Single entry point for the entire KAT pipeline.
+Sovereign Kraken Auto-Run
+=========================
+Single entry point for the entire Sovereign Kraken pipeline.
 
 Modes:
   train   → generate data, preprocess, train all models
