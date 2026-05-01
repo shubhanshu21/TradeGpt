@@ -59,20 +59,15 @@ class MissionControl(keras.callbacks.Callback):
         print(f"{'Time':<10} | {'Epoch':<5} | {'Val_Acc':<8} | {'Certainty':<10} | {'Status'}")
         print("-" * 50)
 
-    def on_epoch_end(self, epoch, logs=None):
+    def _update_dashboard(self, logs=None):
         logs = logs or {}
-        v_acc = logs.get("val_prediction_dir_acc", 0.0)
-        cert  = logs.get("val_certainty_certainty", 0.0)
+        # Fetch current training metrics if available
+        v_acc = logs.get("prediction_dir_acc", 0.0)
+        cert  = logs.get("certainty_certainty", 0.0)
         ts    = datetime.now().strftime("%H:%M:%S")
         
-        status = "⚓ LEARNING"
-        if v_acc >= 0.54: status = "🏛️ SOVEREIGN"
-        elif v_acc >= 0.53: status = "⚡ ALPHA FLOW"
-        
-        print(f"{ts:<10} | {epoch+1:<5} | {v_acc:<8.4f} | {cert:<10.3f} | {status}")
-        
         # ── Automated Sovereign Benchmarking (V11.1) ────────────────────────
-        # This runs every epoch to update the dashboard ROI card automatically
+        # This runs periodically to update the dashboard ROI card automatically
         try:
             import json
             from data.preprocess import compute_indicators, build_feature_cols
@@ -100,7 +95,7 @@ class MissionControl(keras.callbacks.Callback):
                 # Normalize certainty for bench (80-100% range)
                 c_pct = (certs - certs.min()) / (certs.max() - certs.min() + 1e-9) * 100
                 
-                roi_data = {"tiers": {}, "last_update": ts}
+                roi_data = {"tiers": {}, "last_update": ts, "note": "LIVE ALPHA FEED"}
                 pos_size = 2000.0; fee_rate = 0.0006
                 for th in [80, 85, 90]:
                     mask = c_pct >= th
@@ -113,24 +108,18 @@ class MissionControl(keras.callbacks.Callback):
                 
                 # 3. Save detailed recent trades for dashboard feed
                 recent_trades = []
-                # Look at the last 10 trades that passed the 80% threshold
                 mask80 = c_pct >= 80
                 if mask80.any():
                     t_indices = np.array(indices)[mask80]
                     t_traj = traj[mask80]
                     t_usd = usd_diffs[mask80]
-                    
-                    # Take the last 10
-                    for i in range(max(0, len(t_indices)-10), len(t_indices)):
+                    for i in range(max(0, len(t_indices)-100), len(t_indices)):
                         idx = t_indices[i]
                         entry_p = raw_prices[idx + ctx - 1]
                         price_move_pct = (t_usd[i] / entry_p)
                         side = "LONG" if t_traj[i] > 0 else "SHORT"
-                        
-                        # Net profit calculation
                         raw_ret = price_move_pct if side == "LONG" else -price_move_pct
                         net_ret = raw_ret - fee_rate
-                        
                         recent_trades.append({
                             "timestamp": pd.to_datetime(df.index[idx + ctx - 1]).strftime("%H:%M"),
                             "side": side,
@@ -138,13 +127,39 @@ class MissionControl(keras.callbacks.Callback):
                             "net_pct": float(net_ret * 100)
                         })
                 
+                # ── Expert Fight: Live Certainty Distribution (V11.1) ──
+                X_live = X[-1:] 
+                outputs_live = self.model(X_live, training=False)
+                cert_map = outputs_live[1].numpy()[0]
+                c_min, c_max = cert_map.min(), cert_map.max()
+                cert_norm = (cert_map - c_min) / (c_max - c_min + 1e-9) * 100
+                hist_bins = [0, 60, 65, 70, 75, 80, 85, 90, 100.1]
+                counts, _ = np.histogram(cert_norm, bins=hist_bins)
+                roi_data["expert_fight"] = counts.tolist()
+
                 with open(ROOT / "logs" / "latest_roi.json", "w") as f_json:
                     json.dump(roi_data, f_json, indent=4)
-                    
                 with open(ROOT / "logs" / "recent_sim_trades.json", "w") as f_trades:
-                    json.dump(recent_trades[::-1], f_trades, indent=4) # Newest first
+                    json.dump(recent_trades[::-1], f_trades, indent=4)
         except Exception as e:
-            pass # Bench failed, don't crash the training run
+            pass
+
+    def on_batch_end(self, batch, logs=None):
+        if batch % 50 == 0:  # Update every 50 batches for 'Live' feel
+            self._update_dashboard(logs)
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        v_acc = logs.get("val_prediction_dir_acc", 0.0)
+        cert  = logs.get("val_certainty_certainty", 0.0)
+        ts    = datetime.now().strftime("%H:%M:%S")
+        
+        status = "⚓ LEARNING"
+        if v_acc >= 0.54: status = "🏛️ SOVEREIGN"
+        elif v_acc >= 0.53: status = "⚡ ALPHA FLOW"
+        
+        print(f"{ts:<10} | {epoch+1:<5} | {v_acc:<8.4f} | {cert:<10.3f} | {status}")
+        self._update_dashboard(logs)
 
 
 def train_kraken(args):

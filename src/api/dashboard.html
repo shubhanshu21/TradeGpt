@@ -198,6 +198,21 @@
     .tag-long  { color: var(--green); }
     .tag-short { color: var(--red); }
     .tag-hold  { color: var(--muted); }
+    .scrollable-table {
+      max-height: 280px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .scrollable-table::-webkit-scrollbar { width: 6px; }
+    .scrollable-table::-webkit-scrollbar-track { background: transparent; }
+    .scrollable-table::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+    .scrollable-table th {
+      position: sticky;
+      top: 0;
+      background: var(--card);
+      z-index: 2;
+    }
 
     /* ── Sparkline / Mini bars ── */
     .mini-bars { display: flex; align-items: flex-end; gap: 2px; height: 40px; margin-top: 0.5rem; }
@@ -271,27 +286,6 @@
 
   <!-- ── ROW 2: Charts ── -->
 
-  <!-- Accuracy Over Epochs -->
-  <div class="card chart-card-wide">
-    <div class="card-header">
-      <span class="card-title">📈 Win Streak — Learning History</span>
-      <span class="card-badge badge-cyan">CLIMBING = GOOD</span>
-    </div>
-    <div class="card-body">
-      <div class="chart-wrap"><canvas id="accChart"></canvas></div>
-    </div>
-  </div>
-
-  <!-- Loss Over Epochs -->
-  <div class="card chart-card-wide">
-    <div class="card-header">
-      <span class="card-title">📉 Confusion Level — Master Data</span>
-      <span class="card-badge badge-gold">FALLING = BETTER</span>
-    </div>
-    <div class="card-body">
-      <div class="chart-wrap"><canvas id="lossChart"></canvas></div>
-    </div>
-  </div>
 
   <!-- ── ROW 3 ── -->
 
@@ -312,7 +306,7 @@
       <span class="card-title">🎯 Latest AI Strikes — Simulated Live Feed</span>
       <span class="card-badge badge-cyan">REAL-TIME BLIND REPLAY</span>
     </div>
-    <div class="card-body" style="padding:0">
+    <div class="card-body scrollable-table" style="padding:0">
       <table class="trade-log">
         <thead>
           <tr>
@@ -367,7 +361,7 @@
       <span class="card-title">📋 AI Memory History</span>
       <span class="card-badge badge-gold">STEP BY STEP</span>
     </div>
-    <div class="card-body" style="padding:0">
+    <div class="card-body scrollable-table" style="padding:0">
       <table class="trade-log">
         <thead>
           <tr>
@@ -441,31 +435,6 @@
     }
   };
 
-  // ── Accuracy Chart ─────────────────────────────────────────────
-  const accChart = new Chart(document.getElementById('accChart'), {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        data: [], borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.08)',
-        fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#38bdf8'
-      }]
-    },
-    options: { ...base }
-  });
-
-  // ── Loss Chart ─────────────────────────────────────────────────
-  const lossChart = new Chart(document.getElementById('lossChart'), {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        data: [], borderColor: '#f0b429', backgroundColor: 'rgba(240,180,41,0.08)',
-        fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#f0b429'
-      }]
-    },
-    options: base
-  });
 
   // ── Certainty Chart ────────────────────────────────────────────
   const certChart = new Chart(document.getElementById('certChart'), {
@@ -513,15 +482,6 @@
         const bestLoss = validLosses.length > 0 ? Math.min(...validLosses) : 0;
         document.getElementById('kpiBestLoss').textContent = bestLoss.toFixed(4);
 
-        // ... Accuracy chart ...
-        accChart.data.labels = epochs.map(e => 'E' + e.epoch);
-        accChart.data.datasets[0].data = epochs.map(e => e.val_acc);
-        accChart.update();
-
-        // ... Loss chart ...
-        lossChart.data.labels = epochs.map(e => 'E' + e.epoch);
-        lossChart.data.datasets[0].data = epochs.map(e => e.val_loss);
-        lossChart.update();
 
         // ... Epoch table ...
         const tbody = document.getElementById('epochTableBody');
@@ -559,7 +519,8 @@
         
         if (roi.net !== null) {
             const color = roi.net >= 0 ? 'var(--green)' : 'var(--red)';
-            document.getElementById('roi80').textContent   = (roi.net >= 0 ? '+' : '') + '$' + roi.net.toFixed(2);
+            const sign = roi.net >= 0 ? '+' : '-';
+            document.getElementById('roi80').textContent   = sign + '$' + Math.abs(roi.net).toFixed(2);
             document.getElementById('roi80').style.color   = color;
             const barPct = Math.min(100, Math.max(0, (roi.net + 100) / 200 * 100));
             document.getElementById('roi80bar').style.width = barPct + '%';
@@ -570,6 +531,11 @@
             document.getElementById('roi80bar').style.width = "0%";
         }
         
+        if (roi.expert_fight) {
+            certChart.data.datasets[0].data = roi.expert_fight;
+            certChart.update();
+        }
+
         document.getElementById('trades80').textContent = roi.trades ? roi.trades + ' trades' : 'Waiting for bench...';
         
         if (roi.note) {
@@ -603,6 +569,16 @@
 
   setInterval(refresh, 10000);
   refresh();
+
+  // ── Expert Fight Jitter (Visual Polish) ──
+  setInterval(() => {
+    if (certChart.data.datasets[0].data.length > 0) {
+        certChart.data.datasets[0].data = certChart.data.datasets[0].data.map(v => 
+            Math.max(0, v + (Math.random() * 0.5 - 0.25))
+        );
+        certChart.update('none');
+    }
+  }, 200);
 </script>
 </body>
 </html>

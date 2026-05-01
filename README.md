@@ -2,7 +2,7 @@
 > **Autonomous 15-Minute BTC Swing Trading | 256-Expert MoE | Fee-Aware Reasoning (FAR) | Sovereign Goal Paradigm**
 
 <p align="center">
-  <img src="media/banner.png" width="100%" alt="Kraken Banner">
+  <img src="media/kraken_core.png" width="100%" alt="Sovereign Kraken Core">
 </p>
 
 ---
@@ -38,6 +38,22 @@ Market Input (120 × 42 features)
    Global Pooling → [Prediction] [Certainty] [Reasoning Head]
                                             (Fee-Aware Filter)
 ```
+
+<p align="center">
+  <img src="media/moe_experts.png" width="80%" alt="Mixture of Experts Architecture">
+  <br>
+  <em>Fig 1: 256-Expert Mixture-of-Experts (MoE) Neural Hive</em>
+</p>
+
+---
+
+## 🖥️ Sovereign Control Center
+The V11.1 Dashboard provides a real-time window into the Kraken's decision-making process.
+
+<p align="center">
+  <img src="media/dashboard_mockup.png" width="90%" alt="Sovereign Dashboard Mockup">
+</p>
+
 
 ---
 
