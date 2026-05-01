@@ -27,7 +27,7 @@ def calc_pnl_fees():
     c_pct = (certs - certs.min()) / (certs.max() - certs.min() + 1e-9) * 100
     
     pos_size_usd = 4000.0
-    fee_rate = 0.0006 # 0.06% round trip
+    fee_rate = 0.0012 # 0.12% (Taker + GST)
     
     print("-" * 40)
     

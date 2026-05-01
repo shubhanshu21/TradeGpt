@@ -38,7 +38,7 @@ def benchmark_mastery():
     symbol = "BTCUSD"
     tf = "15m"
     n_candles = 5000
-    HISTORY_P = ROOT / f"data/{symbol}_{tf}_history_120000.parquet"
+    HISTORY_P = ROOT / f"data/{symbol}_{tf}_history_400000.parquet"
     
     if HISTORY_P.exists():
         print(f"📡 Loading candles from local history: {HISTORY_P.name}")
