@@ -71,7 +71,7 @@ class DeltaClient:
         """Fetch historical candles with integer-based resolutions (Delta India legacy support)."""
         # Reverting to the confirmed '1m' string format
         target_res = resolution
-        res_secs_map = {"1m": 60, "5m": 300, "1h": 3600, "d": 86400}
+        res_secs_map = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "d": 86400}
         res_secs   = res_secs_map.get(resolution, 60)
         
         all_results = []
@@ -105,9 +105,9 @@ class DeltaClient:
                 print(f"         ⚠️ End of history reached at batch {len(all_results)}.")
                 break
                 
-            # Pivot back using the OLDEST candle in the batch (first item in ascending order)
+            # Pivot back using the OLDEST candle in the batch (robust to API order)
             all_results = res + all_results
-            oldest_res_ts = int(res[0]["time"]) 
+            oldest_res_ts = min(int(x["time"]) for x in res)
             end_ts = oldest_res_ts - 1
             
             # SHOW PROGRESS EVERY BATCH
