@@ -37,36 +37,36 @@ class SovereignDiscourse:
     def generate_debate(self, latest_price, fee_rate, certainty, active_indices, candle_count="400,000"):
         ist_now = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%I:%M %p")
         
-        # Personality Templates
+        # Simple Indian English Personality Templates
         idle_templates = [
-            "Neural bridge offline. {mood} Awaiting mission start signal.",
-            "Diagnostics in progress. {mood} 256 Gated Experts on standby.",
-            "Systems green. {mood} We wait for the master neural link.",
-            "Hydra architecture is cooling. {mood} Ready for {candles} candle ingestion."
+            "Network is connecting. {mood} Please wait for the mission to start.",
+            "Checking all systems. {mood} 256 Experts are ready on standby.",
+            "Everything is green. {mood} We are waiting for the market signal.",
+            "Model is cooling down. {mood} Ready to check {candles} data points."
         ]
         oracle_templates = [
-            "Structure is holding at {price}. {mood} Watch the tape.",
-            "Market entropy is at {cert}%. {mood} Strategy: Proceed with discipline.",
-            "We are smelling greed, not trend. {mood} Liquidity is thin above {price}.",
-            "Historical parity suggests a pullback. {mood} Wait for the anchor."
+            "Price is holding steady at {price}. {mood} Keep watching carefully.",
+            "Market is a bit confused right now. {mood} Strategy: Be patient and disciplined.",
+            "I feel people are getting greedy. {mood} Selling can happen above {price}.",
+            "History says it might pull back. {mood} Wait for a better entry point."
         ]
         hunter_templates = [
-            "BLOOD IN THE WATER! {mood} Buy the breakout at {price}!",
-            "The bulls are breaking the cage! {mood} Push the neural gates!",
-            "Momentum is peaking at {cert}%. {mood} Don't let them escape!",
-            "I smell a liquidation event. {mood} Be the hunter, not the prey."
+            "CHANCE IS HERE! {mood} Buy the breakout at {price} now!",
+            "Bulls are very strong today! {mood} Let's push the neural gates!",
+            "Momentum is looking very good! {mood} Don't miss this move!",
+            "I see a big opportunity. {mood} This is the time to be a hunter."
         ]
         sentinel_templates = [
-            "IT'S A TRAP! {mood} {expert}, the fee gate is {fee}% — stay liquid.",
-            "Capital preservation is the only law. {mood} Do not burn on this chop.",
-            "Risk Sentinel reports a shadow wall. {mood} Abort the strike!",
-            "Defensive protocols active. {mood} We hold until the abyss clears."
+            "BE CAREFUL! {mood} {expert}, the fee is {fee}% — don't lose money.",
+            "Saving capital is most important. {mood} Don't trade in this sideways market.",
+            "Risk team says stop here. {mood} Cancel the entry for now!",
+            "Safety protocols are on. {mood} We will wait until the risk is less."
         ]
         tracker_templates = [
-            "Scanning order flow... {mood} Hidden orders at {price} detected.",
-            "Whale movement identified. {mood} They are baiting the retail gate.",
-            "OBI imbalance is {cert}%. {mood} The depth is an illusion.",
-            "Following the smart money. {mood} Enter the flow at {price}."
+            "Checking who is buying... {mood} Big orders detected at {price}.",
+            "Big players are moving money. {mood} They are trying to trap small traders.",
+            "Buying pressure is high! {mood} Market depth is changing fast.",
+            "Following the big money flow. {mood} Best entry is near {price}."
         ]
 
         debate = []
