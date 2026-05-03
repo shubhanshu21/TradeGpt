@@ -123,13 +123,12 @@ class MissionControl(keras.callbacks.Callback):
                     t_indices = np.array(indices)[mask80]
                     t_traj_usd = traj_usd[mask80]
                     t_usd = usd_diffs[mask80]
-                    for i in range(max(0, len(t_indices)-100), len(t_indices)):
+                    for i in range(max(0, len(t_indices)-500), len(t_indices)):
                         idx = t_indices[i]
                         entry_p = raw_prices[idx + ctx - 1]
                         price_move_pct = (t_usd[i] / entry_p)
                         # V11.2: Bias Correction - Compare prediction to entry price
-                        side = "LONG" if t_traj_usd[i] > entry_p else "HOLD"
-                        if side == "HOLD": continue # Skip bearish signals for Buy-Only Policy
+                        side = "LONG" if t_traj_usd[i] > entry_p else "SHORT"
                         
                         raw_ret = price_move_pct
                         net_ret = raw_ret - fee_rate

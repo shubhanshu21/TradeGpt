@@ -194,13 +194,13 @@
       padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border);
       text-align: left;
     }
-    .trade-log td { padding: 0.45rem 0.6rem; border-bottom: 1px solid rgba(30,45,61,0.5); }
+    .trade-log td { padding: 0.75rem 0.6rem; border-bottom: 1px solid rgba(30,45,61,0.5); }
     .trade-log tr:last-child td { border: none; }
     .tag-long  { color: var(--green); }
     .tag-short { color: var(--red); }
     .tag-hold  { color: var(--muted); }
     .scrollable-table {
-      max-height: 280px;
+      height: 420px;
       overflow-y: auto;
       scrollbar-width: thin;
       scrollbar-color: var(--border) transparent;
@@ -449,7 +449,7 @@
                 </div>
                 <span class="card-badge badge-cyan">LIVE REPLAY</span>
             </div>
-      <div class="card-body scrollable-table" style="padding:0; height:300px;">
+      <div class="card-body scrollable-table" style="padding:0; height:420px;">
         <table class="trade-log">
           <thead>
             <tr>
@@ -474,7 +474,7 @@
         <span class="card-title">🧠 Expert Council</span>
         <span class="card-badge badge-purple">DEBATE</span>
       </div>
-      <div class="card-body" id="expertDialogue" style="font-size:0.7rem; font-family:'JetBrains Mono', monospace; line-height:1.5; height:300px; overflow-y:auto; padding:1rem; background:rgba(0,0,0,0.3)">
+      <div class="card-body" id="expertDialogue" style="font-size:0.7rem; font-family:'JetBrains Mono', monospace; line-height:1.5; height:420px; overflow-y:auto; padding:1rem; background:rgba(0,0,0,0.3)">
         <div style="margin-bottom:0.9rem; line-height:1.5; display:flex; gap:0.6rem; align-items:flex-start;">
             <span class="expert-avatar talking-pulse" style="font-size:1.2rem; filter: drop-shadow(0 0 5px var(--gold)44);">🦉</span>
             <div style="flex:1">
@@ -497,7 +497,7 @@
         </span>
         <span class="card-badge badge-green" id="roiNote">LIVE SYNC</span>
       </div>
-        <div class="card-body" style="padding-top:0.5rem">
+        <div class="card-body" style="padding-top:0.5rem; height:420px; display:flex; flex-direction:column; justify-content:space-between;">
           <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap: 1rem; margin-top: 1rem;">
             <div style="border-right: 1px solid var(--border); padding-right: 1rem;">
                 <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">STARTING CAPITAL</div>
@@ -731,90 +731,93 @@
       // ROI data
       if (d.roi) {
         const roi = d.roi;
-        // (Redundant PnL update removed to prevent mathematical conflict)
-        
         if (roi.expert_fight) {
             certChart.data.datasets[0].data = roi.expert_fight;
             certChart.update();
         }
-
-        if (document.getElementById('totalStrikes')) {
-            document.getElementById('totalStrikes').textContent = roi.trades || '0';
-        }
-        
-        if (roi.note && document.getElementById('deployStatus')) {
-            document.getElementById('deployStatus').textContent = "📝 " + roi.note;
-            document.getElementById('deployStatus').style.color  = roi.net > 0 ? 'var(--green)' : 'var(--gold)';
-        }
-
-        // (Legacy Telemetry & Risk UI Sync Purged for Streamlined View)
       }
 
       // Recent Strike Feed
-      if (d.trades && d.trades.length > 0) {
-        const trades = d.trades; // newest first
-        const sorted = [...trades].reverse(); // oldest first for graph
-        
-        // ── Equity Chart Calibration (V11.2 Sovereign) ──
-        const initialW = d.config ? (d.config.initial_wallet || 200.0) : 200.0;
-        const pnlData = [initialW];
-        const labels  = ["Start"];
-
-        sorted.forEach(t => {
-            pnlData.push(t.wallet_snapshot);
-            labels.push(t.timestamp);
-        });
-
-        const finalW = pnlData[pnlData.length - 1];
-        equityChart.data.labels = labels;
-        equityChart.data.datasets[0].data = pnlData;
-        equityChart.data.datasets[0].borderColor = finalW >= initialW ? '#10b981' : '#ef4444';
-        equityChart.data.datasets[0].backgroundColor = finalW >= initialW ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
-        
-        // Update Equity Title
-        document.getElementById('equityTitle').textContent = `📈 Equity Growth — Simulated $${initialW} Account`;
-        
-        // Dynamic Strike Markers
-        equityChart.data.datasets[0].pointRadius = 4;
-        equityChart.data.datasets[0].pointHoverRadius = 6;
-        equityChart.data.datasets[0].pointBackgroundColor = sorted.map(t => t.side === 'LONG' ? '#10b981' : '#ef4444');
-        equityChart.data.datasets[0].pointBorderColor = '#0d1117';
-        equityChart.data.datasets[0].pointBorderWidth = 1;
-        
-        equityChart.update();
-
-        const tBody = document.getElementById('strikeTableBody');
+      const tBody = document.getElementById('strikeTableBody');
+      if (tBody) {
         if (!window.knownTradeKeys) window.knownTradeKeys = new Set();
-        
-        tBody.innerHTML = d.trades.map(t => {
-          const color = t.net_pct >= 0 ? 'var(--green)' : 'var(--red)';
-          const sideColor = t.side === 'LONG' ? 'var(--green)' : 'var(--red)';
-          const tradeKey = `${t.timestamp}-${t.entry}-${t.side}`;
-          const isNew = !window.knownTradeKeys.has(tradeKey);
-          if (isNew) window.knownTradeKeys.add(tradeKey);
-          
-          const pnl = t.pnl_usd || 0;
-          const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-          const pnlPrefix = pnl >= 0 ? '+' : '-';
-          
-          return `<tr class="${isNew ? 'strike-entry' : ''}">
-            <td style="color:var(--muted); font-size:0.65rem;">${t.timestamp}</td>
-            <td style="display:flex; align-items:center; gap:0.4rem;">
-              <span style="font-size:0.9rem;">${t.avatar || '🤖'}</span>
-              <span style="color:var(--text); font-weight:600; font-size:0.75rem;">${t.expert || 'Neural Gate'}</span>
-            </td>
-            <td style="color:${sideColor}; font-weight:700">${t.side}</td>
-            <td style="color:${pnlColor}; font-weight:bold">${pnlPrefix}$${Math.abs(pnl).toFixed(2)}</td>
-            <td>$${t.entry.toLocaleString()}</td>
-            <td style="color:${color}; font-weight:700; font-size:0.9rem;">${t.net_pct >= 0 ? '+' : ''}${t.net_pct.toFixed(2)}%</td>
-          </tr>`;
-        }).join('');
-        
-        // PnL Counter & Metrics
-        const pnlEl = document.getElementById('highConfProfit');
-        const portfolioEl = document.getElementById('totalPortfolio');
-        const initialEl = document.getElementById('initialCapital');
-        
+
+        if (d.trades && d.trades.length > 0) {
+            const trades = d.trades; // newest first
+            const sorted = [...trades].reverse(); // oldest first for graph
+            
+            // ── Equity Chart Calibration (V11.2 Sovereign) ──
+            const initialW = d.config ? (d.config.initial_wallet || 200.0) : 200.0;
+            const pnlData = [initialW];
+            const labels  = ["Start"];
+
+            sorted.forEach(t => {
+                pnlData.push(t.wallet_snapshot);
+                labels.push(t.timestamp);
+            });
+
+            const finalW = pnlData[pnlData.length - 1];
+            equityChart.data.labels = labels;
+            equityChart.data.datasets[0].data = pnlData;
+            equityChart.data.datasets[0].borderColor = finalW >= initialW ? '#10b981' : '#ef4444';
+            equityChart.data.datasets[0].backgroundColor = finalW >= initialW ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+            
+            // Update Equity Title
+            document.getElementById('equityTitle').textContent = `📈 Equity Growth — Simulated $${initialW} Account`;
+            
+            // Dynamic Strike Markers
+            equityChart.data.datasets[0].pointRadius = 4;
+            equityChart.data.datasets[0].pointHoverRadius = 6;
+            equityChart.data.datasets[0].pointBackgroundColor = sorted.map(t => t.side === 'LONG' ? '#10b981' : '#ef4444');
+            equityChart.data.datasets[0].pointBorderColor = '#0d1117';
+            equityChart.data.datasets[0].pointBorderWidth = 1;
+            
+            equityChart.update();
+
+            tBody.innerHTML = d.trades.map(t => {
+              const color = t.net_pct >= 0 ? 'var(--green)' : 'var(--red)';
+              const sideColor = t.side === 'LONG' ? 'var(--green)' : 'var(--red)';
+              const tradeKey = `${t.timestamp}-${t.entry}-${t.side}`;
+              const isNew = !window.knownTradeKeys.has(tradeKey);
+              if (isNew) window.knownTradeKeys.add(tradeKey);
+              
+              const pnl = t.pnl_usd || 0;
+              const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+              const pnlPrefix = pnl >= 0 ? '+' : '-';
+              
+              return `<tr class="${isNew ? 'strike-entry' : ''}">
+                <td style="color:var(--muted); font-size:0.65rem;">${t.timestamp}</td>
+                <td style="display:flex; align-items:center; gap:0.4rem;">
+                  <span style="font-size:0.9rem;">${t.avatar || '🤖'}</span>
+                  <span style="color:var(--text); font-weight:600; font-size:0.75rem;">${t.expert || 'Neural Gate'}</span>
+                </td>
+                <td style="color:${sideColor}; font-weight:700">${t.side}</td>
+                <td style="color:${pnlColor}; font-weight:bold">${pnlPrefix}$${Math.abs(pnl).toFixed(2)}</td>
+                <td>$${t.entry.toLocaleString()}</td>
+                <td style="color:${color}; font-weight:700; font-size:0.9rem;">${t.net_pct >= 0 ? '+' : ''}${t.net_pct.toFixed(2)}%</td>
+              </tr>`;
+            }).join('');
+        } else {
+            tBody.innerHTML = `
+              <tr>
+                <td colspan="6" style="padding:4rem 1rem; text-align:center;">
+                  <div style="color:var(--cyan); font-family:'JetBrains Mono',monospace; font-size:0.9rem; margin-bottom:0.5rem;" class="blink">📡 NEURAL RECONNAISSANCE ACTIVE</div>
+                  <div style="color:var(--muted); font-size:0.7rem; line-height:1.6; max-width:280px; margin:0 auto;">
+                    The Sovereign Hive is scanning 500 candles for bullish liquidity. <br>
+                    Current Policy: <span style="color:var(--gold)">BUY-ONLY</span> <br>
+                    Waiting for high-conviction LONG signal...
+                  </div>
+                </td>
+              </tr>
+            `;
+        }
+      }
+
+      // PnL Counter & Metrics
+      const pnlEl = document.getElementById('highConfProfit');
+      const portfolioEl = document.getElementById('totalPortfolio');
+      const initialEl = document.getElementById('initialCapital');
+      if (pnlEl && portfolioEl && initialEl) {
         const initCap = d.config.initial_wallet || 200;
         const currentPnl = d.net_profit || 0;
         const totalW = initCap + currentPnl;
@@ -829,16 +832,18 @@
         
         // Progress Fill
         const progress = document.getElementById('pnlProgress');
-        const pnlPct = Math.min(Math.max((currentPnl / (initCap * 0.1)) * 100, 0), 100); // 10% profit = full bar
-        progress.style.width = pnlPct + '%';
-        progress.style.background = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
-
-        document.getElementById('totalStrikes').textContent = d.trades.length;
-        document.getElementById('winRate').textContent = d.risk.win_rate.toFixed(1) + '%';
-        document.getElementById('sharpeRatio').textContent = d.risk.sharpe.toFixed(2);
-        document.getElementById('profitFactor').textContent = d.risk.profit_factor.toFixed(2);
-        document.getElementById('maxDrawdown').textContent = (d.risk.max_dd * 100).toFixed(2) + '%';
+        if (progress) {
+            const pnlPct = Math.min(Math.max((currentPnl / (initCap * 0.1)) * 100, 0), 100); 
+            progress.style.width = pnlPct + '%';
+            progress.style.background = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
+        }
       }
+
+      if (document.getElementById('totalStrikes')) document.getElementById('totalStrikes').textContent = (d.trades ? d.trades.length : 0);
+      if (document.getElementById('winRate') && d.risk) document.getElementById('winRate').textContent = d.risk.win_rate.toFixed(1) + '%';
+      if (document.getElementById('sharpeRatio') && d.risk) document.getElementById('sharpeRatio').textContent = d.risk.sharpe.toFixed(2);
+      if (document.getElementById('profitFactor') && d.risk) document.getElementById('profitFactor').textContent = d.risk.profit_factor.toFixed(2);
+      if (document.getElementById('maxDrawdown') && d.risk) document.getElementById('maxDrawdown').textContent = (d.risk.max_dd * 100).toFixed(2) + '%';
 
       // Expert Dialogue (Sovereign Dispatcher with TypewriterJS)
       if (d.dialogue && d.dialogue.length > 0) {

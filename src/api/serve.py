@@ -70,11 +70,11 @@ class SovereignDiscourse:
         ]
 
         debate = []
-        # Construct a 4-message thread
-        participants = ["Oracle", "Hunter", "Sentinel", "Tracker"]
+        # Construct an 8-message thread for high density
+        participants = ["Oracle", "Hunter", "Sentinel", "Tracker"] * 2
         random.shuffle(participants)
         
-        for p in participants[:4]:
+        for p in participants[:8]:
             role = p
             avatar = self.leads[p]
             mood = random.choice(self.moods)
