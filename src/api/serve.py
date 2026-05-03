@@ -195,7 +195,7 @@ async def get_stats():
             
             curr_w = INITIAL_WALLET_USD
             comp_trades = []
-            for t in reversed(raw_trades):
+            for t in raw_trades:
                 try:
                     # Parse ISO format from train.py (V11.2 Precision)
                     utc_t = datetime.fromisoformat(t["timestamp"])
@@ -216,7 +216,7 @@ async def get_stats():
                 t["avatar"] = "🤖"
                 comp_trades.append(t)
             
-            recent_trades = comp_trades[::-1]
+            recent_trades = comp_trades
             latest_wallet = curr_w
         except: pass
 
