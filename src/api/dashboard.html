@@ -780,7 +780,7 @@
 
         if (d.trades && d.trades.length > 0) {
             const trades = d.trades; // newest first
-            const sorted = [...trades].reverse(); // oldest first for graph
+            const sorted = trades; // already oldest first from API
             
             // ── Equity Chart Calibration (V11.2 Sovereign) ──
             const initialW = d.config ? (d.config.initial_wallet || 200.0) : 200.0;
