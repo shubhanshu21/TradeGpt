@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Iron Oracle V11.0 — Command Center</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://unpkg.com/typewriter-effect@latest/dist/core.js"></script>
+  <script src="/static/js/chart.js"></script>
+  <script src="/static/js/typewriter.js"></script>
   <style>
     :root {
       --bg:       #070b12;
@@ -407,68 +407,38 @@
 
   </div>
 
-  <!-- ── ROW 2: Analytics Row ── -->
-  <div class="stats-row" style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin: 0; align-items: stretch;">
-    
-    <!-- Equity Growth (Left) -->
-    <div class="card" style="flex: 2;">
-      <div class="card-header">
-        <span class="card-title" id="equityTitle">📈 Equity Growth — Simulated Station</span>
-        <div style="display:flex; align-items:center; gap:0.5rem">
-          <span class="pulse-dot"></span>
-          <span class="card-badge badge-green">LIVE TRACKER</span>
-        </div>
-      </div>
-      <div class="card-body">
-        <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
-      </div>
-    </div>
-
-    <!-- Certainty Distribution (Right) -->
-    <div class="card" style="flex: 1;">
-      <div class="card-header">
-        <span class="card-title">🧠 Expert Consensus</span>
-        <span class="card-badge badge-purple">256 AI VOICES</span>
-      </div>
-      <div class="card-body">
-        <div class="chart-wrap"><canvas id="certChart"></canvas></div>
-      </div>
-    </div>
-
-  </div>
-
-    <!-- ── ROW 3: Side-by-Side Feed ── -->
-    <div class="stats-row" style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin: 0; align-items: stretch;">
-        
-        <!-- Latest AI Strikes Feed (Left) -->
-        <div class="card" style="flex: 1.5; min-width: 0;">
-            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="display:flex; align-items:center; gap:0.5rem;">
-                    <span class="card-title">🎯 Latest AI Strikes</span>
-                    <div class="tape-container"><div id="orderTape" class="tape-fill" style="height:50%"></div></div>
-                </div>
-                <span class="card-badge badge-cyan">LIVE REPLAY</span>
+  <!-- ── ROW 2: Side-by-Side Feed (ELEVATED) ── -->
+  <div class="stats-row" style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin-top: -0.5rem; align-items: stretch;">
+      
+    <!-- Latest AI Strikes Feed (Left) -->
+    <div class="card" style="flex: 2; min-width: 0;">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+                <span class="card-title">🎯 Latest AI Strikes</span>
+                <div class="tape-container"><div id="orderTape" class="tape-fill" style="height:50%"></div></div>
             </div>
-      <div class="card-body scrollable-table" style="padding:0; height:420px;">
-        <table class="trade-log">
-          <thead>
-            <tr>
-              <th style="font-family:'Outfit'">DATE / TIME (IST)</th>
-              <th style="font-family:'Outfit'">STRATEGIST</th>
-              <th style="font-family:'Outfit'">SIDE</th>
-              <th style="font-family:'Outfit'">PnL ($)</th>
-              <th style="font-family:'Outfit'">ENTRY</th>
-              <th style="font-family:'Outfit'">NET ROI</th>
-            </tr>
-          </thead>
-          <tbody id="strikeTableBody">
-            <tr><td colspan="6" style="color:var(--muted);text-align:center;padding:1.5rem">Waiting...</td></tr>
-          </tbody>
-        </table>
-      </div>
+            <span class="card-badge badge-cyan">LIVE REPLAY</span>
+        </div>
+        <div id="strikeFeedContainer" class="card-body scrollable-table" style="padding:0; height:420px;">
+            <table class="trade-log">
+                <thead>
+                    <tr>
+                        <th style="font-family:'Outfit'; width: 140px;">DATE / TIME (IST)</th>
+                        <th style="font-family:'Outfit'">STRATEGIST</th>
+                        <th style="font-family:'Outfit'">SIDE</th>
+                        <th style="font-family:'Outfit'">PnL ($)</th>
+                        <th style="font-family:'Outfit'">ENTRY</th>
+                        <th style="font-family:'Outfit'">NET ROI</th>
+                    </tr>
+                </thead>
+                <tbody id="strikeTableBody">
+                    <tr><td colspan="6" style="color:var(--muted);text-align:center;padding:1.5rem">Waiting...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
-    <!-- Expert Dialogue (Right) -->
+    <!-- Expert Dialogue (Center) -->
     <div class="card" style="flex: 1;">
       <div class="card-header">
         <span class="card-title">🧠 Expert Council</span>
@@ -489,7 +459,7 @@
     </div>
 
     <!-- Net ROI Tracker (Right) -->
-    <div class="card" style="flex: 1;">
+    <div class="card" style="flex: 1.2;">
       <div class="card-header">
         <span class="card-title" style="display:flex; align-items:center; gap:0.5rem;">
           <span class="pulse-dot"></span>
@@ -551,8 +521,36 @@
           <div style="font-size:0.68rem;color:var(--muted);margin-top:0.4rem;font-family:'JetBrains Mono',monospace" id="lastUpdated">Last updated: --</div>
         </div>
       </div>
+  </div>
+  </div>
+
+  <!-- ── ROW 3: Analytics Row (Graphs) ── -->
+  <div class="stats-row" style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin: 1rem 0; align-items: stretch;">
+    
+    <!-- Equity Growth (Left) -->
+    <div class="card" style="flex: 2;">
+      <div class="card-header">
+        <span class="card-title" id="equityTitle">📈 Equity Growth — Simulated Station</span>
+        <div style="display:flex; align-items:center; gap:0.5rem">
+          <span class="pulse-dot"></span>
+          <span class="card-badge badge-green">LIVE TRACKER</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
+      </div>
     </div>
 
+    <!-- Certainty Distribution (Right) -->
+    <div class="card" style="flex: 1;">
+      <div class="card-header">
+        <span class="card-title">🧠 Expert Consensus</span>
+        <span class="card-badge badge-purple">256 AI VOICES</span>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="certChart"></canvas></div>
+      </div>
+    </div>
   </div>
 
   <!-- Epoch Log Table -->
@@ -800,6 +798,10 @@
                 <td style="color:${color}; font-weight:700; font-size:0.9rem;">${t.net_pct >= 0 ? '+' : ''}${t.net_pct.toFixed(2)}%</td>
               </tr>`;
             }).join('');
+             
+             // Auto-scroll to bottom for latest trades
+             const container = document.getElementById('strikeFeedContainer');
+             if (container) container.scrollTop = container.scrollHeight;
         } else {
             tBody.innerHTML = `
               <tr>

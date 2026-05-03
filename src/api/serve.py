@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import pandas as pd
 import numpy as np
 
@@ -35,7 +36,7 @@ class SovereignDiscourse:
         return f"{random.choice(self.prefixes)}-{random.choice(self.suffixes)} #{idx:03d}", "🤖"
 
     def generate_debate(self, latest_price, fee_rate, certainty, active_indices, candle_count="400,000"):
-        ist_now = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%I:%M %p")
+        ist_now = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%d %b %I:%M %p")
         
         # Simple Indian English Personality Templates
         idle_templates = [
@@ -141,6 +142,10 @@ def parse_training_log():
 
 app = FastAPI(title="KAT Sovereign Console")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Mount static files
+static_path = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_home():
