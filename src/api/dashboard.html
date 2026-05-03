@@ -495,7 +495,10 @@
           <span class="pulse-dot"></span>
           💰 Net Profit
         </span>
-        <span class="card-badge badge-green" id="roiNote">LIVE SYNC</span>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <button id="recapBtn" style="background:var(--purple); border:none; color:white; font-size:0.6rem; padding:0.2rem 0.5rem; border-radius:4px; cursor:pointer; font-weight:700; transition: transform 0.2s ease;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">RECAPITALIZE</button>
+          <span class="card-badge badge-green" id="roiNote">LIVE SYNC</span>
+        </div>
       </div>
         <div class="card-body" style="padding-top:0.5rem; height:420px; display:flex; flex-direction:column; justify-content:space-between;">
           <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap: 1rem; margin-top: 1rem;">
@@ -945,6 +948,17 @@
       console.warn('Feed offline — server may be loading.', e);
     }
   }
+
+  document.getElementById('recapBtn').addEventListener('click', async () => {
+    if (confirm("🚨 Institutional Warning: This will wipe the current simulation P&L and start a fresh $200 mission. Training progress will NOT be lost. Proceed?")) {
+        const r = await fetch('/api/reset_wallet', { method: 'POST' });
+        const d = await r.json();
+        if (d.status === 'success') {
+            alert("💰 Station Recapitalized. The next neural sweep will reflect the fresh slate.");
+            refresh();
+        }
+    }
+  });
 
   setInterval(refresh, 5000);
   refresh();

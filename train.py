@@ -106,8 +106,20 @@ class MissionControl(keras.callbacks.Callback):
                 from config.sovereign_config import INITIAL_WALLET_USD
                 roi_data = {"tiers": {}, "last_update": ts, "note": f"FEE GATE: {fee_rate*100:.2f}%"}
                 pos_size = INITIAL_WALLET_USD
+                
+                # ── V11.6: Sovereign Recapitalization Filter ─────────────────
+                reset_file = LOG_DIR / "sim_reset.txt"
+                reset_ts = None
+                if reset_file.exists():
+                    try:
+                        reset_ts = pd.to_datetime(reset_file.read_text().strip()).tz_localize(None)
+                    except: pass
+
                 for th in [80, 85, 90]:
                     mask = c_pct >= th
+                    if reset_ts:
+                        t_stamps = pd.to_datetime(df.index[np.array(indices) + ctx - 1]).tz_localize(None)
+                        mask = mask & (t_stamps.values >= reset_ts)
                     n_t  = int(mask.sum())
                     if n_t > 0:
                         e_p = raw_prices[np.array(indices)[mask] + ctx - 1]
@@ -127,8 +139,22 @@ class MissionControl(keras.callbacks.Callback):
                         idx = t_indices[i]
                         entry_p = raw_prices[idx + ctx - 1]
                         price_move_pct = (t_usd[i] / entry_p)
-                        # V11.2: Bias Correction - Compare prediction to entry price
-                        side = "LONG" if t_traj_usd[i] > entry_p else "SHORT"
+                        # V11.5: Tactical Deadzone Calibration
+                        # Eliminate 'Noise-Driven Shorts' during Epoch 1
+                        last_scaled = (entry_p - close_means[i]) / close_stds[i]
+                        prediction_delta = traj_scaled[i] - last_scaled
+                        
+                        # Only strike if the predicted move is greater than 0.1% volatility
+                        if abs(prediction_delta) < 0.001: 
+                            side = "HOLD"
+                        else:
+                            side = "LONG" if prediction_delta > 0 else "SHORT"
+                        
+                        if side == "HOLD": continue
+                        
+                        # Apply Sovereign Reset to Feed
+                        t_stamp = pd.to_datetime(df.index[idx + ctx - 1]).tz_localize(None)
+                        if reset_ts and t_stamp < reset_ts: continue
                         
                         raw_ret = price_move_pct
                         net_ret = raw_ret - fee_rate

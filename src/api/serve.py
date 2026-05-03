@@ -148,6 +148,17 @@ async def dashboard_home():
     if dash_path.exists(): return dash_path.read_text()
     return "<h1>KAT Dashboard Missing</h1>"
 
+from fastapi.responses import JSONResponse
+@app.post("/api/reset_wallet")
+def reset_wallet():
+    try:
+        reset_file = LOG_DIR / "sim_reset.txt"
+        with open(reset_file, "w") as f:
+            f.write(datetime.now().isoformat())
+        return JSONResponse({"status": "success", "message": "Wallet recapitalized. Simulation slate wiped."})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
 @app.get("/api/stats")
 async def get_stats():
     epochs, candle_count = parse_training_log()
