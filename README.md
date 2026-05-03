@@ -1,26 +1,39 @@
-# ⚓ Sovereign Kraken Engine — V11.1 SOVEREIGN ALPHA 🏛️
-> **Autonomous 15-Minute BTC Perpetual Futures Trading | 256-Expert MoE | Fee-Aware Reasoning (FAR) | Sovereign Goal Paradigm**
+# ⚓ Iron Oracle V12.0 — Sovereign Authority 🏛️
+> **Institutional-Grade Neural Trading Command Center | 256-Expert MoE | Deterministic Strategist Signatures | Localised Operational Intelligence**
 
 <p align="center">
-  <img src="media/kraken_core.png" width="100%" alt="Sovereign Kraken Core">
+  <img src="src/api/static/img/logo.png" width="180px" alt="Iron Oracle Sovereign Logo">
+  <br>
+  <strong>SOVEREIGN NEURAL COMMAND CENTER</strong>
 </p>
 
 ---
 
-## 🏛️ V11.1 "Sovereign Alpha — Phase 6"
+## 🏛️ V12.0 "Sovereign Authority — Phase 7"
 
-V11.1 marks the evolution from simple prediction to **Sovereign Decision Making**. By integrating **Fee-Aware Reasoning (FAR)** directly into the model's neural weights, Iron Oracle no longer just predicts the market—it evaluates the **Business Case** for every trade.
+V12.0 marks the final transition of the **Iron Oracle** from a predictive model to a fully-realized **Institutional Trading Station**. It prioritizes **Tactical Awareness**, **Deterministic Accountability**, and **Aesthetic Excellence**.
 
 ### 🏛️ Sovereign Capabilities:
-- 🛡️ **Fee-Aware Reasoning (FAR)**: Internal "Reasoning Head" distinguishes between **Sovereign Profit** and **Fee Traps**.
-- 🎯 **Sovereign Goal Paradigm**: Model is trained to ignore "Noise" (small moves) and focus exclusively on signals with >2x Fee Advantage.
-- ⚙️ **Dynamic Sovereign Config**: Centralized control over fees and "Greed Level" via `src/config/sovereign_config.py`.
-- 🧠 **MLA + RoPE + MoE**: 256-Expert Mixture-of-Experts with **Rotary Positional Encoding** for 30-hour temporal context.
-- 📉 **Perpetual Mastery**: Native support for Bi-Directional (Long/Short) trading with automated SL/TP brackets optimized for Perpetual funding and fees.
+- 🛡️ **Deterministic Signatures**: Every trade strike is permanently signed by one of 256 unique Strategists (e.g., *Neon-Scout*, *Volt-Matrix*).
+- 🧠 **Expert Council (V12.0)**: Neural Dialogue Engine localized in **Simple Indian English** for clear, accessible tactical briefings.
+- 🏆 **Strategist Hall of Fame**: Real-time performance tracking of individual neural experts to identify peak-performing strategists.
+- ⚓ **Localised Autonomy**: All JS/CSS libraries (Chart.js, TypewriterJS) are hosted locally, ensuring the command center is fully operational without external CDNs.
+- 📉 **Institutional Risk Layer**: Real-time calculation of **Sharpe Ratio**, **Profit Factor**, and **Max Drawdown** integrated with a **Fee Burn Meter**.
 
 ---
 
-## 📐 Architecture Overview (V11.1)
+## 🖥️ Sovereign Command Center (UI/UX)
+
+The V12.0 Interface is a high-fidelity, dark-mode terminal optimized for 24/7 mission monitoring.
+
+- **The Sovereign Ticker**: Top-level scrolling marquee for global market context (BTC/ETH/SOL).
+- **Tactical Feed**: Auto-scrolling, newest-at-bottom trade log with deterministic strategist identity.
+- **Neural Pulse**: Estimated Time Remaining (ETR) counter for training epochs.
+- **3D Branding**: Premium Iron Oracle assets for an institutional fintech aesthetic.
+
+---
+
+## 📐 Architecture Overview (V12.0)
 
 ```
 Market Input (120 × 42 features)
@@ -28,83 +41,49 @@ Market Input (120 × 42 features)
    [Dense → RMSNorm]       ← 42 → 128 embedding
        │
    ┌───┴──── × 8 ────────┐
-   │    HydraBlock V11.1  │
+   │    HydraBlock V12.0  │
    │  ┌─────────────────┐ │
-   │  │  MLALayer+RoPE  │ │  ← time-aware latent attention
-   │  │  GatedMoE-256   │ │  ← top-4 expert routing
-   │  │  Dropout(0.1)   │ │  ← swing robustness
+   │  │  MLALayer+RoPE  │ │  ← Temporal-Aware Latent Attention
+   │  │  GatedMoE-256   │ │  ← Deterministic Expert Routing
+   │  │  Dropout(0.1)   │ │  ← Dynamic Noise Pruning
    │  └─────────────────┘ │
    └──────────────────────┘
        │
-   Global Pooling → [Prediction] [Certainty] [Reasoning Head]
-                                            (Fee-Aware Filter)
+   Global Pooling → [Prediction] [Certainty] [Discourse Head]
+                                            (Expert Council Output)
 ```
 
-<p align="center">
-  <img src="media/moe_experts.png" width="80%" alt="Mixture of Experts Architecture">
-  <br>
-  <em>Fig 1: 256-Expert Mixture-of-Experts (MoE) Neural Hive</em>
-</p>
+---
+
+## 📦 Tactical Discourse Labels
+The mission's Experts provide briefings across four primary strategic states:
+
+| State | Briefing Type | Strategic Meaning |
+|-------|---------------|-------------------|
+| **LONG** | **STRIKE** | High-Conviction Bullish Pivot |
+| **SHORT** | **STRIKE** | High-Conviction Bearish Pivot |
+| **HOLD** | **DEADZONE** | Volatility < 0.1% (Noise Pruning Active) |
+| **STBY** | **LEARNING** | Model Initialization / Neural Reconnaissance |
 
 ---
 
-## 🖥️ Sovereign Control Center
-The V11.1 Dashboard provides a real-time window into the Kraken's decision-making process.
-
-<p align="center">
-  <img src="media/dashboard_mockup.png" width="90%" alt="Sovereign Dashboard Mockup">
-</p>
-
-
----
-
-## 📦 Sovereign Reasoning Labels
-The model is now trained to classify every market condition into four "Business States":
-
-| Class | Label | Meaning |
-|-------|-------|---------|
-| **0** | **SOVEREIGN_LONG** | Predicted Profit > 2x Fees (High Conviction) |
-| **1** | **SOVEREIGN_SHORT** | Predicted Profit > 2x Fees (High Conviction) |
-| **2** | **FEE_TRAP** | Direction correct, but move too small to cover fees |
-| **3** | **NOISE** | Choppy / Sideways market (Stay in Cash) |
-
----
-
-## 🌉 Genesis Bridge: Multi-Exchange Synchronization
-To ensure "Best-in-Class" training, the Kraken utilizes a **Genesis Bridge** to synchronize history from multiple sources into a single "Ultimate Dataset."
-
-### 🏛️ Historical Depth:
-- **Total Candles**: 303,269 (15-Minute Resolution).
-*   **Time Depth**: ~8.7 Years (August 2017 – Present).
-*   **Sources**: Delta Exchange India + Binance Global.
-- **Feature Synthesis**: Uses stochastic L2 simulation to reconstruct Order Book (OB) features for historical data lacking native depth.
-
-### 🚀 Building the Foundation:
-To rebuild the 303k Genesis dataset from scratch:
-```bash
-sudo /root/miniconda3/bin/python scripts/bridge_history.py
-```
-*Note: This script bridges the gap between Delta's local history and Binance's global archives.*
-
----
-
-## 🚀 Quick Start Commands
+## 🚀 Quick Start Commands (V12.0)
 
 | Task | Command |
 | :--- | :--- |
-| 🌉 **Run Genesis Bridge** | `sudo /root/miniconda3/bin/python scripts/bridge_history.py` |
-| 🔥 **Sovereign Training (303k)** | `nohup sudo /root/miniconda3/bin/python -u train.py --candles 400000 --symbol BTCUSD --timeframe 15m --epochs 300 --batch 32 > logs/iron_oracle_v11.log 2>&1 &` |
-| ◀️ **Start Dashboard (5000)** | `nohup sudo /root/miniconda3/bin/python -u auto_run.py serve --port 5000 > logs/dashboard.log 2>&1 &` |
-| 📡 **Watch Live Status** | `tail -f logs/iron_oracle_v11.log` |
-| 💰 **Run ROI Benchmark** | `sudo /root/miniconda3/bin/python scripts/calc_net_roi.py` |
+| 🔥 **Mission Training** | `nohup sudo python3 -u train.py --epochs 300 --batch 32 > logs/iron_oracle_v11.log 2>&1 &` |
+| 📡 **Launch Station** | `nohup sudo python3 -u src/api/serve.py > logs/dashboard.log 2>&1 &` |
+| 🛰️ **Monitor Feed** | `tail -f logs/iron_oracle_v11.log` |
+| ⚓ **Local Port** | [http://localhost:8000](http://localhost:8000) |
 
 ---
 
-## ⚙️ Sovereign Configuration (`src/config/sovereign_config.py`)
-Modify these values to adapt to exchange changes instantly:
-*   `CURRENT_FEE_PCT`: Update when exchange fees change (Default: 0.0006).
-*   `SOVEREIGN_MULTIPLIER`: Your "Greed Level" (Default: 2.0x fee cover).
+## ⚙️ Institutional Configuration (`src/config/sovereign_config.py`)
+Centralized control for the Iron Oracle mission parameters:
+*   `FEE_RATE`: Perpetual Futures commission rate (Default: 0.001).
+*   `INITIAL_WALLET_USD`: Starting mission capital (Default: 200.0).
+*   `POSITION_SIZE_PCT`: Percentage of capital deployed per strike (Default: 100%).
 
 ---
 
-⚓ **Sovereign Kraken V11.1 "Iron Oracle" — Intelligence that understands Profit.**
+⚓ **Iron Oracle V12.0 — Sovereign Intelligence, Institutional Performance.**
