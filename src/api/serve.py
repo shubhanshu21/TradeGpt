@@ -20,7 +20,88 @@ SRC_ROOT  = Path(__file__).parent.parent
 PROJ_ROOT = SRC_ROOT.parent
 sys.path.insert(0, str(SRC_ROOT))
 
-from config.sovereign_config import FEE_RATE, INITIAL_WALLET_USD, POSITION_SIZE_PCT
+from config.sovereign_config import FEE_RATE, INITIAL_WALLET_USD, POSITION_SIZE_PCT, PROFIT_GOAL_PCT, RISK_MULTIPLIER
+
+class SovereignDiscourse:
+    """Institutional Neural Debate Engine (V12.0) — Context-Aware Discourse Generation."""
+    def __init__(self):
+        self.leads = {"Oracle": "🦉", "Hunter": "🦁", "Sentinel": "🛡️", "Tracker": "🐋", "Scout": "🐙"}
+        self.prefixes = ["Neon", "Volt", "Cipher", "Ghost", "Logic", "Vector", "Pulse", "Neural", "Cyber", "Quant", "Delta", "Gamma", "Alpha", "Zenith", "Apex", "Flow"]
+        self.suffixes = ["Hunter", "Scout", "Tracker", "Oracle", "Sentinel", "Core", "Node", "Gate", "Shell", "Link", "Edge", "Vortex", "Matrix", "System", "Prime", "Zero"]
+        self.moods = ["[CALM]", "[AGGRESSIVE]", "[STERN]", "[EUPHORIC]", "[NERVOUS]", "[RESOLUTE]", "[TEACHING]", "[ANALYTICAL]"]
+
+    def get_expert(self, active_indices):
+        idx = random.choice(active_indices) if active_indices else random.randint(0, 255)
+        return f"{random.choice(self.prefixes)}-{random.choice(self.suffixes)} #{idx:03d}", "🤖"
+
+    def generate_debate(self, latest_price, fee_rate, certainty, active_indices, candle_count="400,000"):
+        ist_now = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%I:%M %p")
+        
+        # Personality Templates
+        idle_templates = [
+            "Neural bridge offline. {mood} Awaiting mission start signal.",
+            "Diagnostics in progress. {mood} 256 Gated Experts on standby.",
+            "Systems green. {mood} We wait for the master neural link.",
+            "Hydra architecture is cooling. {mood} Ready for {candles} candle ingestion."
+        ]
+        oracle_templates = [
+            "Structure is holding at {price}. {mood} Watch the tape.",
+            "Market entropy is at {cert}%. {mood} Strategy: Proceed with discipline.",
+            "We are smelling greed, not trend. {mood} Liquidity is thin above {price}.",
+            "Historical parity suggests a pullback. {mood} Wait for the anchor."
+        ]
+        hunter_templates = [
+            "BLOOD IN THE WATER! {mood} Buy the breakout at {price}!",
+            "The bulls are breaking the cage! {mood} Push the neural gates!",
+            "Momentum is peaking at {cert}%. {mood} Don't let them escape!",
+            "I smell a liquidation event. {mood} Be the hunter, not the prey."
+        ]
+        sentinel_templates = [
+            "IT'S A TRAP! {mood} {expert}, the fee gate is {fee}% — stay liquid.",
+            "Capital preservation is the only law. {mood} Do not burn on this chop.",
+            "Risk Sentinel reports a shadow wall. {mood} Abort the strike!",
+            "Defensive protocols active. {mood} We hold until the abyss clears."
+        ]
+        tracker_templates = [
+            "Scanning order flow... {mood} Hidden orders at {price} detected.",
+            "Whale movement identified. {mood} They are baiting the retail gate.",
+            "OBI imbalance is {cert}%. {mood} The depth is an illusion.",
+            "Following the smart money. {mood} Enter the flow at {price}."
+        ]
+
+        debate = []
+        # Construct a 4-message thread
+        participants = ["Oracle", "Hunter", "Sentinel", "Tracker"]
+        random.shuffle(participants)
+        
+        for p in participants[:4]:
+            role = p
+            avatar = self.leads[p]
+            mood = random.choice(self.moods)
+            expert, _ = self.get_expert(active_indices)
+            
+            # Switch to IDLE templates if no price data or very low price
+            if float(latest_price) < 100:
+                tpl = random.choice(idle_templates)
+            else:
+                if role == "Oracle":   tpl = random.choice(oracle_templates)
+                elif role == "Hunter": tpl = random.choice(hunter_templates)
+                elif role == "Sentinel": tpl = random.choice(sentinel_templates)
+                else:                  tpl = random.choice(tracker_templates)
+            
+            text = tpl.format(
+                price=f"${latest_price:,.2f}", 
+                fee=f"{fee_rate*100:.2f}",
+                cert=f"{certainty*100:.1f}",
+                mood=mood,
+                expert=expert,
+                candles=candle_count
+            )
+            debate.append({"speaker": role, "avatar": avatar, "text": text, "time": ist_now})
+            
+        return debate
+
+discourse_engine = SovereignDiscourse()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DASHBOARD LOGIC
@@ -30,10 +111,16 @@ def parse_training_log():
     import re
     log_path = PROJ_ROOT / "logs" / "iron_oracle_v11.log"
     epochs = []
-    if not log_path.exists(): return epochs
+    candle_count = "400,000" # Safe default
+    if not log_path.exists(): return epochs, candle_count
     try:
         with open(log_path, "rb") as f:
             raw = f.read().decode("utf-8", errors="ignore")
+        
+        # Extract Candle Count
+        c_match = re.search(r"Loading ([\d,]+) candles", raw)
+        if c_match: candle_count = c_match.group(1)
+        
         table_pat = re.compile(r"\d{2}:\d{2}:\d{2}\s*\|\s*(\d+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)")
         seen = {}
         for m in table_pat.finditer(raw):
@@ -46,7 +133,7 @@ def parse_training_log():
             if ep_int in seen: seen[ep_int]["val_loss"] = float(m.group(2))
         epochs = [seen[ep] for ep in sorted(seen)]
     except: pass
-    return epochs
+    return epochs, candle_count
 
 # ──────────────────────────────────────────────────────────────────────────────
 # APP
@@ -63,7 +150,7 @@ async def dashboard_home():
 
 @app.get("/api/stats")
 async def get_stats():
-    epochs = parse_training_log()
+    epochs, candle_count = parse_training_log()
     latest = epochs[-1] if epochs else {}
     
     # 1. Load ROI & Expert Heatmap
@@ -131,49 +218,14 @@ async def get_stats():
     }
 
     # 3. Neural Dialogue Engine
-    dialogue = []
-    try:
-        active_indices = sorted(range(len(expert_heatmap)), key=lambda i: expert_heatmap[i], reverse=True)[:10]
-        latest_price = latest.get("price", 0) if latest else 0
-        trend_label = "bullish" if (recent_trades and recent_trades[0].get("net_pct", 0) > 0) else "choppy"
-        ist_now = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%I:%M %p")
+    latest_price = latest.get("price", 0) if latest else 0
+    if not latest_price and recent_trades:
+        latest_price = recent_trades[0].get("entry", 0)
         
-        leads = {"Sentinel": "🛡️", "Hunter": "🦁", "Oracle": "🦉", "Tracker": "🐋", "Scout": "🐙"}
-        def get_expert():
-            idx = random.choice(active_indices)
-            return f"{random.choice(prefixes)}-{random.choice(suffixes)} #{idx:03d}"
-        def inject_mentions(text, current_speaker):
-            target = random.choice(list(leads.keys()) + [get_expert()])
-            return text.replace("{expert}", target)
+    certainty = latest.get("certainty", 0.5) if latest else 0.5
+    active_indices = sorted(range(len(expert_heatmap)), key=lambda i: expert_heatmap[i], reverse=True)[:10]
+    dialogue = discourse_engine.generate_debate(latest_price, FEE_RATE, certainty, active_indices, candle_count)
 
-        if trend_label == "bullish":
-            pools = [
-                [
-                    {"speaker": "Hunter", "avatar": "🦁", "text": "BLOOD IN THE WATER! [EUPHORIC] The bulls are breaking the cage. Buy the spike!"},
-                    {"speaker": get_expert(), "avatar": "🤖", "text": "Neural link stable. [CONFIDENT] Confirming Hunter. Market sentiment is reaching fever pitch."},
-                    {"speaker": "Oracle", "avatar": "🦉", "text": f"Patience, Hunter. [CALM] You're smelling greed, not trend. Tape is thin above ${latest_price:,.0f}."},
-                    {"speaker": get_expert(), "avatar": "🤖", "text": "Scaning liquidity. [NERVOUS] Oracle is right. Massive sell-wall hiding at the gate."},
-                    {"speaker": "Sentinel", "avatar": "🛡️", "text": "IT'S A TRAP! [AGITATED] {expert}, if we enter here, we're the liquidity. Abort!"},
-                    {"speaker": "Oracle", "avatar": "🦉", "text": "Decision reached. [RESOLUTE] {expert} has the data. We wait for the shakeout."}
-                ]
-            ]
-        else:
-            pools = [
-                [
-                    {"speaker": get_expert(), "avatar": "🤖", "text": f"Negative, Hunter. [STERN] The fee gate is {FEE_RATE*100:.2f}%. Strategy: HOLD."},
-                    {"speaker": "Oracle", "avatar": "🦉", "text": "Deadlock is its own lesson, {expert}. [TEACHING] Only fools trade in a cemetery."},
-                    {"speaker": "Sentinel", "avatar": "🛡️", "text": "Listen to the bot, Hunter. [ANNOYED] {expert}, sit on your hands."},
-                    {"speaker": "Oracle", "avatar": "🦉", "text": "Deadlock confirmed. [FINAL] {expert}, stay liquid. War starts tomorrow."}
-                ]
-            ]
-        
-        seed_idx = int(time.time() / 60) % len(pools)
-        raw_dialogue = pools[seed_idx]
-        for m in raw_dialogue:
-            m["text"] = inject_mentions(m["text"], m["speaker"])
-            m["time"] = ist_now
-            dialogue.append(m)
-    except: pass
 
     # 4. Quant Metrics Engine (Institutional Grade V11.2)
     max_dd = 0.0

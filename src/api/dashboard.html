@@ -599,39 +599,6 @@
 
 </main>
 
-  <!-- ── Sovereign Telemetry Hub (Consolidated) ── -->
-  <div class="card" style="margin-top: 1rem;">
-    <div class="card-header" style="padding: 0.5rem 1rem;">
-        <span class="card-title" style="font-size: 0.7rem; color:var(--gold)">🏛️ SOVEREIGN TELEMETRY</span>
-        <div style="display:flex; gap:1.5rem; align-items:center;">
-            <div style="display:flex; align-items:center; gap:0.4rem; font-size:0.65rem;">
-                <span style="color:var(--muted)">MAX DD:</span>
-                <span id="maxDD" style="color:var(--green); font-weight:700">0.00%</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:0.4rem; font-size:0.65rem;">
-                <span style="color:var(--muted)">HEALTH:</span>
-                <span id="levHealth" style="color:var(--cyan); font-weight:700">100%</span>
-            </div>
-            <span class="card-badge badge-purple" style="font-size:0.55rem;">GUARD: ACTIVE</span>
-        </div>
-    </div>
-    <div class="card-body" style="padding: 0.5rem; display:flex; gap:1rem; align-items:center;">
-        <div id="neuralHeatmap" class="heatmap-grid" style="flex:1; grid-template-columns: repeat(32, 1fr); gap:1px; padding:2px;">
-            <!-- 256 nodes in 32x8 grid -->
-        </div>
-        <div style="width:120px;">
-            <div class="progress-bg" style="height:4px; margin-bottom:4px;"><div id="ddBar" class="progress-fill" style="width:0%; background:var(--green)"></div></div>
-            <div class="progress-bg" style="height:4px;"><div id="levBar" class="progress-fill" style="width:100%; background:var(--cyan)"></div></div>
-        </div>
-    </div>
-  </div>
-
-  <!-- ── Sovereign Command Console (Sticky Bottom) ── -->
-  <div style="margin: 1rem 0; background:rgba(13,17,23,0.8); border:1px solid var(--border); border-radius:4px; display:flex; align-items:center;">
-    <span class="console-prompt">KRAKEN-OS://</span>
-    <input type="text" id="sovereignConsole" class="console-input" placeholder="Awaiting Sovereign Command... (e.g., /status, /council, /risk)" autocomplete="off">
-  </div>
-
 <footer>
   ⚓ Iron Oracle V11.0 &nbsp;|&nbsp; 256-Expert MoE &nbsp;|&nbsp; 42-Feature Sovereign Hive &nbsp;|&nbsp; 15m Swing Trading
   &nbsp;<span class="blink">|</span>
@@ -639,40 +606,6 @@
 
 <script>
   // ── Sovereign V12 Initialization ──────────────────────────────
-  const heatmapGrid = document.getElementById('neuralHeatmap');
-  for (let i = 0; i < 256; i++) {
-    const node = document.createElement('div');
-    node.className = 'node';
-    node.id = `node-${i}`;
-    heatmapGrid.appendChild(node);
-  }
-
-  const consoleInput = document.getElementById('sovereignConsole');
-  consoleInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        const cmd = consoleInput.value.trim().toLowerCase();
-        consoleInput.value = '';
-        const dialogueBox = document.getElementById('expertDialogue');
-        const response = document.createElement('div');
-        response.style.color = 'var(--cyan)';
-        response.style.fontSize = '0.7rem';
-        response.style.marginBottom = '0.5rem';
-        response.style.fontFamily = "'JetBrains Mono', monospace";
-        
-        if (cmd === '/status') {
-            response.textContent = `> [CONSOLE] SYSTEM STATUS: SOVEREIGN PRIME. 256 GATES ACTIVE. LATENCY: 14ms.`;
-        } else if (cmd === '/council') {
-            response.textContent = `> [CONSOLE] COUNCIL DIRECTIVE: OBSERVE & AGGRESS. VOLATILITY ENTROPY AT 0.84.`;
-        } else if (cmd === '/risk') {
-            response.textContent = `> [CONSOLE] RISK PROTOCOL: ALPHA PROTECT. MAX DD SET TO 2.5%.`;
-        } else {
-            response.textContent = `> [CONSOLE] COMMAND NOT RECOGNIZED. ACCESSING NEURAL OVERRIDE...`;
-        }
-        dialogueBox.appendChild(response);
-        dialogueBox.scrollTo({ top: dialogueBox.scrollHeight, behavior: 'smooth' });
-    }
-  });
-
   function updateClock() {
     const options = { 
       timeZone: 'Asia/Kolkata', 
@@ -798,22 +731,7 @@
       // ROI data
       if (d.roi) {
         const roi = d.roi;
-        
-        if (roi.net !== null && document.getElementById('highConfProfit')) {
-            const pnl = roi.net;
-            const pnlEl = document.getElementById('highConfProfit');
-            const color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-            const sign = pnl >= 0 ? '+' : '-';
-            
-            pnlEl.textContent   = `${sign}$${Math.abs(pnl).toFixed(2)}`;
-            pnlEl.style.color   = color;
-            
-            if (document.getElementById('pnlProgress')) {
-                const barPct = Math.min(100, Math.max(0, (pnl + 100) / 200 * 100));
-                document.getElementById('pnlProgress').style.width = barPct + '%';
-                document.getElementById('pnlProgress').style.background = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-            }
-        }
+        // (Redundant PnL update removed to prevent mathematical conflict)
         
         if (roi.expert_fight) {
             certChart.data.datasets[0].data = roi.expert_fight;
@@ -829,35 +747,7 @@
             document.getElementById('deployStatus').style.color  = roi.net > 0 ? 'var(--green)' : 'var(--gold)';
         }
 
-        // V12: Neural Heatmap Sync
-        if (d.expert_heatmap) {
-            d.expert_heatmap.forEach((intensity, idx) => {
-                const node = document.getElementById(`node-${idx}`);
-                if (node) {
-                    node.style.background = `rgba(240, 180, 41, ${intensity})`;
-                    if (intensity > 0.8) node.classList.add('node-active');
-                    else node.classList.remove('node-active');
-                }
-            });
-        }
-
-        // V12: Order Flow Tape
-        if (d.order_flow) {
-            document.getElementById('orderTape').style.height = (d.order_flow * 100) + '%';
-        }
-
-        // V12: Risk Sentinel
-        if (d.risk) {
-            const dd = d.risk.max_dd || 0;
-            const health = d.risk.lev_health || 100;
-            document.getElementById('maxDD').textContent = dd.toFixed(2) + '%';
-            document.getElementById('ddBar').style.width = Math.min(dd * 10, 100) + '%';
-            document.getElementById('ddBar').style.background = dd > 5 ? 'var(--red)' : 'var(--green)';
-            
-            document.getElementById('levHealth').textContent = health.toFixed(0) + '%';
-            document.getElementById('levBar').style.width = health + '%';
-            document.getElementById('levBar').style.background = health < 50 ? 'var(--red)' : 'var(--cyan)';
-        }
+        // (Legacy Telemetry & Risk UI Sync Purged for Streamlined View)
       }
 
       // Recent Strike Feed
@@ -929,8 +819,8 @@
         const currentPnl = d.net_profit || 0;
         const totalW = initCap + currentPnl;
         
-        const sign = currentPnl >= 0 ? '+' : '';
-        pnlEl.textContent = `${sign}$${currentPnl.toFixed(2)}`;
+        const sign = currentPnl >= 0 ? '+' : '-';
+        pnlEl.textContent = `${sign}$${Math.abs(currentPnl).toFixed(2)}`;
         pnlEl.style.color = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
         
         initialEl.textContent = `$${initCap.toFixed(2)}`;
