@@ -98,8 +98,9 @@ async def get_stats():
             for t in raw_trades:
                 try:
                     utc_time = datetime.strptime(t["timestamp"], "%H:%M")
+                    # Note: We assume today's date for recent sim trades
                     ist_time = utc_time + timedelta(hours=5, minutes=30)
-                    t["timestamp"] = ist_time.strftime("%I:%M %p")
+                    t["timestamp"] = ist_time.strftime("%d/%m %I:%M %p")
                 except: pass
                 t["value_usd"] = DEFAULT_POS_SIZE_USD
                 t["expert"] = f"{random.choice(prefixes)}-{random.choice(suffixes)} #{random.randint(0, 255):03d}"
