@@ -955,6 +955,13 @@
           }
       }
 
+      // 5. Restoration of Foundation Metrics
+      if (document.getElementById('totalStrikes')) document.getElementById('totalStrikes').textContent = (d.trades ? d.trades.length : 0);
+      if (document.getElementById('winRate') && d.risk) document.getElementById('winRate').textContent = d.risk.win_rate.toFixed(1) + '%';
+      if (document.getElementById('sharpeRatio') && d.risk) document.getElementById('sharpeRatio').textContent = d.risk.sharpe.toFixed(2);
+      if (document.getElementById('profitFactor') && d.risk) document.getElementById('profitFactor').textContent = d.risk.profit_factor.toFixed(2);
+      if (document.getElementById('maxDrawdown') && d.risk) document.getElementById('maxDrawdown').textContent = (d.risk.max_dd * 100).toFixed(2) + '%';
+
       // Expert Dialogue (Sovereign Dispatcher with TypewriterJS)
       if (d.dialogue && d.dialogue.length > 0) {
           const dBox = document.getElementById('expertDialogue');
