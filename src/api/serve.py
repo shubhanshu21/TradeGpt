@@ -237,8 +237,24 @@ async def get_stats():
     trades_path = PROJ_ROOT / "logs" / "recent_sim_trades.json"
     if trades_path.exists():
         try:
+            import json
+            from datetime import datetime, timedelta
             with open(trades_path, "r") as f:
-                recent_trades = json.load(f)
+                raw_trades = json.load(f)
+            
+            # ── IST & Value Injection Layer ──
+            for t in raw_trades:
+                try:
+                    # Assume today's date for UTC time from log
+                    utc_time = datetime.strptime(t["timestamp"], "%H:%M")
+                    # Add 5 hours 30 minutes for IST
+                    ist_time = utc_time + timedelta(hours=5, minutes=30)
+                    t["timestamp"] = ist_time.strftime("%I:%M %p")
+                    t["date"] = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%d/%m/%y")
+                except: pass
+                t["value_usd"] = 200.0  # Retail Standard Position
+                t["qty"] = 200.0 / t["entry"]
+            recent_trades = raw_trades
         except: pass
 
     return {

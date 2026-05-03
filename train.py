@@ -117,7 +117,7 @@ class MissionControl(keras.callbacks.Callback):
                         idx = t_indices[i]
                         entry_p = raw_prices[idx + ctx - 1]
                         price_move_pct = (t_usd[i] / entry_p)
-                        side = "LONG" if t_traj[i] > 0 else "SHORT"
+                        side = "LONG" if t_traj[i] > entry_p else "SHORT"
                         raw_ret = price_move_pct if side == "LONG" else -price_move_pct
                         net_ret = raw_ret - fee_rate
                         recent_trades.append({

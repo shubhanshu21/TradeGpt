@@ -230,6 +230,17 @@
     /* ── Blinking cursor effect ── */
     .blink { animation: blink 1.2s step-end infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    .pulse-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+      box-shadow: 0 0 0 rgba(16, 185, 129, 0.4);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
   </style>
 </head>
 <body>
@@ -285,6 +296,18 @@
   </div>
 
   <!-- ── ROW 2: Charts ── -->
+  <div class="card chart-card-wide">
+    <div class="card-header">
+      <span class="card-title">📈 Equity Growth — Simulated $200 Account</span>
+      <div style="display:flex; align-items:center; gap:0.5rem">
+        <span class="pulse-dot"></span>
+        <span class="card-badge badge-green">LIVE TRACKER</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
+    </div>
+  </div>
 
 
   <!-- ── ROW 3 ── -->
@@ -310,8 +333,10 @@
       <table class="trade-log">
         <thead>
           <tr>
-            <th>Time</th>
+            <th>Date/Time (IST)</th>
             <th>Move</th>
+            <th>Value ($)</th>
+            <th>Qty (BTC)</th>
             <th>Entry Price</th>
             <th>Net ROI</th>
           </tr>
@@ -458,6 +483,29 @@
     }}
   });
 
+  const equityChart = new Chart(document.getElementById('equityChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'PnL ($)',
+        data: [],
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0
+      }]
+    },
+    options: {
+      ...base,
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 9 } } },
+        y: { grid: { color: 'rgba(30,45,61,0.5)' }, ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+
   // ── Parse log file via /api/stats ──────────────────────────────
   async function refresh() {
     try {
@@ -547,14 +595,43 @@
 
       // Recent Strike Feed
       if (d.trades && d.trades.length > 0) {
+        const trades = d.trades; // newest first
+        const sorted = [...trades].reverse(); // oldest first for graph
+        
+        let cumulative = 0;
+        const pnlData = [];
+        const labels  = [];
+
+        sorted.forEach(t => {
+            cumulative += (200 * (t.net_pct / 100));
+            pnlData.push(cumulative);
+            labels.push(t.timestamp);
+        });
+
+        equityChart.data.labels = labels;
+        equityChart.data.datasets[0].data = pnlData;
+        equityChart.data.datasets[0].borderColor = cumulative >= 0 ? '#10b981' : '#ef4444';
+        equityChart.data.datasets[0].backgroundColor = cumulative >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+        
+        // Dynamic Strike Markers
+        equityChart.data.datasets[0].pointRadius = 4;
+        equityChart.data.datasets[0].pointHoverRadius = 6;
+        equityChart.data.datasets[0].pointBackgroundColor = sorted.map(t => t.side === 'LONG' ? '#10b981' : '#ef4444');
+        equityChart.data.datasets[0].pointBorderColor = '#0d1117';
+        equityChart.data.datasets[0].pointBorderWidth = 1;
+        
+        equityChart.update();
+
         const tBody = document.getElementById('strikeTableBody');
         tBody.innerHTML = d.trades.map(t => {
           const color = t.net_pct >= 0 ? 'var(--green)' : 'var(--red)';
           const sideColor = t.side === 'LONG' ? 'var(--green)' : 'var(--red)';
           return `<tr>
-            <td style="color:var(--muted)">${t.timestamp}</td>
+            <td style="color:var(--muted)">${t.date || ''} ${t.timestamp}</td>
             <td style="color:${sideColor};font-weight:600">${t.side}</td>
-            <td>$${t.entry.toFixed(2)}</td>
+            <td style="color:var(--gold)">$${(t.value_usd || 200).toLocaleString()}</td>
+            <td style="color:var(--cyan)">${(t.qty || (200/t.entry)).toFixed(5)}</td>
+            <td>$${t.entry.toLocaleString()}</td>
             <td style="color:${color};font-weight:600">${t.net_pct >= 0 ? '+' : ''}${t.net_pct.toFixed(2)}%</td>
           </tr>`;
         }).join('');
@@ -567,7 +644,7 @@
     }
   }
 
-  setInterval(refresh, 10000);
+  setInterval(refresh, 5000);
   refresh();
 
   // ── Expert Fight Jitter (Visual Polish) ──
