@@ -1,38 +1,18 @@
 """
-SOVEREIGN ALPHA — Strategic Configuration ⚓🏛️
-==============================================
-Centralized control for fees, risk thresholds, and "Sovereign Gates."
-Changing values here will update the Data Engine (Preprocess) and the Trader.
+SOVEREIGN KRAKEN CONFIGURATION (V11.2) ⚓🏛️🧠
+==========================================
+Central authority for strategic parameters and exchange standards.
 """
 
-# ── EXCHANGE FEES ─────────────────────────────────────────────────────────────
-# Default for Delta Exchange India: 0% Buy / 0.1% Sell + 18% GST ≈ 0.12%
-CURRENT_FEE_PCT = 0.0012  
+# Delta Exchange India: 0.05% Taker + 18% GST ≈ 0.059% per side
+# Rounding to 0.12% for full trade (entry + exit) + slippage safety.
+FEE_RATE = 0.0012
+CURRENT_FEE_PCT = FEE_RATE  # Legacy Alias
 
-# ── SOVEREIGN GATES ───────────────────────────────────────────────────────────
-# How much profit (after fees) do we need to see to consider it a "Win"?
-# 1.0 = Breakeven (Profit = Fee)
-# 2.0 = Conservative (Profit must be 2x the Fee)
-# 1.5 = Balanced (Model is more aggressive)
-SOVEREIGN_MULTIPLIER = 2.0
+# Position Management
+DEFAULT_POS_SIZE_USD = 200.0
+SOVEREIGN_MULTIPLIER = 1.0  # Strategic Scaling Constant
 
-# ── DYNAMIC THRESHOLD CALCULATION ────────────────────────────────────────────
-# The Data Engine uses this to calculate the Z-Score (Standard Deviation) 
-# required to be "Sovereign." 
-def get_sovereign_threshold(volatility_avg=0.002):
-    """
-    Translates the % Fee into a Z-Score threshold.
-    Higher volatility = tighter threshold (need bigger moves).
-    """
-    target_move = CURRENT_FEE_PCT * SOVEREIGN_MULTIPLIER
-    # Approximate Z-Score needed: (Target % Move / Avg Volatility)
-    return max(0.1, target_move / (volatility_avg + 1e-9))
-
-# ── REASONING LABELS ──────────────────────────────────────────────────────────
-# Mapping for the model's Reasoning Head
-LABELS = {
-    0: "SOVEREIGN_LONG",   # Net Profit > Fee * Multiplier
-    1: "SOVEREIGN_SHORT",  # Net Profit > Fee * Multiplier
-    2: "FEE_TRAP",         # Direction correct, but not enough to cover fees
-    3: "NOISE"             # Sideways / Toxic market
-}
+# Neural Architecture
+CONTEXT_WINDOW = 120
+FORECAST_STEPS = 15

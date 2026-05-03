@@ -12,9 +12,10 @@ sys.path.insert(0, str(ROOT / "src"))
 from core.hydra import build_kraken
 from data.preprocess import compute_indicators, build_feature_cols
 from exchange.fetch_data import fetch_live_kat_data
+from config.sovereign_config import FEE_RATE
 
-def run_diagnostic_bench():
-    print("⚓ TRIGGERING DIAGNOSTIC STRIKE FEED...")
+def run_diagnostic_bench(fee_rate=0.0012):
+    print(f"⚓ TRIGGERING DIAGNOSTIC STRIKE FEED [FEE: {fee_rate*100:.2f}%]...")
     
     # 1. Load weights
     model_p = ROOT / "models" / "hydra_checkpoint_E004.keras"
@@ -35,8 +36,13 @@ def run_diagnostic_bench():
     
     # 3. Inference
     outputs = model(X, training=False)
-    traj = outputs[0].numpy()[:, -1, 0]
+    traj_scaled = outputs[0].numpy()[:, -1, 0]
     certs = np.mean(outputs[1].numpy(), axis=1)
+    
+    # V11.2: Neural De-Scaling Standard
+    close_means = np.array([data[i:i+ctx, 3].mean() for i in indices])
+    close_stds  = np.array([data[i:i+ctx, 3].std() + 1e-8 for i in indices])
+    traj_usd    = (traj_scaled * close_stds) + close_means
     
     c_pct = (certs - certs.min()) / (certs.max() - certs.min() + 1e-9) * 100
     
@@ -45,18 +51,20 @@ def run_diagnostic_bench():
     mask80 = c_pct >= 80
     if mask80.any():
         t_indices = np.array(indices)[mask80]
-        t_traj = traj[mask80]
+        t_traj_usd = traj_usd[mask80]
         t_usd = usd_diffs[mask80]
         
         for i in range(max(0, len(t_indices)-10), len(t_indices)):
             idx = t_indices[i]
             entry_p = raw_prices[idx + ctx - 1]
             price_move_pct = (t_usd[i] / entry_p)
-            side = "LONG" if t_traj[i] > 0 else "SHORT"
             
-            # Net profit (0.12% fees)
+            # V11.2 Standard: USD Comparison
+            side = "LONG" if t_traj_usd[i] > entry_p else "SHORT"
+            
+            # Net profit (configurable fees)
             raw_ret = price_move_pct if side == "LONG" else -price_move_pct
-            net_ret = raw_ret - 0.0012
+            net_ret = raw_ret - fee_rate
             
             recent_trades.append({
                 "timestamp": pd.to_datetime(df.index[idx + ctx - 1]).strftime("%H:%M"),
@@ -71,4 +79,8 @@ def run_diagnostic_bench():
     print(f"✅ Success: {len(recent_trades)} strikes captured in feed.")
 
 if __name__ == "__main__":
-    run_diagnostic_bench()
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--fee_rate", type=float, default=FEE_RATE)
+    args = p.parse_args()
+    run_diagnostic_bench(fee_rate=args.fee_rate)

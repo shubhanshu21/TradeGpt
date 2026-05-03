@@ -26,6 +26,7 @@ from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetr
 from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
 from exchange.fetch_data import fetch_live_kat_data
 import glob as _glob
+from config.sovereign_config import FEE_RATE, DEFAULT_POS_SIZE_USD
 
 
 class CheckpointPruner(keras.callbacks.Callback):
@@ -67,11 +68,13 @@ class MissionControl(keras.callbacks.Callback):
         ts    = datetime.now().strftime("%H:%M:%S")
         
         # ── Automated Sovereign Benchmarking (V11.1) ────────────────────────
-        # This runs periodically to update the dashboard ROI card automatically
         try:
             import json
             from data.preprocess import compute_indicators, build_feature_cols
             from exchange.fetch_data import fetch_live_kat_data
+            
+            # Access fee_rate from args if possible, else default
+            fee_rate = getattr(self, 'fee_rate', 0.0012)
             
             # 1. Fetch live slice for bench (Last 500 candles)
             df_raw = fetch_live_kat_data('BTCUSD', 500, '15m')
@@ -89,20 +92,26 @@ class MissionControl(keras.callbacks.Callback):
                 
                 # Inference using CURRENT weights
                 outputs = self.model(X, training=False)
-                traj    = outputs[0].numpy()[:, -1, 0] # Price at end of forecast
-                certs   = np.mean(outputs[1].numpy(), axis=1) # Avg certainty
+                traj_scaled = outputs[0].numpy()[:, -1, 0] # Scaled price at end
+                certs       = np.mean(outputs[1].numpy(), axis=1) # Avg certainty
+                
+                # ── V11.2: Neural De-Scaling Patch ──────────────────────────
+                close_means = np.array([data[i:i+ctx, 3].mean() for i in indices])
+                close_stds  = np.array([data[i:i+ctx, 3].std() + 1e-8 for i in indices])
+                traj_usd    = (traj_scaled * close_stds) + close_means
                 
                 # Normalize certainty for bench (80-100% range)
                 c_pct = (certs - certs.min()) / (certs.max() - certs.min() + 1e-9) * 100
                 
-                roi_data = {"tiers": {}, "last_update": ts, "note": "LIVE ALPHA FEED"}
-                pos_size = 2000.0; fee_rate = 0.0006
+                roi_data = {"tiers": {}, "last_update": ts, "note": f"FEE GATE: {fee_rate*100:.2f}%"}
+                pos_size = 200.0
                 for th in [80, 85, 90]:
                     mask = c_pct >= th
                     n_t  = int(mask.sum())
                     if n_t > 0:
                         e_p = raw_prices[np.array(indices)[mask] + ctx - 1]
-                        gross = float((np.sign(traj[mask]) * (usd_diffs[mask] / e_p) * pos_size).sum())
+                        directions = np.sign(traj_usd[mask] - e_p)
+                        gross = float((directions * (usd_diffs[mask] / e_p) * pos_size).sum())
                         fees = float(n_t * (pos_size * fee_rate))
                         roi_data["tiers"][str(th)] = {"trades": n_t, "net": gross - fees}
                 
@@ -111,13 +120,13 @@ class MissionControl(keras.callbacks.Callback):
                 mask80 = c_pct >= 80
                 if mask80.any():
                     t_indices = np.array(indices)[mask80]
-                    t_traj = traj[mask80]
+                    t_traj_usd = traj_usd[mask80]
                     t_usd = usd_diffs[mask80]
                     for i in range(max(0, len(t_indices)-100), len(t_indices)):
                         idx = t_indices[i]
                         entry_p = raw_prices[idx + ctx - 1]
                         price_move_pct = (t_usd[i] / entry_p)
-                        side = "LONG" if t_traj[i] > entry_p else "SHORT"
+                        side = "LONG" if t_traj_usd[i] > entry_p else "SHORT"
                         raw_ret = price_move_pct if side == "LONG" else -price_move_pct
                         net_ret = raw_ret - fee_rate
                         recent_trades.append({
@@ -127,14 +136,20 @@ class MissionControl(keras.callbacks.Callback):
                             "net_pct": float(net_ret * 100)
                         })
                 
-                # ── Expert Fight: Live Certainty Distribution (V11.1) ──
+                # ── Expert Fight: Live 256-Node Heatmap (V11.2 Real-Time) ──
                 X_live = X[-1:] 
                 outputs_live = self.model(X_live, training=False)
+                # Channel 1 is the 256-expert certainty distribution
                 cert_map = outputs_live[1].numpy()[0]
+                # Normalize 0-1 for the heatmap visualization
                 c_min, c_max = cert_map.min(), cert_map.max()
-                cert_norm = (cert_map - c_min) / (c_max - c_min + 1e-9) * 100
+                cert_norm = (cert_map - c_min) / (c_max - c_min + 1e-9)
+                
+                roi_data["expert_heatmap"] = cert_norm.tolist()
+                
+                # Also keep the histogram for the risk Sentinel
                 hist_bins = [0, 60, 65, 70, 75, 80, 85, 90, 100.1]
-                counts, _ = np.histogram(cert_norm, bins=hist_bins)
+                counts, _ = np.histogram(cert_norm * 100, bins=hist_bins)
                 roi_data["expert_fight"] = counts.tolist()
 
                 with open(ROOT / "logs" / "latest_roi.json", "w") as f_json:
@@ -251,6 +266,8 @@ def train_kraken(args):
 
     # ── 5. Callbacks ──────────────────────────────────────────────────────────
     epoch_ckpt_freq = 10 * steps_tr   # save every 10 epochs
+    mc = MissionControl()
+    mc.fee_rate = args.fee_rate
     callbacks = [
         keras.callbacks.ModelCheckpoint(
             str(CKPT_BEST), monitor="val_loss",
@@ -262,7 +279,7 @@ def train_kraken(args):
             monitor="val_loss", patience=7,  # 7 epochs * 12.5h = ~3.6 days max wait
             restore_best_weights=True, verbose=1),
         CheckpointPruner(ckpt_dir=CKPT_DIR, keep_n=3),
-        MissionControl(),
+        mc,
     ]
 
     # ── 6. Ignite ─────────────────────────────────────────────────────────────
@@ -309,5 +326,6 @@ if __name__ == "__main__":
     p.add_argument("--batch",     type=int, default=64)
     p.add_argument("--candles",   type=int, default=120000)
     p.add_argument("--resume",    action="store_true")
+    p.add_argument("--fee_rate",  type=float, default=FEE_RATE)
     args = p.parse_args()
     train_kraken(args)
