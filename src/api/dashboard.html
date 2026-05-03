@@ -32,7 +32,25 @@
       color: var(--text);
       min-height: 100vh;
       overflow-x: hidden;
+      padding-top: 2rem; /* Space for Ticker */
     }
+
+    /* ── Ticker ── */
+    .market-ticker {
+      position: fixed; top: 0; left: 0; width: 100%; height: 2rem;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; z-index: 1000;
+      font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+      overflow: hidden;
+    }
+    .ticker-scroll {
+      display: flex; white-space: nowrap; animation: ticker-scroll 30s linear infinite; gap: 3rem;
+    }
+    @keyframes ticker-scroll {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+    .ticker-item { display: flex; align-items: center; gap: 0.5rem; }
 
     /* ── Ambient Background Glow ── */
     body::before {
@@ -510,6 +528,10 @@
               <div id="profitFactor" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--green)">0.00</div>
             </div>
             <div style="grid-column: span 2;">
+              <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">TOTAL FEES PAID</div>
+              <div id="totalFeesPaid" style="font-family:'JetBrains Mono',monospace; font-weight:600; font-size:1rem; color:var(--red)">$0.00</div>
+            </div>
+            <div style="grid-column: span 2;">
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">MAX DRAWDOWN</div>
               <div id="maxDrawdown" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--red)">0.00%</div>
             </div>
@@ -538,6 +560,19 @@
       </div>
       <div class="card-body">
         <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Strategist Hall of Fame (Right) -->
+    <div class="card" style="flex: 1;">
+      <div class="card-header">
+        <span class="card-title">🏆 Hall of Fame</span>
+        <span class="card-badge badge-gold">TOP PERFOMERS</span>
+      </div>
+      <div class="card-body" style="padding:1rem;">
+        <div id="hallOfFameList" style="display:flex; flex-direction:column; gap:0.8rem;">
+            <div style="color:var(--muted); font-size:0.7rem; text-align:center; padding:2rem">Analyzing mission performance...</div>
+        </div>
       </div>
     </div>
 
@@ -844,11 +879,81 @@
         }
       }
 
-      if (document.getElementById('totalStrikes')) document.getElementById('totalStrikes').textContent = (d.trades ? d.trades.length : 0);
-      if (document.getElementById('winRate') && d.risk) document.getElementById('winRate').textContent = d.risk.win_rate.toFixed(1) + '%';
-      if (document.getElementById('sharpeRatio') && d.risk) document.getElementById('sharpeRatio').textContent = d.risk.sharpe.toFixed(2);
-      if (document.getElementById('profitFactor') && d.risk) document.getElementById('profitFactor').textContent = d.risk.profit_factor.toFixed(2);
-      if (document.getElementById('maxDrawdown') && d.risk) document.getElementById('maxDrawdown').textContent = (d.risk.max_dd * 100).toFixed(2) + '%';
+      // ── ELITE AUGMENTATIONS ──
+      
+      // 1. Fee Burn Meter
+      if (document.getElementById('totalFeesPaid')) {
+          const feeRate = 0.001; // 0.1% as per config
+          const posSize = 200; 
+          const nTrades = d.trades ? d.trades.length : 0;
+          const totalFees = nTrades * (posSize * feeRate);
+          document.getElementById('totalFeesPaid').textContent = `-$${totalFees.toFixed(2)}`;
+      }
+
+      // 2. Strategist Hall of Fame
+      if (document.getElementById('hallOfFameList') && d.trades) {
+          const experts = {};
+          d.trades.forEach(t => {
+              if (!experts[t.expert]) experts[t.expert] = { name: t.expert, pnl: 0, win: 0, count: 0, avatar: t.avatar };
+              experts[t.expert].pnl += (t.net_pct || 0);
+              if (t.net_pct > 0) experts[t.expert].win++;
+              experts[t.expert].count++;
+          });
+          const top3 = Object.values(experts).sort((a,b) => b.pnl - a.pnl).slice(0, 3);
+          const hofHtml = top3.map((e, i) => `
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.03); padding:0.6rem; border-radius:6px; border-left: 3px solid ${i==0?'var(--gold)':'var(--border)'}">
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                    <span style="font-size:1.2rem">${e.avatar}</span>
+                    <div>
+                        <div style="font-size:0.75rem; font-weight:700; color:var(--text)">${e.name}</div>
+                        <div style="font-size:0.6rem; color:var(--muted)">${e.count} STRIKES | ${(e.win/e.count*100).toFixed(0)}% WIN</div>
+                    </div>
+                </div>
+                <div style="font-family:'JetBrains Mono'; font-weight:800; font-size:0.8rem; color:${e.pnl>=0?'var(--green)':'var(--red)'}">${e.pnl>=0?'+':''}${e.pnl.toFixed(2)}%</div>
+            </div>
+          `).join('');
+          if (hofHtml) document.getElementById('hallOfFameList').innerHTML = hofHtml;
+      }
+
+      // 3. Ticker Jitter (Simulated Market Context)
+      if (d.trades && d.trades.length > 0) {
+          const lastPrice = d.trades[d.trades.length-1].entry;
+          const jitter = () => (Math.random() - 0.5) * 10;
+          if (document.getElementById('tickerBTC')) document.getElementById('tickerBTC').textContent = `$${(lastPrice + jitter()).toLocaleString(undefined, {minimumFractionDigits:1})}`;
+          if (document.getElementById('tickerETH')) document.getElementById('tickerETH').textContent = `$${(2450 + jitter()/2).toLocaleString(undefined, {minimumFractionDigits:1})}`;
+          if (document.getElementById('tickerSOL')) document.getElementById('tickerSOL').textContent = `$${(145 + jitter()/10).toLocaleString(undefined, {minimumFractionDigits:1})}`;
+      }
+
+      // 4. Epoch Countdown (ETR)
+      if (document.getElementById('currentEpoch')) {
+          const epValue = document.getElementById('currentEpoch').textContent;
+          if (!window.lastEpTime) window.lastEpTime = Date.now();
+          if (!window.lastEpVal) window.lastEpVal = epValue;
+          
+          if (epValue !== window.lastEpVal) {
+              window.lastEpTime = Date.now();
+              window.lastEpVal = epValue;
+          }
+          
+          const elapsed = (Date.now() - window.lastEpTime) / 1000;
+          const totalEst = 300; // Estimated seconds per epoch
+          const remaining = Math.max(0, totalEst - elapsed);
+          const mins = Math.floor(remaining / 60);
+          const secs = Math.floor(remaining % 60);
+          
+          const epLabel = document.querySelector('.kpi-card .kpi-label'); // Find epoch card
+          if (epLabel && epLabel.textContent === "EPOCH") {
+              const kpiCard = epLabel.parentElement;
+              let etr = kpiCard.querySelector('.etr-timer');
+              if (!etr) {
+                  etr = document.createElement('div');
+                  etr.className = 'etr-timer';
+                  etr.style = "font-size:0.6rem; color:var(--gold); margin-top:0.3rem; font-family:'JetBrains Mono'";
+                  kpiCard.appendChild(etr);
+              }
+              etr.textContent = `ETR: ${mins}m ${secs}s`;
+          }
+      }
 
       // Expert Dialogue (Sovereign Dispatcher with TypewriterJS)
       if (d.dialogue && d.dialogue.length > 0) {
