@@ -158,11 +158,18 @@ class MissionControl(keras.callbacks.Callback):
                         
                         raw_ret = price_move_pct
                         net_ret = raw_ret - fee_rate
+                        # V11.7: Deterministic Strategist Assignment
+                        prefixes = ["Neon", "Volt", "Cipher", "Ghost", "Logic", "Vector", "Pulse", "Neural", "Cyber", "Quant", "Delta", "Gamma", "Alpha", "Zenith", "Apex", "Flow"]
+                        suffixes = ["Hunter", "Scout", "Tracker", "Oracle", "Sentinel", "Core", "Node", "Gate", "Shell", "Link", "Edge", "Vortex", "Matrix", "System", "Prime", "Zero"]
+                        import random
+                        expert = f"{random.choice(prefixes)}-{random.choice(suffixes)} #{random.randint(0, 255):03d}"
+
                         recent_trades.append({
-                            "timestamp": pd.to_datetime(df.index[idx + ctx - 1]).isoformat(),
+                            "timestamp": df.index[idx + ctx - 1].isoformat(),
                             "side": side,
                             "entry": float(entry_p),
-                            "net_pct": float(net_ret * 100)
+                            "net_pct": float(net_ret * 100),
+                            "expert": expert
                         })
                 
                 # ── Expert Fight: Live 256-Node Heatmap (V11.2 Real-Time) ──

@@ -217,7 +217,14 @@ async def get_stats():
                 curr_w += t["pnl_usd"]
                 t["wallet_snapshot"] = curr_w
                 
-                t["expert"] = f"{random.choice(prefixes)}-{random.choice(suffixes)} #{random.randint(0, 255):03d}"
+                if "expert" not in t:
+                    # Seed based on timestamp to keep it consistent
+                    import hashlib
+                    seed_str = f"{t.get('timestamp','')}{t.get('entry',0)}"
+                    seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
+                    r = random.Random(seed)
+                    t["expert"] = f"{r.choice(self.discourse.prefixes)}-{r.choice(self.discourse.suffixes)} #{r.randint(0, 255):03d}"
+                
                 t["avatar"] = "🤖"
                 comp_trades.append(t)
             
