@@ -20,7 +20,7 @@ SRC_ROOT  = Path(__file__).parent.parent
 PROJ_ROOT = SRC_ROOT.parent
 sys.path.insert(0, str(SRC_ROOT))
 
-from config.sovereign_config import FEE_RATE, DEFAULT_POS_SIZE_USD
+from config.sovereign_config import FEE_RATE, INITIAL_WALLET_USD, POSITION_SIZE_PCT
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DASHBOARD LOGIC
@@ -68,7 +68,7 @@ async def get_stats():
     
     # 1. Load ROI & Expert Heatmap
     roi_net, roi_trades, roi_status = None, None, "measure"
-    expert_heatmap = [random.random() * 0.2 for _ in range(256)] # Default low activity
+    expert_heatmap = [random.random() * 0.2 for _ in range(256)]
     
     roi_path = PROJ_ROOT / "logs" / "latest_roi.json"
     if roi_path.exists():
@@ -84,10 +84,9 @@ async def get_stats():
                 expert_heatmap = rd["expert_heatmap"]
         except: pass
 
-    roi_block = {"net": roi_net, "trades": roi_trades, "status": roi_status, "note": f"FEE GATE: {FEE_RATE*100:.2f}%"}
-
-    # 2. Recent Trades with Expert Attribution
+    # 2. Compounding Wallet Logic (Neural Truth V11.2)
     recent_trades = []
+    latest_wallet = INITIAL_WALLET_USD
     trades_path = PROJ_ROOT / "logs" / "recent_sim_trades.json"
     if trades_path.exists():
         try:
@@ -95,20 +94,43 @@ async def get_stats():
                 raw_trades = json.load(f)
             prefixes = ["Neon", "Volt", "Cipher", "Ghost", "Logic", "Vector", "Pulse", "Neural", "Cyber", "Quant", "Delta", "Gamma", "Alpha", "Zenith", "Apex", "Flow"]
             suffixes = ["Hunter", "Scout", "Tracker", "Oracle", "Sentinel", "Core", "Node", "Gate", "Shell", "Link", "Edge", "Vortex", "Matrix", "System", "Prime", "Zero"]
-            for t in raw_trades:
+            
+            curr_w = INITIAL_WALLET_USD
+            comp_trades = []
+            for t in reversed(raw_trades):
                 try:
-                    utc_time = datetime.strptime(t["timestamp"], "%H:%M")
-                    # Note: We assume today's date for recent sim trades
-                    ist_time = utc_time + timedelta(hours=5, minutes=30)
-                    t["timestamp"] = ist_time.strftime("%d/%m %I:%M %p")
+                    # Parse ISO format from train.py (V11.2 Precision)
+                    utc_t = datetime.fromisoformat(t["timestamp"])
+                    ist_t = utc_t + timedelta(hours=5, minutes=30)
+                    t["timestamp"] = ist_t.strftime("%d %b %Y %I:%M %p")
                 except: pass
-                t["value_usd"] = DEFAULT_POS_SIZE_USD
+                
+                # Dynamic Position Sizing
+                pos_s = curr_w * POSITION_SIZE_PCT
+                t["value_usd"] = pos_s
+                t["pnl_usd"]   = pos_s * (t.get("net_pct", 0) / 100)
+                
+                # Compound
+                curr_w += t["pnl_usd"]
+                t["wallet_snapshot"] = curr_w
+                
                 t["expert"] = f"{random.choice(prefixes)}-{random.choice(suffixes)} #{random.randint(0, 255):03d}"
                 t["avatar"] = "🤖"
-            recent_trades = raw_trades
+                comp_trades.append(t)
+            
+            recent_trades = comp_trades[::-1]
+            latest_wallet = curr_w
         except: pass
 
-    # 3. Neural Dialogue Engine (Authentic Attribution)
+    roi_block = {
+        "net": roi_net, 
+        "trades": roi_trades, 
+        "status": roi_status, 
+        "note": f"FEE GATE: {FEE_RATE*100:.2f}%",
+        "wallet": latest_wallet
+    }
+
+    # 3. Neural Dialogue Engine
     dialogue = []
     try:
         active_indices = sorted(range(len(expert_heatmap)), key=lambda i: expert_heatmap[i], reverse=True)[:10]
@@ -116,14 +138,10 @@ async def get_stats():
         trend_label = "bullish" if (recent_trades and recent_trades[0].get("net_pct", 0) > 0) else "choppy"
         ist_now = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%I:%M %p")
         
-        prefixes = ["Neon", "Volt", "Cipher", "Ghost", "Logic", "Vector", "Pulse", "Neural", "Cyber", "Quant", "Delta", "Gamma", "Alpha", "Zenith", "Apex", "Flow"]
-        suffixes = ["Hunter", "Scout", "Tracker", "Oracle", "Sentinel", "Core", "Node", "Gate", "Shell", "Link", "Edge", "Vortex", "Matrix", "System", "Prime", "Zero"]
         leads = {"Sentinel": "🛡️", "Hunter": "🦁", "Oracle": "🦉", "Tracker": "🐋", "Scout": "🐙"}
-        
         def get_expert():
             idx = random.choice(active_indices)
             return f"{random.choice(prefixes)}-{random.choice(suffixes)} #{idx:03d}"
-
         def inject_mentions(text, current_speaker):
             target = random.choice(list(leads.keys()) + [get_expert()])
             return text.replace("{expert}", target)
@@ -137,23 +155,13 @@ async def get_stats():
                     {"speaker": get_expert(), "avatar": "🤖", "text": "Scaning liquidity. [NERVOUS] Oracle is right. Massive sell-wall hiding at the gate."},
                     {"speaker": "Sentinel", "avatar": "🛡️", "text": "IT'S A TRAP! [AGITATED] {expert}, if we enter here, we're the liquidity. Abort!"},
                     {"speaker": "Oracle", "avatar": "🦉", "text": "Decision reached. [RESOLUTE] {expert} has the data. We wait for the shakeout."}
-                ],
-                [
-                    {"speaker": get_expert(), "avatar": "🤖", "text": "Support is melting. [ANXIOUS] Suggesting we exit before the cascade."},
-                    {"speaker": "Sentinel", "avatar": "🛡️", "text": "I told you! [FRUSTRATED] {expert}, get us out! The drawdown is starting to sting."},
-                    {"speaker": "Scout", "avatar": "🐙", "text": "WAIT! [EXCITED] {expert}, look at the 1m RSI! Oversold spring. Don't panic exit!"},
-                    {"speaker": get_expert(), "avatar": "🤖", "text": "Confirming Scout. [BOLD] The whales are buying the dip. Bear trap detected."},
-                    {"speaker": "Tracker", "avatar": "🐋", "text": "Institutional delta is flipping. [COLD] {expert} is right. Big money is stepping in."},
-                    {"speaker": "Oracle", "avatar": "🦉", "text": "The fog is clearing. [WISE] Sovereign Protocol: ENGAGE. Buy the fear."}
                 ]
             ]
         else:
             pools = [
                 [
-                    {"speaker": get_expert(), "avatar": "🤖", "text": "Neural weights are 50/50. [BORED] This market is as dead as a rock."},
-                    {"speaker": "Oracle", "avatar": "🦉", "text": "Deadlock is its own lesson, {expert}. [TEACHING] Only fools trade in a cemetery."},
-                    {"speaker": "Hunter", "avatar": "🦁", "text": "I'm losing my mind! [RESTLESS] {expert}, give me a scalp! I need action!"},
                     {"speaker": get_expert(), "avatar": "🤖", "text": f"Negative, Hunter. [STERN] The fee gate is {FEE_RATE*100:.2f}%. Strategy: HOLD."},
+                    {"speaker": "Oracle", "avatar": "🦉", "text": "Deadlock is its own lesson, {expert}. [TEACHING] Only fools trade in a cemetery."},
                     {"speaker": "Sentinel", "avatar": "🛡️", "text": "Listen to the bot, Hunter. [ANNOYED] {expert}, sit on your hands."},
                     {"speaker": "Oracle", "avatar": "🦉", "text": "Deadlock confirmed. [FINAL] {expert}, stay liquid. War starts tomorrow."}
                 ]
@@ -167,22 +175,64 @@ async def get_stats():
             dialogue.append(m)
     except: pass
 
-    # 4. Final Payload
+    # 4. Quant Metrics Engine (Institutional Grade V11.2)
     max_dd = 0.0
+    sharpe = 0.0
+    profit_factor = 0.0
+    win_rate = 0.0
+    
     if recent_trades:
-        losses = [t["net_pct"] for t in recent_trades if t["net_pct"] < 0]
-        max_dd = abs(min(losses)) if losses else 0.0
+        # Sort chronologically for MDD/Sharpe
+        sorted_trades = sorted(recent_trades, key=lambda x: x["timestamp"])
+        returns = [t["net_pct"] / 100 for t in sorted_trades]
+        
+        # Max Drawdown
+        peak = INITIAL_WALLET_USD
+        curr_w = INITIAL_WALLET_USD
+        drawdowns = []
+        for t in returns:
+            curr_w *= (1 + t)
+            if curr_w > peak: peak = curr_w
+            dd = (peak - curr_w) / peak
+            drawdowns.append(dd)
+        max_dd = max(drawdowns) if drawdowns else 0.0
+        
+        # Sharpe Ratio (Risk-Adjusted)
+        if len(returns) > 1:
+            avg_ret = np.mean(returns)
+            std_ret = np.std(returns) + 1e-9
+            # Annualized (Assuming 15m timeframe -> ~35,000 candles/year)
+            sharpe = (avg_ret / std_ret) * np.sqrt(35040)
+            
+        # Profit Factor & Win Rate
+        gains = [r for r in returns if r > 0]
+        losses = [abs(r) for r in returns if r < 0]
+        win_rate = (len(gains) / len(returns)) * 100
+        profit_factor = sum(gains) / (sum(losses) + 1e-9)
 
     return {
         "status": "TRAINING" if epochs else "IDLE",
         "latest": latest,
         "roi": roi_block,
-        "net_profit": roi_block["net"] or 0,
+        "net_profit": latest_wallet - INITIAL_WALLET_USD,
         "trades": recent_trades,
         "dialogue": dialogue,
         "expert_heatmap": expert_heatmap,
-        "risk": {"max_dd": max_dd, "lev_health": 100 - (max_dd * 5)},
-        "config": {"fee_rate": FEE_RATE, "pos_size": DEFAULT_POS_SIZE_USD}
+        "risk": {
+            "max_dd": max_dd,
+            "lev_health": 100 - (max_dd * RISK_MULTIPLIER),
+            "sharpe": sharpe,
+            "profit_factor": profit_factor,
+            "win_rate": win_rate
+        },
+        "config": {
+            "fee_rate": FEE_RATE, 
+            "initial_wallet": INITIAL_WALLET_USD, 
+            "wallet": latest_wallet, 
+            "pos_pct": POSITION_SIZE_PCT,
+            "profit_goal": PROFIT_GOAL_PCT,
+            "risk_mult": RISK_MULTIPLIER
+        }
     }
 
 if __name__ == "__main__":

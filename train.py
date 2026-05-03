@@ -26,7 +26,7 @@ from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetr
 from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
 from exchange.fetch_data import fetch_live_kat_data
 import glob as _glob
-from config.sovereign_config import FEE_RATE, DEFAULT_POS_SIZE_USD
+from config.sovereign_config import FEE_RATE, INITIAL_WALLET_USD, POSITION_SIZE_PCT
 
 
 class CheckpointPruner(keras.callbacks.Callback):
@@ -103,8 +103,9 @@ class MissionControl(keras.callbacks.Callback):
                 # Normalize certainty for bench (80-100% range)
                 c_pct = (certs - certs.min()) / (certs.max() - certs.min() + 1e-9) * 100
                 
+                from config.sovereign_config import INITIAL_WALLET_USD
                 roi_data = {"tiers": {}, "last_update": ts, "note": f"FEE GATE: {fee_rate*100:.2f}%"}
-                pos_size = 200.0
+                pos_size = INITIAL_WALLET_USD
                 for th in [80, 85, 90]:
                     mask = c_pct >= th
                     n_t  = int(mask.sum())
@@ -130,7 +131,7 @@ class MissionControl(keras.callbacks.Callback):
                         raw_ret = price_move_pct if side == "LONG" else -price_move_pct
                         net_ret = raw_ret - fee_rate
                         recent_trades.append({
-                            "timestamp": pd.to_datetime(df.index[idx + ctx - 1]).strftime("%H:%M"),
+                            "timestamp": pd.to_datetime(df.index[idx + ctx - 1]).isoformat(),
                             "side": side,
                             "entry": float(entry_p),
                             "net_pct": float(net_ret * 100)

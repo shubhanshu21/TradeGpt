@@ -456,7 +456,7 @@
               <th style="font-family:'Outfit'">DATE / TIME (IST)</th>
               <th style="font-family:'Outfit'">STRATEGIST</th>
               <th style="font-family:'Outfit'">SIDE</th>
-              <th style="font-family:'Outfit'">VALUE ($)</th>
+              <th style="font-family:'Outfit'">PnL ($)</th>
               <th style="font-family:'Outfit'">ENTRY</th>
               <th style="font-family:'Outfit'">NET ROI</th>
             </tr>
@@ -497,19 +497,29 @@
         </span>
         <span class="card-badge badge-green" id="roiNote">LIVE SYNC</span>
       </div>
-      <div class="card-body" style="padding-top:0.5rem">
-        <div style="display:flex;flex-direction:column;gap:1.2rem;margin-top:0.5rem">
-          <div>
+        <div class="card-body" style="padding-top:0.5rem">
+          <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap: 1rem; margin-top: 1rem;">
+            <div style="border-right: 1px solid var(--border); padding-right: 1rem;">
+                <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">STARTING CAPITAL</div>
+                <div id="initialCapital" style="font-family:'Outfit'; font-weight:600; font-size:1.2rem; color:var(--text)">$200.00</div>
+            </div>
+            <div>
+                <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">PORTFOLIO VALUE</div>
+                <div id="totalPortfolio" style="font-family:'Outfit'; font-weight:800; font-size:1.6rem; color:var(--green)">$200.00</div>
+            </div>
+          </div>
+
+          <div style="margin: 1.5rem 0;">
             <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:0.4rem">
-              <span style="color:var(--muted)">High-Confidence Profit</span>
-              <span id="highConfProfit" style="color:var(--green);font-family:'JetBrains Mono',monospace; font-weight:700; font-size:1.1rem;">$0.00</span>
+              <span style="color:var(--muted)">NET PROFIT (PNL)</span>
+              <span id="highConfProfit" style="color:var(--green);font-family:'JetBrains Mono',monospace; font-weight:700; font-size:1.2rem;">+$0.00</span>
             </div>
             <div style="background:var(--border);border-radius:4px;height:6px">
                 <div id="pnlProgress" style="height:100%;border-radius:4px;background:var(--green);width:0%;transition:width 1s"></div>
             </div>
           </div>
           
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div>
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">TOTAL STRIKES</div>
               <div id="totalStrikes" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--cyan)">--</div>
@@ -517,6 +527,18 @@
             <div>
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">WIN RATE</div>
               <div id="winRate" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--gold)">--</div>
+            </div>
+            <div>
+              <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">SHARPE RATIO</div>
+              <div id="sharpeRatio" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--purple)">0.00</div>
+            </div>
+            <div>
+              <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">PROFIT FACTOR</div>
+              <div id="profitFactor" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--green)">0.00</div>
+            </div>
+            <div style="grid-column: span 2;">
+              <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">MAX DRAWDOWN</div>
+              <div id="maxDrawdown" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--red)">0.00%</div>
             </div>
           </div>
           <div style="border-top:1px solid var(--border);padding-top:0.6rem;margin-top:0.2rem">
@@ -843,25 +865,24 @@
         const trades = d.trades; // newest first
         const sorted = [...trades].reverse(); // oldest first for graph
         
-        // ── Equity Chart Calibration (V11.2 Dynamic) ──
-        const posSize = d.config ? d.config.pos_size : 200.0;
-        let cumulative = posSize;
-        const pnlData = [posSize];
+        // ── Equity Chart Calibration (V11.2 Sovereign) ──
+        const initialW = d.config ? (d.config.initial_wallet || 200.0) : 200.0;
+        const pnlData = [initialW];
         const labels  = ["Start"];
 
         sorted.forEach(t => {
-            cumulative += (posSize * (t.net_pct / 100));
-            pnlData.push(cumulative);
+            pnlData.push(t.wallet_snapshot);
             labels.push(t.timestamp);
         });
 
+        const finalW = pnlData[pnlData.length - 1];
         equityChart.data.labels = labels;
         equityChart.data.datasets[0].data = pnlData;
-        equityChart.data.datasets[0].borderColor = cumulative >= posSize ? '#10b981' : '#ef4444';
-        equityChart.data.datasets[0].backgroundColor = cumulative >= posSize ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+        equityChart.data.datasets[0].borderColor = finalW >= initialW ? '#10b981' : '#ef4444';
+        equityChart.data.datasets[0].backgroundColor = finalW >= initialW ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
         
         // Update Equity Title
-        document.getElementById('equityTitle').textContent = `📈 Equity Growth — Simulated $${posSize} Account`;
+        document.getElementById('equityTitle').textContent = `📈 Equity Growth — Simulated $${initialW} Account`;
         
         // Dynamic Strike Markers
         equityChart.data.datasets[0].pointRadius = 4;
@@ -882,6 +903,10 @@
           const isNew = !window.knownTradeKeys.has(tradeKey);
           if (isNew) window.knownTradeKeys.add(tradeKey);
           
+          const pnl = t.pnl_usd || 0;
+          const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+          const pnlPrefix = pnl >= 0 ? '+' : '-';
+          
           return `<tr class="${isNew ? 'strike-entry' : ''}">
             <td style="color:var(--muted); font-size:0.65rem;">${t.timestamp}</td>
             <td style="display:flex; align-items:center; gap:0.4rem;">
@@ -889,7 +914,7 @@
               <span style="color:var(--text); font-weight:600; font-size:0.75rem;">${t.expert || 'Neural Gate'}</span>
             </td>
             <td style="color:${sideColor}; font-weight:700">${t.side}</td>
-            <td style="color:var(--gold)">$${(t.value_usd || 200).toLocaleString()}</td>
+            <td style="color:${pnlColor}; font-weight:bold">${pnlPrefix}$${Math.abs(pnl).toFixed(2)}</td>
             <td>$${t.entry.toLocaleString()}</td>
             <td style="color:${color}; font-weight:700; font-size:0.9rem;">${t.net_pct >= 0 ? '+' : ''}${t.net_pct.toFixed(2)}%</td>
           </tr>`;
@@ -897,27 +922,32 @@
         
         // PnL Counter & Metrics
         const pnlEl = document.getElementById('highConfProfit');
-        const oldPnl = pnlEl.textContent;
-        const currentPnl = d.net_profit || 0;
-        const sign = currentPnl >= 0 ? '+' : '-';
-        const newPnl = `${sign}$${Math.abs(currentPnl).toFixed(2)}`;
+        const portfolioEl = document.getElementById('totalPortfolio');
+        const initialEl = document.getElementById('initialCapital');
         
-        if (oldPnl !== newPnl) {
-            pnlEl.textContent = newPnl;
-            pnlEl.classList.remove('pnl-pulse');
-            void pnlEl.offsetWidth; // Trigger reflow
-            pnlEl.classList.add('pnl-pulse');
-            pnlEl.style.color = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
-            
-            // Progress Fill
-            const progress = document.getElementById('pnlProgress');
-            progress.style.width = Math.min(Math.max(currentPnl / 10 * 100, 0), 100) + '%';
-            progress.style.background = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
-        }
+        const initCap = d.config.initial_wallet || 200;
+        const currentPnl = d.net_profit || 0;
+        const totalW = initCap + currentPnl;
+        
+        const sign = currentPnl >= 0 ? '+' : '';
+        pnlEl.textContent = `${sign}$${currentPnl.toFixed(2)}`;
+        pnlEl.style.color = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
+        
+        initialEl.textContent = `$${initCap.toFixed(2)}`;
+        portfolioEl.textContent = `$${totalW.toFixed(2)}`;
+        portfolioEl.style.color = totalW >= initCap ? 'var(--green)' : 'var(--red)';
+        
+        // Progress Fill
+        const progress = document.getElementById('pnlProgress');
+        const pnlPct = Math.min(Math.max((currentPnl / (initCap * 0.1)) * 100, 0), 100); // 10% profit = full bar
+        progress.style.width = pnlPct + '%';
+        progress.style.background = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
 
-        const wins = d.trades.filter(t => t.net_pct > 0).length;
         document.getElementById('totalStrikes').textContent = d.trades.length;
-        document.getElementById('winRate').textContent = d.trades.length > 0 ? ((wins / d.trades.length) * 100).toFixed(1) + '%' : '0%';
+        document.getElementById('winRate').textContent = d.risk.win_rate.toFixed(1) + '%';
+        document.getElementById('sharpeRatio').textContent = d.risk.sharpe.toFixed(2);
+        document.getElementById('profitFactor').textContent = d.risk.profit_factor.toFixed(2);
+        document.getElementById('maxDrawdown').textContent = (d.risk.max_dd * 100).toFixed(2) + '%';
       }
 
       // Expert Dialogue (Sovereign Dispatcher with TypewriterJS)
