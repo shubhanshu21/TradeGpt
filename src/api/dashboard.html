@@ -1247,23 +1247,50 @@
       </div>
     </div>
 
-    <!-- Help Guide -->
+    <!-- ── Neural Topology Map (Dynamic Network) ── -->
     <div class="card chart-card-full" style="background:rgba(56,189,248,0.02)">
       <div class="card-header">
-        <span class="card-title">❓ Quick Help Guide — What am I looking at?</span>
+        <span class="card-title" style="color:var(--cyan)">🌐 Live Neural Topology Map</span>
+        <span class="card-badge badge-cyan" id="topologyStatus">HIVE-SYNC: ACTIVE</span>
       </div>
+      <div class="card-body" id="neuralMapContainer" style="height: 400px; position: relative; padding:0; overflow:hidden">
+        <div id="neuralCanvas" style="width:100%; height:100%"></div>
+        <!-- Fullscreen Toggle Icon -->
+        <div id="fsToggle" style="position: absolute; top: 15px; right: 15px; z-index: 100; cursor: pointer; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 8px; border: 1px solid rgba(56,189,248,0.3); backdrop-filter: blur(10px); transition: 0.3s;" onmouseover="this.style.background='rgba(56,189,248,0.2)'" onmouseout="this.style.background='rgba(0,0,0,0.6)'">
+           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        </div>
+        <div style="position:absolute; bottom:1rem; left:1rem; pointer-events:none">
+          <div style="color:var(--muted); font-size:0.6rem; font-family:'JetBrains Mono'; margin-bottom:0.2rem">NETWORK
+            DENSITY</div>
+          <div style="width:120px; height:4px; background:var(--border); border-radius:2px">
+            <div id="densityBar"
+              style="width:40%; height:100%; background:var(--cyan); box-shadow:0 0 10px var(--cyan)"></div>
+          </div>
+        </div>
+        <!-- Biometrics overlay -->
+        <div
+          style="position:absolute; top:1rem; right:1rem; background:rgba(0,0,0,0.4); padding:0.8rem; border-radius:8px; border:1px solid var(--border); backdrop-filter:blur(4px)">
+          <div style="color:var(--gold); font-size:0.65rem; font-weight:800; margin-bottom:0.4rem">SYNAPTIC LOAD</div>
+          <div id="synapticStats" style="font-family:'JetBrains Mono'; font-size:0.8rem; color:var(--text)">0/256 ACTIVE
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Help Guide / Biometrics (Moved) -->
+    <div class="card chart-card-full" style="background:rgba(255,255,255,0.01)">
       <div class="card-body">
-        <!-- Strategist Biometrics (Expanded) -->
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
           <strong style="color:var(--gold); font-size:0.75rem; letter-spacing:1px">ACTIVE STRATEGIST BIOMETRICS</strong>
           <span style="color:var(--muted); font-size:0.6rem; font-family:'JetBrains Mono'">[ REAL-TIME NEURAL TELEMETRY
             ]</span>
         </div>
         <div id="biometricList" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1.5rem">
-          <!-- Pulsing biometrics generated via JS -->
+          <!-- Biometrics list -->
         </div>
       </div>
     </div>
+
 
 
 
@@ -1473,7 +1500,11 @@
               const sideColor = t.side === 'LONG' ? 'var(--green)' : 'var(--red)';
               const tradeKey = `${t.timestamp}-${t.entry}-${t.side}`;
               const isNew = !window.knownTradeKeys.has(tradeKey);
-              if (isNew) window.knownTradeKeys.add(tradeKey);
+              if (isNew) {
+                window.knownTradeKeys.add(tradeKey);
+                if (window.neuralViz) window.neuralViz.triggerActivation(1.0);
+              }
+
 
               // pnl_usd: use API field if present, else estimate from net_pct × position size
               const _posSize = d.config ? (d.config.initial_wallet || 200) : 200;
@@ -1700,7 +1731,15 @@
 
         document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
 
+        // ── Update Neural Topology ──
+        if (window.neuralViz) {
+          window.neuralViz.update(d.expert_heatmap || [], d.current_epoch || 0);
+        }
+
+
+
         // ── STRATEGIST BIOMETRICS UPDATE (3 COLUMN GRID) ──
+
         if (document.getElementById('biometricList') && d.trades) {
           const experts = {};
           d.trades.forEach(t => {
@@ -1825,7 +1864,6 @@
     function clearDialogue() {
       const dBox = document.getElementById('expertDialogue');
       if (dBox) {
-        // Keep the first static message
         while (dBox.children.length > 1) dBox.removeChild(dBox.lastChild);
       }
       window.typedMessages = new Set();
@@ -1833,7 +1871,6 @@
       window.isTypingWorkerActive = false;
     }
 
-    // ── Toast helper ─────────────────────────────────────────────────
     function showToast(msg, color = 'var(--green)') {
       const t = document.getElementById('toast');
       if (!t) return;
@@ -1844,7 +1881,6 @@
       setTimeout(() => t.classList.remove('show'), 3000);
     }
 
-    // ── Recapitalize confirm ──────────────────────────────────────────
     document.getElementById('confirmRecap').addEventListener('click', async () => {
       document.getElementById('recapModal').classList.remove('open');
       const r = await fetch('/api/reset_wallet', { method: 'POST' });
@@ -1856,7 +1892,219 @@
         showToast('❌ Reset failed: ' + d.message, 'var(--red)');
       }
     });
+  </script>
 
+  <script src="/static/js/3d-force-graph.min.js"></script>
+
+  <script>
+    // ── Hyper-Realistic 3D Neural Engine (Unified V12.0) ────────
+    class NeuralNetworkVisualizer {
+      constructor(containerId) {
+        this.containerId = containerId;
+        this.nodes = [];
+        this.links = [];
+        this.currentEpoch = 0;
+        this.holograms = [];
+        this.isReady = false;
+        this.THREE = null;
+
+        this.initEngine();
+      }
+
+      initEngine() {
+        const el = document.getElementById(this.containerId);
+        if (!el || typeof ForceGraph3D === 'undefined') {
+          setTimeout(() => this.initEngine(), 500);
+          return;
+        }
+
+        const layerColors = ['#fbbf24', '#a78bfa', '#38bdf8', '#34d399', '#f43f5e'];
+        const layerNames = ['MARKET_INPUT', 'PATTERN_V1', 'MOE_CORE_256', 'VOTING_GATE', 'STRIKE_CMD'];
+
+        this.graph = ForceGraph3D()(el)
+          .backgroundColor('rgba(0,0,0,0)')
+          .showNavInfo(false)
+          .nodeColor(node => node.active > 0.4 ? layerColors[node.layer] : '#1e2d3d')
+          .nodeLabel(node => {
+            const expertId = node.id.split('-').pop();
+            return `<div style="background:rgba(0,0,0,0.9); padding:10px; border:1px solid ${layerColors[node.layer]}; border-radius:6px; backdrop-filter:blur(10px); min-width:140px">
+                <div style="color:${layerColors[node.layer]}; font-weight:900; letter-spacing:1px; margin-bottom:4px">${layerNames[node.layer]}</div>
+                <div style="color:var(--text); font-size:11px; font-family:'JetBrains Mono'">[ NODE_${node.id} ]</div>
+                <div style="color:var(--muted); font-size:10px; margin-top:4px">CONVICTION: ${(node.active * 100).toFixed(1)}%</div>
+                ${node.layer === 2 ? `<div style="color:var(--gold); font-size:9px; margin-top:4px">PERSONA: Expert_Council_${expertId}</div>` : ''}
+              </div>`;
+          })
+          .nodeRelSize(5)
+          .nodeResolution(32)
+          .linkColor(() => 'rgba(56, 189, 248, 0.25)')
+          .linkWidth(0.8)
+          .linkDirectionalParticles(3)
+          .linkDirectionalParticleWidth(link => (link.alpha || 0.1) * 10)
+          .linkDirectionalParticleColor(link => layerColors[link.source.layer || 0])
+          .linkDirectionalParticleSpeed(0.01)
+          .width(el.parentElement.clientWidth)
+          .height(el.parentElement.clientHeight);
+
+        this.graph.controls().autoRotate = true;
+        this.graph.controls().autoRotateSpeed = 0.6;
+
+        // Enhanced THREE Context extraction
+        try {
+          this.THREE = window.THREE || (typeof ForceGraph3D !== 'undefined' ? ForceGraph3D.THREE : null);
+          if (!this.THREE) {
+            this.THREE = this.graph.scene().constructor.prototype.constructor.THREE || this.graph.renderer().constructor.THREE;
+          }
+        } catch (e) { console.warn("Acquiring 3D Context..."); }
+
+        this.isReady = true;
+        this.initNodes(0);
+        this.updateHolograms(0);
+      }
+
+      // Tactical Fullscreen Handshake
+      initFullscreen() {
+        const toggle = document.getElementById('fsToggle');
+        const container = document.getElementById('neuralMapContainer');
+        if (!toggle || !container) return;
+
+        toggle.addEventListener('click', () => {
+          if (!document.fullscreenElement) {
+            container.requestFullscreen().catch(err => {
+              showToast(`Fullscreen Denied: ${err.message}`, 'var(--red)');
+            });
+          } else {
+            document.exitFullscreen();
+          }
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+          const isFs = !!document.fullscreenElement;
+          if (this.graph) {
+            const w = isFs ? window.innerWidth : container.parentElement.clientWidth;
+            const h = isFs ? window.innerHeight : 400;
+            this.graph.width(w).height(h);
+          }
+          
+          if (isFs) {
+            container.style.height = '100vh';
+            toggle.style.background = 'rgba(56,189,248,0.3)';
+          } else {
+            container.style.height = '400px';
+            toggle.style.background = 'rgba(0,0,0,0.6)';
+          }
+        });
+      }
+
+      createTextTexture(text, color) {
+        if (!this.THREE) return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = color;
+        ctx.font = 'bold 80px "JetBrains Mono"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 256, 128);
+        const tex = new this.THREE.CanvasTexture(canvas);
+        tex.minFilter = this.THREE.LinearFilter;
+        return tex;
+      }
+
+      initNodes(epochFactor = 0) {
+        if (!this.isReady || !this.graph) return;
+        const growth = Math.floor(epochFactor / 20);
+        const layers = [4, 8 + growth, 12 + growth, 8 + growth, 1];
+        const nodes = [];
+        const links = [];
+
+        layers.forEach((count, lIdx) => {
+          for (let i = 0; i < count; i++) {
+            nodes.push({ id: `n-${lIdx}-${i}`, layer: lIdx, active: 0.1, fx: (lIdx - 2) * 120, fy: (i - count / 2) * 45, fz: 0 });
+          }
+        });
+
+        for (let l = 0; l < layers.length - 1; l++) {
+          const sLayer = nodes.filter(n => n.layer === l);
+          const tLayer = nodes.filter(n => n.layer === l + 1);
+          sLayer.forEach(s => {
+            tLayer.forEach(t => { links.push({ source: s.id, target: t.id, alpha: 0.05 }); });
+          });
+        }
+        this.graph.graphData({ nodes, links });
+      }
+
+      update(heatmap = [], epoch = 0) {
+        if (!this.isReady || !this.graph) return;
+        if (epoch > this.currentEpoch) {
+          this.currentEpoch = epoch;
+          this.initNodes(epoch);
+          this.updateHolograms(epoch);
+        }
+
+        const { nodes, links } = this.graph.graphData();
+        const activeCount = heatmap.filter(v => v > 0.35).length;
+        const confidence = (activeCount / 256 * 100).toFixed(0);
+
+        if (this.holograms && this.holograms[4] && this.THREE) {
+          const strikeText = `STRIKE_CMD (${confidence}%)`;
+          this.holograms[4].material.map = this.createTextTexture(strikeText, '#f43f5e');
+        }
+
+        nodes.forEach((n, i) => {
+          if (n.layer > 0 && n.layer < 4) {
+            const hIdx = i % heatmap.length;
+            n.active = 0.1 + (heatmap[hIdx] || 0) * 0.9;
+          } else if (n.layer === 0) {
+            n.active = 0.4 + Math.random() * 0.3;
+          } else {
+            n.active = activeCount > 20 ? 0.9 : 0.2;
+          }
+        });
+
+        links.forEach(l => {
+          if (l.source && l.target) {
+            // High-visibility alpha scaling
+            l.alpha = 0.2 + (l.source.active + l.target.active) * 0.4;
+          }
+        });
+
+        this.graph.nodeColor(this.graph.nodeColor());
+        this.graph.linkDirectionalParticleColor(this.graph.linkDirectionalParticleColor());
+        const stats = document.getElementById('synapticStats');
+        if (stats) stats.textContent = `${activeCount}/256 ACTIVE`;
+      }
+
+      updateHolograms(epoch) {
+        if (!this.isReady || !this.graph || !this.THREE) return;
+        if (this.holograms) this.holograms.forEach(h => this.graph.scene().remove(h));
+        this.holograms = [];
+
+        const growth = Math.floor(epoch / 20);
+        const stage = epoch < 50 ? 'WIRING' : (epoch < 150 ? 'EVOLVING' : 'SOVEREIGN');
+        const layerColors = ['#fbbf24', '#a78bfa', '#38bdf8', '#34d399', '#f43f5e'];
+        const dynamicNames = [`MARKET_IN [${stage}]`, `PATTERN_V${Math.floor(epoch / 100) + 1}`, `MOE_CORE (${12 + growth}N)`, `VOTING_GATE`, `STRIKE_CMD`];
+
+        dynamicNames.forEach((name, i) => {
+          const tex = this.createTextTexture(name, layerColors[i]);
+          if (!tex) return;
+          const sprite = new this.THREE.Sprite(new this.THREE.SpriteMaterial({ map: tex, transparent: true }));
+          sprite.position.set((i - 2) * 120, 300, 0);
+          sprite.scale.set(80, 40, 1);
+          this.graph.scene().add(sprite);
+          this.holograms.push(sprite);
+        });
+      }
+
+      triggerActivation() {
+        if (!this.isReady || !this.graph) return;
+        this.graph.linkDirectionalParticleSpeed(0.06);
+        setTimeout(() => { if (this.graph) this.graph.linkDirectionalParticleSpeed(0.01); }, 2000);
+      }
+    }
+
+    window.neuralViz = new NeuralNetworkVisualizer('neuralCanvas');
+    window.neuralViz.initFullscreen();
     setInterval(refresh, 5000);
     setInterval(checkHealth, 10000);
     setInterval(updateLivePrice, 60000);
