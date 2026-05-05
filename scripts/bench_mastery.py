@@ -1,11 +1,13 @@
 """
-SOVEREIGN MASTERY BENCHMARK (V3.0 — Certainty Intelligence)
+SOVEREIGN MASTERY BENCHMARK (V4.0 — Certainty Intelligence)
 =============================================================
 Measures not just raw accuracy, but "High-Conviction Accuracy" —
 how accurate the model is when it says it is SURE about the signal.
 
 Key Insight: At 80%+ Certainty threshold, effective accuracy jumps
 from 52% → 70%+ because we're only trading real patterns, not noise.
+
+V4.0 Changes: Dynamic feature count + smart checkpoint selection.
 """
 import os, sys
 import numpy as np
@@ -22,14 +24,19 @@ from exchange.fetch_data import fetch_live_kat_data
 def benchmark_mastery():
     print("🎬 Starting Sovereign Mastery Benchmark (Certainty Intelligence Test)...")
 
-    MODEL_PATH = ROOT / "models/hydra_best.keras"
+    # ── Smart Checkpoint Selection (latest epoch first) ──────────────────────
+    models_dir = ROOT / "models"
+    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
+    MODEL_PATH  = checkpoints[0] if checkpoints else models_dir / "hydra_best.keras"
     if not MODEL_PATH.exists():
-        print("❌ Error: Model not found in /models/")
+        print("❌ Error: No model checkpoint found in /models/")
         return
 
-    # ── 1. Re-Build Kraken V10.7 ─────────────────────────────────────────────
-    ctx = 120; forecast = 15; n_feat = 42
-    print(f"🏗️  Re-building Kraken V10.7 (Phase 3 Architecture)...")
+    # ── 1. Re-Build Kraken (Dynamic Architecture) ────────────────────────────
+    ctx = 120; forecast = 15
+    features = build_feature_cols()
+    n_feat   = len(features)
+    print(f"🏗️  Re-building Kraken V12.0 ({n_feat} features, CTX={ctx})...")
     model = build_kraken(n_features=n_feat, context_window=ctx, forecast_steps=forecast)
     print(f"🧠 Loading Weights from: {MODEL_PATH.name}")
     model.load_weights(str(MODEL_PATH))

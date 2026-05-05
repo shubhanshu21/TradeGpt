@@ -24,59 +24,49 @@ from data.preprocess import KATScaler, build_feature_cols, compute_indicators
 from exchange.fetch_data  import fetch_live_kat_data
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-MODEL_FILE   = "hydra_best.keras"
 SYMBOL       = "BTCUSD"
-TIMEFRAME    = "1m"
+TIMEFRAME    = "15m"      # Match training timeframe
 CTX_WIN      = 120        # Must match training
-N_CANDLES    = 5000       # Test window (~3.5 days of 1m bars)
-THRESHOLD    = 0.15       # Signal threshold — raised to filter noise (was 0.05 → 0% HOLD)
-FEE_PCT      = 0.05 / 100 # Delta taker fee = 0.05%
+N_CANDLES    = 1000       # Test window
+THRESHOLD    = 0.15       # Signal threshold
+from config.sovereign_config import FEE_RATE
+FEE_PCT      = FEE_RATE   # Synced from sovereign_config (0.0012)
 TRADE_SIZE   = 1          # 1 contract (for P&L simulation)
 
-# ── Load ──────────────────────────────────────────────────────────────────────
-MODEL_PATH  = ROOT / "models" / MODEL_FILE
-SCALER_PATH = ROOT / "models" / "scaler_base.pkl"
-
-print("\n" + "="*60)
-print(f"  ⚓ SOVEREIGN BACKTEST ENGINE V5.0 — {SYMBOL}")
-print("="*60)
-
+# ── Smart Checkpoint Selection ────────────────────────────────────────────────
+MODELS_DIR  = ROOT / "models"
+checkpoints = sorted(MODELS_DIR.glob("hydra_checkpoint_E*.keras"), reverse=True)
+MODEL_PATH  = checkpoints[0] if checkpoints else MODELS_DIR / "hydra_best.keras"
 if not MODEL_PATH.exists():
     print(f"❌ No model at {MODEL_PATH} — train first."); sys.exit(1)
-if not SCALER_PATH.exists():
-    print(f"❌ No scaler at {SCALER_PATH} — train first."); sys.exit(1)
 
-print(f"📦 Loading model: {MODEL_FILE}")
-print(f"🏗️  Re-building Kraken V10.3...")
-features  = build_feature_cols()
-n_feats   = 27
-model = build_kraken(n_features=n_feats, context_window=CTX_WIN, forecast_steps=15)
-
-print(f"🧠 Loading Weights from: {MODEL_PATH.name}")
-model.load_weights(str(MODEL_PATH))
-scaler = KATScaler.load(str(SCALER_PATH))
-print(f"✅ Brain loaded")
-
-# ── Fetch data ────────────────────────────────────────────────────────────────
-print(f"\n📡 Fetching {N_CANDLES:,} candles for backtest...")
-df = fetch_live_kat_data(symbol=SYMBOL, n_candles=N_CANDLES + CTX_WIN + 50, timeframe=TIMEFRAME)
-print(f"   Got {len(df):,} candles")
-
-# ── Feature engineering ───────────────────────────────────────────────────────
+print(f"📦 Loading model: {MODEL_PATH.name}")
+print(f"🏗️  Re-building Kraken V12.0...")
 features  = build_feature_cols()
 n_feats   = len(features)
-df_feat   = compute_indicators(df)
-data      = df_feat[features].values.astype("float32")
-scaled    = scaler.transform_X(data)    # (N, 24)
+model = build_kraken(n_features=n_feats, context_window=CTX_WIN, forecast_steps=15)
+print(f"🧠 Loading Weights from: {MODEL_PATH.name} | Features: {n_feats}")
+model.load_weights(str(MODEL_PATH))
+print(f"✅ Brain loaded")
 
-# ── 5. Run backtest ───────────────────────────────────────────────────────────
+print(f"\n⚓ SOVEREIGN BACKTEST ENGINE V5.0 — {SYMBOL}")
+print("="*60)
+
+# DLS — no global scaler needed (matches training pipeline)
+def _dls(window): return (window - window.mean(0)) / (window.std(0) + 1e-8)
+
+df = fetch_live_kat_data(symbol=SYMBOL, n_candles=N_CANDLES + CTX_WIN + 50, timeframe=TIMEFRAME)
+print(f"   Got {len(df):,} candles")
+df_feat = compute_indicators(df)
+data    = df_feat[features].values.astype("float32")
+
 print(f"\n🔄 Running walk-forward backtest ({N_CANDLES:,} steps)...")
 
 results = []
 close_col = features.index("close")
 
-for i in range(CTX_WIN, len(scaled) - 15):
-    X_in      = scaled[i - CTX_WIN : i].reshape(1, CTX_WIN, n_feats).astype("float32")
+for i in range(CTX_WIN, len(data) - 15):
+    X_in = _dls(data[i - CTX_WIN : i]).reshape(1, CTX_WIN, n_feats).astype("float32")
     
     # Dual Output: [0] = Prediction (1, 16, 3), [1] = Certainty (1, 120)
     out       = model(X_in, training=False)

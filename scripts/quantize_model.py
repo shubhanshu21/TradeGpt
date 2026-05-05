@@ -20,7 +20,7 @@ import tensorflow as tf
 import keras
 from data.preprocess import build_dataset_streaming, build_feature_cols
 from core.hydra import (SovereignLoss, build_kraken, CertaintyMetric, SovereignAccuracy,
-                        HydraBlock, GatedMoE, RMSNorm, LightningAttention, TurboQuant, SwiGLU)
+                        HydraBlock, GatedMoE, RMSNorm, MLALayer, TurboQuant, SwiGLU)
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 p = argparse.ArgumentParser(description="Sovereign Kraken INT8 Quantizer")
@@ -47,7 +47,7 @@ custom_objs = {
     "SovereignLoss":      SovereignLoss,
     "RMSNorm":            RMSNorm,
     "HydraBlock":         HydraBlock,
-    "LightningAttention": LightningAttention,
+    "MLALayer":           MLALayer,
     "TurboQuant":         TurboQuant,
     "SwiGLU":             SwiGLU,
     "GatedMoE":           GatedMoE,

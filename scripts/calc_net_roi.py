@@ -9,8 +9,17 @@ from data.preprocess import compute_indicators, build_feature_cols
 from exchange.fetch_data import fetch_live_kat_data
 
 def calc_pnl_fees():
-    ctx=120; f=15; n=42; model = build_kraken(n, ctx, f)
-    model.load_weights('models/hydra_best.keras')
+    ctx=120; f=15
+    # Dynamic feature count — always matches training
+    features = build_feature_cols()
+    n = len(features)
+    # Smart checkpoint: use latest epoch, fallback to best
+    models_dir  = ROOT / 'models'
+    checkpoints = sorted(models_dir.glob('hydra_checkpoint_E*.keras'), reverse=True)
+    ckpt        = checkpoints[0] if checkpoints else models_dir / 'hydra_best.keras'
+    print(f"🧠 Loading: {ckpt.name} | Features: {n}")
+    model = build_kraken(n, ctx, f)
+    model.load_weights(str(ckpt))
     df_raw = fetch_live_kat_data('BTCUSD', 5000, '15m')
     df = compute_indicators(df_raw)
     raw_prices = df['close'].values

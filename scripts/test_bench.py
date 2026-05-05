@@ -16,10 +16,21 @@ from config.sovereign_config import FEE_RATE
 
 def run_diagnostic_bench(fee_rate=0.0012):
     print(f"⚓ TRIGGERING DIAGNOSTIC STRIKE FEED [FEE: {fee_rate*100:.2f}%]...")
-    
-    # 1. Load weights
-    model_p = ROOT / "models" / "hydra_checkpoint_E004.keras"
-    model = build_kraken(n_features=42, context_window=120)
+
+    # 1. Dynamic architecture — match training code exactly
+    features   = build_feature_cols()
+    n_feat     = len(features)
+    ctx        = 120; forecast = 15
+
+    # Smart checkpoint: pick latest epoch, fallback to best
+    models_dir  = ROOT / "models"
+    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
+    model_p     = checkpoints[0] if checkpoints else models_dir / "hydra_best.keras"
+    if not model_p.exists():
+        print(f"❌ No checkpoint found in {models_dir}"); return
+
+    print(f"🏗️  Building Kraken ({n_feat} features) | Loading: {model_p.name}")
+    model = build_kraken(n_features=n_feat, context_window=ctx, forecast_steps=forecast)
     model.load_weights(str(model_p))
     
     # 2. Fetch live slice

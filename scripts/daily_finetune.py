@@ -98,7 +98,11 @@ log(f"   ✅ {steps_tr} train steps | {steps_va} val steps")
 
 # V10.6 Phase 3: Re-build from scratch to avoid deserialization issues
 log("🏗️  Re-building Phase 3 architecture and loading weights...")
-model = build_kraken(n_features=42, context_window=CTX_WIN, forecast_steps=15)
+from data.preprocess import build_feature_cols
+_features = build_feature_cols()
+_n_feat   = len(_features)
+log(f"   Dynamic feature count: {_n_feat}")
+model = build_kraken(n_features=_n_feat, context_window=CTX_WIN, forecast_steps=15)
 try:
     model.load_weights(str(MODEL_PATH))
     log(f"✅ Weights loaded from {MODEL_FILE}")

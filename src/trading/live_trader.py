@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.hydra import (HydraBlock, GatedMoE, LightningAttention,
+from core.hydra import (HydraBlock, GatedMoE, MLALayer,
                         RMSNorm, TurboQuant, SwiGLU,
                         SovereignLoss, CertaintyMetric, SovereignAccuracy)
 from exchange.delta_client import DeltaClient
@@ -32,10 +32,9 @@ SIZE           = 1              # Contract size
 MIN_SWING      = 100.0          # Only trade if expected move > $100 (to beat fees)
 THRESHOLD      = 0.08           # Increased base conviction (was 0.05)
 TIMEFRAME      = "15m"          # Match training timeframe (15m)
-MODEL_FILE     = "hydra_best.keras"
 CTX_WIN        = 120            # Context window (30 hours)
 SLEEP_S        = 900            # 15 minute polling
-CERT_THRESHOLD = 0.85           # SNIPER MODE: Only 85%+ certainty (was 80%)
+CERT_THRESHOLD = 0.85           # SNIPER MODE: Only 85%+ certainty
 COOLDOWN_BARS  = 1              # Prevent back-to-back flipping (saves fees)
 
 # ── HUD ───────────────────────────────────────────────────────────────────────
@@ -51,17 +50,16 @@ def log(msg, color=C_RESET):
     print(f"[{C_CYAN}{stamp}{C_RESET}] {color}{msg}{C_RESET}", flush=True)
 
 def load_model():
-    """Load the trained Iron Oracle brain. Exits if model is missing."""
-    model_p = ROOT / "models" / MODEL_FILE
-
-    if not model_p.exists():
-        log(f"❌ Model not found: {MODEL_FILE}", C_RED); sys.exit(1)
-
-    # FIX #1: Iron Oracle uses DLS (Dynamic Local Scaling) — no global scaler needed.
-    # We use build_kraken to reconstruct the architecture and load weights directly.
+    """Load the trained Iron Oracle brain with smart checkpoint selection."""
     from core.hydra import build_kraken
-    n_feat = 45  # Phase 5 Sovereign Hive (45 features)
-    log(f"🏗️  Re-building Iron Oracle V11.0 ({n_feat} features)...")
+    from data.preprocess import build_feature_cols
+    models_dir  = ROOT / "models"
+    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
+    model_p     = checkpoints[0] if checkpoints else models_dir / "hydra_best.keras"
+    if not model_p.exists():
+        log(f"❌ No model checkpoint found in {models_dir}", C_RED); sys.exit(1)
+    n_feat = len(build_feature_cols())
+    log(f"🏗️  Re-building Iron Oracle V12.0 ({n_feat} features) | Loading: {model_p.name}...")
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN)
     model.load_weights(str(model_p))
     log("✅ Brain sync complete.", C_GREEN)

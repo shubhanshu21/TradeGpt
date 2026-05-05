@@ -12,22 +12,30 @@ from exchange.fetch_data import fetch_live_kat_data
 
 def run_flash():
     print("⚡ FLASH BACKTEST (100 STEPS) STARTED...")
-    model = build_kraken(27, 120, 15)
-    model.load_weights(str(ROOT / "models/hydra_best.keras"))
-    scaler = KATScaler.load(str(ROOT / "models/scaler_base.pkl"))
+    features    = build_feature_cols()
+    n_feat      = len(features)
+    models_dir  = ROOT / "models"
+    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
+    model_p     = checkpoints[0] if checkpoints else models_dir / "hydra_best.keras"
+    if not model_p.exists():
+        print(f"❌ No checkpoint found in {models_dir}"); return
+    print(f"🧠 Loading: {model_p.name} | Features: {n_feat}")
+    model = build_kraken(n_feat, 120, 15)
+    model.load_weights(str(model_p))
     
-    df = fetch_live_kat_data("BTCUSD", 300, "1m")
+    df = fetch_live_kat_data("BTCUSD", 300, "15m")  # Use 15m to match training
     df_feat = compute_indicators(df)
-    features = build_feature_cols()
     close_idx = features.index("close")
-    
     data = df_feat[features].values.astype("float32")
-    scaled = scaler.transform_X(data)
+    # DLS — match training pipeline (no global scaler)
+    def _scale(window): return (window - window.mean(0)) / (window.std(0) + 1e-8)
+    scaled = data
     
     results = []
-    print(f"🔬 Evaluating {len(scaled) - 135} windows...")
-    for i in range(120, len(scaled) - 15):
-        X_in = scaled[i - 120 : i].reshape(1, 120, 27)
+    ctx = 120
+    print(f"🔬 Evaluating {len(data) - ctx - 15} windows...")
+    for i in range(ctx, len(data) - 15):
+        X_in = _scale(data[i - ctx : i]).reshape(1, ctx, n_feat)
         out = model(X_in, training=False)
         pred = out[0].numpy()[0] # (16, 3)
         

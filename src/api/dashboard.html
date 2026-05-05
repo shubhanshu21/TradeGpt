@@ -1,30 +1,59 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Iron Oracle V11.0 — Command Center</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <title>Iron Oracle V12.0 — Command Center</title>
+  <link id="gfonts"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&family=Outfit:wght@400;600;800&display=swap"
+    rel="stylesheet">
+  <style>
+    @font-face {
+      font-family: 'Inter';
+      src: url('/static/fonts/inter-400.woff2');
+      font-weight: 400;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Inter';
+      src: url('/static/fonts/inter-600.woff2');
+      font-weight: 600;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'Inter';
+      src: url('/static/fonts/inter-700.woff2');
+      font-weight: 700;
+      font-display: swap;
+    }
+  </style>
   <script src="/static/js/chart.js"></script>
   <script src="/static/js/typewriter.js"></script>
   <style>
     :root {
-      --bg:       #070b12;
-      --surface:  #0d1117;
-      --card:     #111720;
-      --border:   #1e2d3d;
-      --gold:     #f0b429;
+      --bg: #070b12;
+      --surface: #0d1117;
+      --card: #111720;
+      --border: #1e2d3d;
+      --gold: #f0b429;
       --gold-dim: #7a5c14;
-      --cyan:     #38bdf8;
-      --green:    #22c55e;
-      --red:      #ef4444;
-      --purple:   #a78bfa;
-      --text:     #e2e8f0;
-      --muted:    #64748b;
-      --glow:     0 0 20px rgba(240,180,41,0.15);
+      --cyan: #38bdf8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --purple: #a78bfa;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --glow: 0 0 20px rgba(240, 180, 41, 0.15);
     }
 
-    * { margin:0; padding:0; box-sizing:border-box; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
     body {
       font-family: 'Inter', sans-serif;
@@ -32,90 +61,158 @@
       color: var(--text);
       min-height: 100vh;
       overflow-x: hidden;
-      padding-top: 2rem; /* Space for Ticker */
+      padding-top: 2rem;
+      /* Space for Ticker */
     }
 
     /* ── Ticker ── */
     .market-ticker {
-      position: fixed; top: 0; left: 0; width: 100%; height: 2rem;
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; z-index: 1000;
-      font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 2rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      z-index: 1000;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
       overflow: hidden;
     }
+
     .ticker-scroll {
-      display: flex; white-space: nowrap; animation: ticker-scroll 30s linear infinite; gap: 3rem;
+      display: flex;
+      white-space: nowrap;
+      animation: ticker-scroll 30s linear infinite;
+      gap: 3rem;
     }
+
     @keyframes ticker-scroll {
-      0% { transform: translateX(100%); }
-      100% { transform: translateX(-100%); }
+      0% {
+        transform: translateX(100%);
+      }
+
+      100% {
+        transform: translateX(-100%);
+      }
     }
-    .ticker-item { display: flex; align-items: center; gap: 0.5rem; }
+
+    .ticker-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
 
     /* ── Ambient Background Glow ── */
     body::before {
       content: '';
-      position: fixed; inset: 0;
+      position: fixed;
+      inset: 0;
       background:
-        radial-gradient(ellipse 60% 40% at 20% 10%, rgba(240,180,41,0.04) 0%, transparent 70%),
-        radial-gradient(ellipse 50% 40% at 80% 90%, rgba(56,189,248,0.04) 0%, transparent 70%);
-      pointer-events: none; z-index: 0;
+        radial-gradient(ellipse 60% 40% at 20% 10%, rgba(240, 180, 41, 0.04) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 80% 90%, rgba(56, 189, 248, 0.04) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
     }
 
     /* ── Header ── */
     header {
-      position: relative; z-index: 10;
-      display: flex; align-items: center; justify-content: space-between;
+      position: relative;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       padding: 1rem 2rem;
       border-bottom: 1px solid var(--border);
-      background: rgba(13,17,23,0.85);
+      background: rgba(13, 17, 23, 0.85);
       backdrop-filter: blur(12px);
     }
 
     .logo {
-      display: flex; align-items: center; gap: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
     }
+
     .logo-icon {
-      width: 44px; height: 44px;
+      width: 44px;
+      height: 44px;
       border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       overflow: hidden;
-      box-shadow: 0 0 25px rgba(56,189,248,0.4);
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.4);
       background: var(--surface);
       border: 1px solid var(--border);
     }
+
     .logo-icon img {
-      width: 100%; height: 100%; object-fit: cover;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
-    .logo-text h1 { font-size: 1.1rem; font-weight: 800; color: #fff; letter-spacing: 0.5px; }
-    .logo-text p  { font-size: 0.7rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+
+    .logo-text h1 {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: 0.5px;
+    }
+
+    .logo-text p {
+      font-size: 0.7rem;
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
 
     .status-pill {
-      display: flex; align-items: center; gap: 0.5rem;
-      background: rgba(34,197,94,0.1);
-      border: 1px solid rgba(34,197,94,0.25);
-      border-radius: 999px; padding: 0.35rem 0.9rem;
-      font-size: 0.72rem; color: var(--green); font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      border-radius: 999px;
+      padding: 0.35rem 0.9rem;
+      font-size: 0.72rem;
+      color: var(--green);
+      font-weight: 600;
     }
+
     .status-dot {
-      width: 7px; height: 7px; border-radius: 50%;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
       background: var(--green);
       animation: pulse-green 2s infinite;
     }
+
     @keyframes pulse-green {
-      0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
-      50%      { box-shadow: 0 0 0 5px rgba(34,197,94,0); }
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+      }
+
+      50% {
+        box-shadow: 0 0 0 5px rgba(34, 197, 94, 0);
+      }
     }
 
     .header-time {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.75rem; color: var(--muted);
+      font-size: 0.75rem;
+      color: var(--muted);
     }
 
     /* ── Main Layout ── */
     main {
-      position: relative; z-index: 1;
-      width: 100%; max-width: 100%;
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 100%;
       margin: 0;
       padding: 1rem;
       display: grid;
@@ -131,105 +228,248 @@
       overflow: hidden;
       transition: border-color 0.2s;
     }
-    .card:hover { border-color: #2a3d52; }
+
+    .card:hover {
+      border-color: #2a3d52;
+    }
 
     .card-header {
       padding: 0.8rem 1rem;
       border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
+
     .card-title {
-      font-size: 0.72rem; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.08em;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
       color: var(--muted);
     }
+
     .card-badge {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.68rem; padding: 0.15rem 0.5rem;
-      border-radius: 4px; font-weight: 600;
+      font-size: 0.68rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
     }
-    .badge-gold   { background: rgba(240,180,41,0.15); color: var(--gold); border: 1px solid var(--gold-dim); }
-    .badge-cyan   { background: rgba(56,189,248,0.12); color: var(--cyan); border: 1px solid rgba(56,189,248,0.3); }
-    .badge-green  { background: rgba(34,197,94,0.12);  color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
-    .badge-purple { background: rgba(167,139,250,0.12);color: var(--purple);border: 1px solid rgba(167,139,250,0.3);}
 
-    .card-body { padding: 1rem; }
+    .badge-gold {
+      background: rgba(240, 180, 41, 0.15);
+      color: var(--gold);
+      border: 1px solid var(--gold-dim);
+    }
+
+    .badge-cyan {
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--cyan);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .badge-green {
+      background: rgba(34, 197, 94, 0.12);
+      color: var(--green);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    .badge-purple {
+      background: rgba(167, 139, 250, 0.12);
+      color: var(--purple);
+      border: 1px solid rgba(167, 139, 250, 0.3);
+    }
+
+    .card-body {
+      padding: 1rem;
+    }
 
     /* ── KPI Stats Row ── */
     .stats-row {
       grid-column: 1 / -1;
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
     }
 
     .kpi-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 14px; padding: 1.1rem 1.2rem;
-      position: relative; overflow: hidden;
+      border-radius: 14px;
+      padding: 1.1rem 1.2rem;
+      position: relative;
+      overflow: hidden;
     }
-    .kpi-card::after {
-      content: ''; position: absolute;
-      top: 0; left: 0; right: 0; height: 2px;
-    }
-    .kpi-gold::after   { background: linear-gradient(90deg, var(--gold), transparent); }
-    .kpi-cyan::after   { background: linear-gradient(90deg, var(--cyan), transparent); }
-    .kpi-green::after  { background: linear-gradient(90deg, var(--green), transparent); }
-    .kpi-purple::after { background: linear-gradient(90deg, var(--purple), transparent); }
 
-    .kpi-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem; }
-    .kpi-value { font-size: 1.9rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1; }
-    .kpi-gold  .kpi-value { color: var(--gold); }
-    .kpi-cyan  .kpi-value { color: var(--cyan); }
-    .kpi-green .kpi-value { color: var(--green); }
-    .kpi-purple .kpi-value { color: var(--purple); }
-    .kpi-sub { font-size: 0.68rem; color: var(--muted); margin-top: 0.4rem; }
+    .kpi-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+    }
+
+    .kpi-gold::after {
+      background: linear-gradient(90deg, var(--gold), transparent);
+    }
+
+    .kpi-cyan::after {
+      background: linear-gradient(90deg, var(--cyan), transparent);
+    }
+
+    .kpi-green::after {
+      background: linear-gradient(90deg, var(--green), transparent);
+    }
+
+    .kpi-purple::after {
+      background: linear-gradient(90deg, var(--purple), transparent);
+    }
+
+    .kpi-label {
+      font-size: 0.68rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.4rem;
+    }
+
+    .kpi-value {
+      font-size: 1.9rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1;
+    }
+
+    .kpi-gold .kpi-value {
+      color: var(--gold);
+    }
+
+    .kpi-cyan .kpi-value {
+      color: var(--cyan);
+    }
+
+    .kpi-green .kpi-value {
+      color: var(--green);
+    }
+
+    .kpi-purple .kpi-value {
+      color: var(--purple);
+    }
+
+    .kpi-sub {
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+    }
 
     /* ── Chart Cards ── */
-    .chart-card-wide { grid-column: span 2; }
-    .chart-card-full { grid-column: 1 / -1; }
-    .chart-wrap { height: 220px; position: relative; }
+    .chart-card-wide {
+      grid-column: span 2;
+    }
+
+    .chart-card-full {
+      grid-column: 1 / -1;
+    }
+
+    .chart-wrap {
+      height: 220px;
+      position: relative;
+    }
 
     /* ── Epoch Progress ── */
-    .epoch-bar-wrap { margin: 0.5rem 0; }
-    .epoch-bar-track {
-      background: var(--border); border-radius: 999px; height: 8px; overflow: hidden;
+    .epoch-bar-wrap {
+      margin: 0.5rem 0;
     }
+
+    .epoch-bar-track {
+      background: var(--border);
+      border-radius: 999px;
+      height: 8px;
+      overflow: hidden;
+    }
+
     .epoch-bar-fill {
-      height: 100%; border-radius: 999px;
+      height: 100%;
+      border-radius: 999px;
       background: linear-gradient(90deg, #b45309, #f0b429);
       transition: width 1s ease;
-      box-shadow: 0 0 10px rgba(240,180,41,0.5);
+      box-shadow: 0 0 10px rgba(240, 180, 41, 0.5);
     }
 
     /* ── Certainty Gauge ── */
-    .gauge-container { display: flex; align-items: center; justify-content: center; padding: 1rem 0; }
-    .gauge-svg { width: 140px; height: 90px; }
+    .gauge-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem 0;
+    }
+
+    .gauge-svg {
+      width: 140px;
+      height: 90px;
+    }
 
     /* ── Trade Table ── */
     .trade-log {
-      width: 100%; border-collapse: collapse;
-      font-size: 0.72rem; font-family: 'JetBrains Mono', monospace;
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.72rem;
+      font-family: 'JetBrains Mono', monospace;
     }
+
     .trade-log th {
-      color: var(--muted); text-transform: uppercase;
-      font-size: 0.62rem; letter-spacing: 0.06em;
-      padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 0.62rem;
+      letter-spacing: 0.06em;
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
       text-align: left;
     }
-    .trade-log td { padding: 0.75rem 0.6rem; border-bottom: 1px solid rgba(30,45,61,0.5); }
-    .trade-log tr:last-child td { border: none; }
-    .tag-long  { color: var(--green); }
-    .tag-short { color: var(--red); }
-    .tag-hold  { color: var(--muted); }
+
+    .trade-log td {
+      padding: 0.75rem 0.6rem;
+      border-bottom: 1px solid rgba(30, 45, 61, 0.5);
+    }
+
+    .trade-log tr:last-child td {
+      border: none;
+    }
+
+    .tag-long {
+      color: var(--green);
+    }
+
+    .tag-short {
+      color: var(--red);
+    }
+
+    .tag-hold {
+      color: var(--muted);
+    }
+
     .scrollable-table {
       height: 420px;
       overflow-y: auto;
       scrollbar-width: thin;
       scrollbar-color: var(--border) transparent;
     }
-    .scrollable-table::-webkit-scrollbar { width: 6px; }
-    .scrollable-table::-webkit-scrollbar-track { background: transparent; }
-    .scrollable-table::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+    .scrollable-table::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .scrollable-table::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .scrollable-table::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 10px;
+    }
+
     .scrollable-table th {
       position: sticky;
       top: 0;
@@ -238,41 +478,84 @@
     }
 
     /* ── Sparkline / Mini bars ── */
-    .mini-bars { display: flex; align-items: flex-end; gap: 2px; height: 40px; margin-top: 0.5rem; }
-    .mini-bar { flex: 1; border-radius: 2px 2px 0 0; background: var(--border); transition: height 0.5s; }
+    .mini-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 40px;
+      margin-top: 0.5rem;
+    }
+
+    .mini-bar {
+      flex: 1;
+      border-radius: 2px 2px 0 0;
+      background: var(--border);
+      transition: height 0.5s;
+    }
 
     /* ── Footer ── */
     footer {
-      position: relative; z-index: 1;
-      text-align: center; padding: 1rem;
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      padding: 1rem;
       border-top: 1px solid var(--border);
-      font-size: 0.68rem; color: var(--muted);
+      font-size: 0.68rem;
+      color: var(--muted);
       font-family: 'JetBrains Mono', monospace;
     }
 
     /* ── Blinking cursor effect ── */
-    .blink { animation: blink 1.2s step-end infinite; }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .blink {
+      animation: blink 1.2s step-end infinite;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: 0
+      }
+    }
 
     .pulse-dot {
-      width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
       box-shadow: 0 0 0 rgba(16, 185, 129, 0.4);
       animation: pulse 2s infinite;
     }
+
     @keyframes pulse {
-      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-      70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+      0% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      }
+
+      70% {
+        box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+      }
     }
-    
+
     .typing-cursor {
-      display: inline-block; width: 8px; height: 14px;
-      background: var(--purple); margin-left: 4px;
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: var(--purple);
+      margin-left: 4px;
       animation: blink 1s step-end infinite;
       vertical-align: middle;
       box-shadow: 0 0 10px var(--purple);
     }
-    
+
     .pulse-cursor {
       background: var(--cyan) !important;
       box-shadow: 0 0 12px var(--cyan) !important;
@@ -285,31 +568,73 @@
     }
 
     @keyframes talking {
-      0% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 5px var(--gold)); }
-      25% { transform: scale(1.1) rotate(-5deg); }
-      50% { transform: scale(1.05) rotate(5deg); filter: drop-shadow(0 0 15px var(--gold)); }
-      75% { transform: scale(1.1) rotate(-3deg); }
-      100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 5px var(--gold)); }
+      0% {
+        transform: scale(1) rotate(0deg);
+        filter: drop-shadow(0 0 5px var(--gold));
+      }
+
+      25% {
+        transform: scale(1.1) rotate(-5deg);
+      }
+
+      50% {
+        transform: scale(1.05) rotate(5deg);
+        filter: drop-shadow(0 0 15px var(--gold));
+      }
+
+      75% {
+        transform: scale(1.1) rotate(-3deg);
+      }
+
+      100% {
+        transform: scale(1) rotate(0deg);
+        filter: drop-shadow(0 0 5px var(--gold));
+      }
     }
 
     /* ── Live Strike Animations ── */
     .strike-entry {
       animation: strike-in 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-      background: rgba(240,180,41,0.15) !important;
+      background: rgba(240, 180, 41, 0.15) !important;
     }
+
     @keyframes strike-in {
-      0% { transform: translateX(-10px); opacity: 0; background: rgba(240,180,41,0.5); }
-      20% { opacity: 1; }
-      100% { transform: translateX(0); opacity: 1; background: transparent; }
+      0% {
+        transform: translateX(-10px);
+        opacity: 0;
+        background: rgba(240, 180, 41, 0.5);
+      }
+
+      20% {
+        opacity: 1;
+      }
+
+      100% {
+        transform: translateX(0);
+        opacity: 1;
+        background: transparent;
+      }
     }
 
     .pnl-pulse {
       animation: pnl-glow 1.5s ease-out;
     }
+
     @keyframes pnl-glow {
-      0% { transform: scale(1); filter: brightness(2) drop-shadow(0 0 10px currentColor); }
-      50% { transform: scale(1.1); filter: brightness(2.5) drop-shadow(0 0 20px currentColor); }
-      100% { transform: scale(1); filter: brightness(1) drop-shadow(0 0 0px transparent); }
+      0% {
+        transform: scale(1);
+        filter: brightness(2) drop-shadow(0 0 10px currentColor);
+      }
+
+      50% {
+        transform: scale(1.1);
+        filter: brightness(2.5) drop-shadow(0 0 20px currentColor);
+      }
+
+      100% {
+        transform: scale(1);
+        filter: brightness(1) drop-shadow(0 0 0px transparent);
+      }
     }
 
     /* ── Neural Heatmap ── */
@@ -318,15 +643,17 @@
       grid-template-columns: repeat(16, 1fr);
       gap: 2px;
       padding: 0.5rem;
-      background: rgba(0,0,0,0.2);
+      background: rgba(0, 0, 0, 0.2);
       border-radius: 4px;
     }
+
     .node {
       aspect-ratio: 1;
       background: var(--border);
       border-radius: 1px;
       transition: background 0.8s ease, box-shadow 0.8s ease;
     }
+
     .node-active {
       background: var(--gold);
       box-shadow: 0 0 5px var(--gold);
@@ -341,9 +668,11 @@
       position: relative;
       overflow: hidden;
     }
+
     .tape-fill {
       position: absolute;
-      bottom: 0; width: 100%;
+      bottom: 0;
+      width: 100%;
       background: linear-gradient(to top, var(--green), var(--red));
       transition: height 0.3s ease;
     }
@@ -359,6 +688,7 @@
       outline: none;
       padding: 0.5rem;
     }
+
     .console-prompt {
       color: var(--muted);
       font-family: 'JetBrains Mono', monospace;
@@ -367,435 +697,757 @@
     }
 
     /* ── Custom Scrollbars (Global) ── */
-    ::-webkit-scrollbar { width: 4px; height: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.2); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.4); }
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.2);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.4);
+    }
 
     /* Theme Accents */
-    #expertDialogue::-webkit-scrollbar-thumb { background: rgba(167, 139, 250, 0.3); }
-    .scrollable-table::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); }
+    #expertDialogue::-webkit-scrollbar-thumb {
+      background: rgba(167, 139, 250, 0.3);
+    }
+
+    .scrollable-table::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.3);
+    }
+
+    /* ── Step Counter ── */
+    .step-counter {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .72rem;
+      color: var(--cyan);
+      background: rgba(56, 189, 248, .08);
+      border: 1px solid rgba(56, 189, 248, .2);
+      border-radius: 6px;
+      padding: .3rem .8rem;
+    }
+
+    .step-bar-track {
+      height: 3px;
+      background: rgba(56, 189, 248, .1);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: .5rem;
+    }
+
+    .step-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--cyan), var(--purple));
+      border-radius: 2px;
+      transition: width .5s ease;
+      width: 0%;
+    }
+
+    /* ── Training Health Pill ── */
+    .status-pill.training {
+      background: rgba(34, 197, 94, .1);
+      border: 1px solid rgba(34, 197, 94, .25);
+      color: var(--green);
+    }
+
+    .status-pill.idle {
+      background: rgba(239, 68, 68, .08);
+      border: 1px solid rgba(239, 68, 68, .2);
+      color: var(--red);
+    }
+
+    .status-pill.unknown {
+      background: rgba(100, 116, 139, .1);
+      border: 1px solid rgba(100, 116, 139, .25);
+      color: var(--muted);
+    }
+
+    .status-dot.red {
+      background: var(--red);
+    }
+
+    /* ── Dialogue Controls ── */
+    .ctrl-btn {
+      background: rgba(255, 255, 255, .05);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: .62rem;
+      padding: .15rem .55rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all .2s;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .ctrl-btn:hover {
+      background: rgba(255, 255, 255, .1);
+      color: var(--text);
+    }
+
+    .ctrl-btn.paused {
+      background: rgba(240, 180, 41, .1);
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .8);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(6px);
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal-box {
+      background: #111720;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2rem;
+      max-width: 380px;
+      width: 90%;
+      box-shadow: 0 0 60px rgba(0, 0, 0, .8);
+    }
+
+    .modal-box h3 {
+      font-size: 1rem;
+      font-weight: 800;
+      margin-bottom: .6rem;
+      color: var(--text);
+    }
+
+    .modal-box p {
+      font-size: .78rem;
+      color: var(--muted);
+      line-height: 1.7;
+      margin-bottom: 1.5rem;
+    }
+
+    .modal-btns {
+      display: flex;
+      gap: .8rem;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      padding: .5rem 1.1rem;
+      border-radius: 8px;
+      font-size: .78rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: all .2s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .btn-cancel {
+      background: rgba(255, 255, 255, .07);
+      color: var(--muted);
+    }
+
+    .btn-cancel:hover {
+      background: rgba(255, 255, 255, .12);
+    }
+
+    .btn-danger {
+      background: var(--purple);
+      color: #fff;
+    }
+
+    .btn-danger:hover {
+      opacity: .85;
+      transform: scale(1.02);
+    }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: #111720;
+      border: 1px solid var(--green);
+      border-radius: 10px;
+      padding: .75rem 1.2rem;
+      font-size: .78rem;
+      color: var(--green);
+      font-weight: 600;
+      z-index: 9998;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all .35s ease;
+      pointer-events: none;
+    }
+
+    #toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* ── Ticker live badge ── */
+    .ticker-live {
+      font-size: .58rem;
+      background: rgba(34, 197, 94, .15);
+      border: 1px solid rgba(34, 197, 94, .3);
+      border-radius: 3px;
+      padding: .05rem .35rem;
+      color: var(--green);
+      margin-right: .5rem;
+    }
+
+    /* ── Responsive ── */
+    @media(max-width:900px) {
+      .stats-row {
+        flex-direction: column !important;
+      }
+
+      .kpi-cards-row {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+
+      header {
+        flex-wrap: wrap;
+        gap: .5rem;
+      }
+
+      .step-counter {
+        display: none;
+      }
+
+      main {
+        padding: 1rem;
+      }
+    }
+
+    @media(max-width:480px) {
+      .kpi-cards-row {
+        grid-template-columns: 1fr 1fr !important;
+      }
+
+      .kpi-value {
+        font-size: 1.6rem !important;
+      }
+
+      .trade-log th:first-child,
+      .trade-log td:first-child {
+        display: none;
+      }
+    }
   </style>
 </head>
+
 <body>
 
-<!-- ── HEADER ── -->
-<header>
-      <div class="logo">
-        <div class="logo-icon">
-          <img src="/static/img/logo.png" alt="Sovereign Logo">
-        </div>
-        <div class="logo-text">
-          <h1>Iron Oracle V11.0</h1>
-          <p>SOVEREIGN NEURAL COMMAND CENTER</p>
-        </div>
-      </div>
-  <div class="status-pill"><span class="status-dot"></span>TRAINING ACTIVE</div>
-  <div class="header-time" id="clockDisplay">--:--:-- UTC</div>
-</header>
-
-<!-- ── MAIN GRID ── -->
-<main>
-
-  <!-- ── ROW 1: KPI Cards ── -->
-  <div class="stats-row">
-
-    <div class="kpi-card kpi-gold">
-      <div class="kpi-label">AI Brain Growth</div>
-      <div class="kpi-value" id="kpiEpoch">--</div>
-      <div class="kpi-sub">Step <span id="kpiStepNum">--</span> of <span id="kpiTotalSteps">--</span></div>
-      <div class="epoch-bar-wrap" style="margin-top:0.7rem">
-        <div class="epoch-bar-track">
-          <div class="epoch-bar-fill" id="epochBar" style="width:0%"></div>
-        </div>
+  <!-- ── HEADER ── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon"><img src="/static/img/logo.png" alt="Sovereign Logo"></div>
+      <div class="logo-text">
+        <h1>Iron Oracle V12.0</h1>
+        <p>SOVEREIGN NEURAL COMMAND CENTER</p>
       </div>
     </div>
-
-    <div class="kpi-card kpi-cyan">
-      <div class="kpi-label">Win Chance</div>
-      <div class="kpi-value" id="kpiAcc">--%</div>
-      <div class="kpi-sub">Current accuracy target</div>
+    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;">
+      <div class="step-counter" id="stepCounter" title="Live batch step within current epoch">⚡ Step -- / --</div>
+      <div class="status-pill unknown" id="trainingPill"><span class="status-dot" id="trainingDot"></span><span
+          id="trainingLabel">CHECKING...</span></div>
+      <div class="header-time" id="clockDisplay">--:--:-- IST</div>
     </div>
+  </header>
 
-    <div class="kpi-card kpi-green">
-      <div class="kpi-label">Confusion Level</div>
-      <div class="kpi-value" id="kpiLoss">--</div>
-      <div class="kpi-sub">Best (Lowest): <span id="kpiBestLoss">--</span></div>
+  <!-- ── MODAL ── -->
+  <div class="modal-overlay" id="recapModal">
+    <div class="modal-box">
+      <h3>⚠️ Recapitalize Station?</h3>
+      <p>This will wipe the current simulation P&amp;L and start a fresh $200 mission.<br><strong>Training progress will
+          NOT be lost.</strong></p>
+      <div class="modal-btns">
+        <button class="btn btn-cancel"
+          onclick="document.getElementById('recapModal').classList.remove('open')">Cancel</button>
+        <button class="btn btn-danger" id="confirmRecap">Yes, Recapitalize</button>
+      </div>
     </div>
-
-    <div class="kpi-card kpi-purple">
-      <div class="kpi-label">Conviction Strength</div>
-      <div class="kpi-value" id="kpiCert">--</div>
-      <div class="kpi-sub">Expert agreement level</div>
-    </div>
-
   </div>
 
-  <!-- ── ROW 2: Side-by-Side Feed (ELEVATED) ── -->
-  <div class="stats-row" style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin-top: -0.5rem; align-items: stretch;">
-      
-    <!-- Latest AI Strikes Feed (Left) -->
-    <div class="card" style="flex: 2; min-width: 0;">
+  <!-- ── TOAST ── -->
+  <div id="toast">✅ Action complete</div>
+
+  <!-- ── MAIN GRID ── -->
+  <main>
+
+    <!-- ── ROW 1: KPI Cards ── -->
+    <div class="stats-row kpi-cards-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;">
+
+      <div class="kpi-card kpi-gold">
+        <div class="kpi-label">AI Brain Growth</div>
+        <div class="kpi-value" id="kpiEpoch">--</div>
+        <div class="kpi-sub">Epoch <span id="kpiStepNum">--</span> of <span id="kpiTotalSteps">300</span></div>
+        <div class="epoch-bar-wrap" style="margin-top:.6rem">
+          <div class="epoch-bar-track">
+            <div class="epoch-bar-fill" id="epochBar" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="step-bar-track">
+          <div class="step-bar-fill" id="stepBar" style="width:0%" title="Step progress within current epoch"></div>
+        </div>
+        <div class="kpi-sub" style="margin-top:.4rem;" id="etrDisplay">ETR: Calculating...</div>
+      </div>
+
+      <div class="kpi-card kpi-cyan">
+        <div class="kpi-label">Win Chance</div>
+        <div class="kpi-value" id="kpiAcc">--%</div>
+        <div class="kpi-sub">Validation accuracy</div>
+      </div>
+
+      <div class="kpi-card kpi-green">
+        <div class="kpi-label">Confusion Level</div>
+        <div class="kpi-value" id="kpiLoss">--</div>
+        <div class="kpi-sub">Best: <span id="kpiBestLoss">--</span></div>
+      </div>
+
+      <div class="kpi-card kpi-purple">
+        <div class="kpi-label">Conviction Strength</div>
+        <div class="kpi-value" id="kpiCert">--</div>
+        <div class="kpi-sub">Expert agreement</div>
+      </div>
+
+    </div>
+
+    <!-- ── ROW 2: Side-by-Side Feed (ELEVATED) ── -->
+    <div class="stats-row"
+      style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin-top: -0.5rem; align-items: stretch;">
+
+      <!-- Latest AI Strikes Feed (Left) -->
+      <div class="card" style="flex: 2; min-width: 0;">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-            <div style="display:flex; align-items:center; gap:0.5rem;">
-                <span class="card-title">🎯 Latest AI Strikes</span>
-                <div class="tape-container"><div id="orderTape" class="tape-fill" style="height:50%"></div></div>
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="card-title">🎯 Latest AI Strikes</span>
+            <div class="tape-container">
+              <div id="orderTape" class="tape-fill" style="height:50%"></div>
             </div>
-            <span class="card-badge badge-cyan">LIVE REPLAY</span>
+          </div>
+          <span class="card-badge badge-cyan">LIVE REPLAY</span>
         </div>
         <div id="strikeFeedContainer" class="card-body scrollable-table" style="padding:0; height:420px;">
-            <table class="trade-log">
-                <thead>
-                    <tr>
-                        <th style="font-family:'Outfit'; width: 140px;">DATE / TIME (IST)</th>
-                        <th style="font-family:'Outfit'">STRATEGIST</th>
-                        <th style="font-family:'Outfit'">SIDE</th>
-                        <th style="font-family:'Outfit'">PnL ($)</th>
-                        <th style="font-family:'Outfit'">ENTRY</th>
-                        <th style="font-family:'Outfit'">NET ROI</th>
-                    </tr>
-                </thead>
-                <tbody id="strikeTableBody">
-                    <tr><td colspan="6" style="color:var(--muted);text-align:center;padding:1.5rem">Waiting...</td></tr>
-                </tbody>
-            </table>
+          <table class="trade-log">
+            <thead>
+              <tr>
+                <th style="font-family:'Outfit'; width: 140px;">DATE / TIME (IST)</th>
+                <th style="font-family:'Outfit'">STRATEGIST</th>
+                <th style="font-family:'Outfit'">SIDE</th>
+                <th style="font-family:'Outfit'">PnL ($)</th>
+                <th style="font-family:'Outfit'">ENTRY</th>
+                <th style="font-family:'Outfit'">NET ROI</th>
+              </tr>
+            </thead>
+            <tbody id="strikeTableBody">
+              <tr>
+                <td colspan="6" style="color:var(--muted);text-align:center;padding:1.5rem">Waiting...</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-    </div>
-
-    <!-- Expert Dialogue (Center) -->
-    <div class="card" style="flex: 1;">
-      <div class="card-header">
-        <span class="card-title">🧠 Expert Council</span>
-        <span class="card-badge badge-purple">DEBATE</span>
       </div>
-      <div class="card-body" id="expertDialogue" style="font-size:0.7rem; font-family:'JetBrains Mono', monospace; line-height:1.5; height:420px; overflow-y:auto; padding:1rem; background:rgba(0,0,0,0.3)">
-        <div style="margin-bottom:0.9rem; line-height:1.5; display:flex; gap:0.6rem; align-items:flex-start;">
-            <span class="expert-avatar talking-pulse" style="font-size:1.2rem; filter: drop-shadow(0 0 5px var(--gold)44);">🦉</span>
+
+      <!-- Expert Dialogue (Center) -->
+      <div class="card" style="flex: 1;">
+        <div class="card-header">
+          <span class="card-title">🧠 Expert Council</span>
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            <button class="ctrl-btn" id="pauseDialogue" onclick="toggleDialoguePause()">⏸ Pause</button>
+            <button class="ctrl-btn" onclick="clearDialogue()">🗑 Clear</button>
+            <span class="card-badge badge-purple">DEBATE</span>
+          </div>
+        </div>
+        <div class="card-body" id="expertDialogue"
+          style="font-size:0.7rem; font-family:'JetBrains Mono', monospace; line-height:1.5; height:420px; overflow-y:auto; padding:1rem; background:rgba(0,0,0,0.3)">
+          <div style="margin-bottom:0.9rem; line-height:1.5; display:flex; gap:0.6rem; align-items:flex-start;">
+            <span class="expert-avatar talking-pulse"
+              style="font-size:1.2rem; filter: drop-shadow(0 0 5px var(--gold)44);">🦉</span>
             <div style="flex:1">
-                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.1rem">
-                    <span style="color:var(--gold); font-weight:700; font-size:0.8rem; font-family:'Outfit'">Oracle</span>
-                    <span style="color:var(--muted); font-size:0.6rem;">[SYSTEM INITIALIZED]</span>
-                </div>
-                <span style="font-family:'Inter'; font-size:0.9rem; color:var(--text);">Neural Bridge Active. 256 Gated Experts online. Awaiting market volatility...</span>
+              <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.1rem">
+                <span style="color:var(--gold); font-weight:700; font-size:0.8rem; font-family:'Outfit'">Oracle</span>
+                <span style="color:var(--muted); font-size:0.6rem;">[SYSTEM INITIALIZED]</span>
+              </div>
+              <span style="font-family:'Inter'; font-size:0.9rem; color:var(--text);">Neural Bridge Active. 256 Gated
+                Experts online. Awaiting market volatility...</span>
             </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Net ROI Tracker (Right) -->
-    <div class="card" style="flex: 1.2;">
-      <div class="card-header">
-        <span class="card-title" style="display:flex; align-items:center; gap:0.5rem;">
-          <span class="pulse-dot"></span>
-          💰 Net Profit
-        </span>
-        <div style="display:flex; align-items:center; gap:0.5rem;">
-          <button id="recapBtn" style="background:var(--purple); border:none; color:white; font-size:0.6rem; padding:0.2rem 0.5rem; border-radius:4px; cursor:pointer; font-weight:700; transition: transform 0.2s ease;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">RECAPITALIZE</button>
-          <span class="card-badge badge-green" id="roiNote">LIVE SYNC</span>
+      <!-- Net ROI Tracker (Right) -->
+      <div class="card" style="flex: 1.2;">
+        <div class="card-header">
+          <span class="card-title" style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="pulse-dot"></span>
+            💰 Net Profit
+          </span>
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <button
+              style="background:var(--purple);border:none;color:white;font-size:.6rem;padding:.2rem .6rem;border-radius:4px;cursor:pointer;font-weight:700;transition:transform .2s;"
+              onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"
+              onclick="document.getElementById('recapModal').classList.add('open')">RECAPITALIZE</button>
+            <span class="card-badge badge-green" id="roiNote">LIVE SYNC</span>
+          </div>
         </div>
-      </div>
-        <div class="card-body" style="padding-top:0.5rem; height:420px; display:flex; flex-direction:column; justify-content:space-between;">
+        <div class="card-body"
+          style="padding-top:0.5rem; height:420px; display:flex; flex-direction:column; justify-content:space-between;">
           <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap: 1rem; margin-top: 1rem;">
             <div style="border-right: 1px solid var(--border); padding-right: 1rem;">
-                <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">STARTING CAPITAL</div>
-                <div id="initialCapital" style="font-family:'Outfit'; font-weight:600; font-size:1.2rem; color:var(--text)">--</div>
+              <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">STARTING CAPITAL</div>
+              <div id="initialCapital"
+                style="font-family:'Outfit'; font-weight:600; font-size:1.2rem; color:var(--text)">--</div>
             </div>
             <div>
-                <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">PORTFOLIO VALUE</div>
-                <div id="totalPortfolio" style="font-family:'Outfit'; font-weight:800; font-size:1.6rem; color:var(--green)">--</div>
+              <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">PORTFOLIO VALUE</div>
+              <div id="totalPortfolio"
+                style="font-family:'Outfit'; font-weight:800; font-size:1.6rem; color:var(--green)">--</div>
             </div>
           </div>
 
           <div style="margin: 1.5rem 0;">
             <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:0.4rem">
               <span style="color:var(--muted)">NET PROFIT (AFTER FEES)</span>
-              <span id="highConfProfit" style="color:var(--green);font-family:'JetBrains Mono',monospace; font-weight:700; font-size:1.2rem;">+$0.00</span>
+              <span id="highConfProfit"
+                style="color:var(--green);font-family:'JetBrains Mono',monospace; font-weight:700; font-size:1.2rem;">+$0.00</span>
             </div>
             <div style="background:var(--border);border-radius:4px;height:6px">
-                <div id="pnlProgress" style="height:100%;border-radius:4px;background:var(--green);width:0%;transition:width 1s"></div>
+              <div id="pnlProgress"
+                style="height:100%;border-radius:4px;background:var(--green);width:0%;transition:width 1s"></div>
             </div>
           </div>
-          
+
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div>
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">TOTAL STRIKES</div>
-              <div id="totalStrikes" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--cyan)">--</div>
+              <div id="totalStrikes" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--cyan)">--
+              </div>
             </div>
             <div>
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">WIN RATE</div>
-              <div id="winRate" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--gold)">--</div>
+              <div id="winRate" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--gold)">--
+              </div>
             </div>
             <div>
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">SHARPE RATIO</div>
-              <div id="sharpeRatio" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--purple)">0.00</div>
+              <div id="sharpeRatio" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--purple)">
+                0.00</div>
             </div>
             <div>
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">PROFIT FACTOR</div>
-              <div id="profitFactor" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--green)">0.00</div>
+              <div id="profitFactor" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--green)">
+                0.00</div>
             </div>
             <div style="grid-column: span 2;">
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">TOTAL FEES PAID</div>
-              <div id="totalFeesPaid" style="font-family:'JetBrains Mono',monospace; font-weight:600; font-size:1rem; color:var(--red)">$0.00</div>
+              <div id="totalFeesPaid"
+                style="font-family:'JetBrains Mono',monospace; font-weight:600; font-size:1rem; color:var(--red)">$0.00
+              </div>
             </div>
             <div style="grid-column: span 2;">
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">MAX DRAWDOWN</div>
-              <div id="maxDrawdown" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--red)">0.00%</div>
+              <div id="maxDrawdown" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--red)">
+                0.00%</div>
             </div>
           </div>
           <div style="border-top:1px solid var(--border);padding-top:0.6rem;margin-top:0.2rem">
             <div style="font-size:0.68rem;color:var(--muted);margin-bottom:0.3rem">MARKET STRATEGY</div>
-            <div id="deployStatus" style="font-size:0.8rem;font-weight:600;color:var(--gold)">⏳ Training in progress...</div>
+            <div id="deployStatus" style="font-size:0.8rem;font-weight:600;color:var(--gold)">⏳ Training in progress...
+            </div>
           </div>
-          <div style="font-size:0.68rem;color:var(--muted);margin-top:0.4rem;font-family:'JetBrains Mono',monospace" id="lastUpdated">Last updated: --</div>
+          <div style="font-size:0.68rem;color:var(--muted);margin-top:0.4rem;font-family:'JetBrains Mono',monospace"
+            id="lastUpdated">Last updated: --</div>
         </div>
       </div>
-  </div>
-  </div>
+    </div>
+    </div>
 
-  <!-- ── ROW 3: Analytics Row (Graphs) ── -->
-  <div class="stats-row" style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin: 1rem 0; align-items: stretch;">
-    
-    <!-- Equity Growth (Left) -->
-    <div class="card" style="flex: 2;">
-      <div class="card-header">
-        <span class="card-title" id="equityTitle">📈 Equity Growth — Simulated Station</span>
-        <div style="display:flex; align-items:center; gap:0.5rem">
-          <span class="pulse-dot"></span>
-          <span class="card-badge badge-green">LIVE TRACKER</span>
+    <!-- ── ROW 3: Analytics Row (Graphs) ── -->
+    <div class="stats-row"
+      style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin: 1rem 0; align-items: stretch;">
+
+      <!-- Equity Growth (Left) -->
+      <div class="card" style="flex: 2;">
+        <div class="card-header">
+          <span class="card-title" id="equityTitle">📈 Equity Growth — Simulated Station</span>
+          <div style="display:flex; align-items:center; gap:0.5rem">
+            <span class="pulse-dot"></span>
+            <span class="card-badge badge-green">LIVE TRACKER</span>
+          </div>
         </div>
+        <div class="card-body">
+          <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Strategist Hall of Fame (Right) -->
+      <div class="card" style="flex: 1;">
+        <div class="card-header">
+          <span class="card-title">🏆 Hall of Fame</span>
+          <span class="card-badge badge-gold">TOP PERFORMERS</span>
+        </div>
+        <div class="card-body" style="padding:1rem;">
+          <div id="hallOfFameList" style="display:flex; flex-direction:column; gap:0.8rem;">
+            <div style="color:var(--muted); font-size:0.7rem; text-align:center; padding:2rem">Analyzing mission
+              performance...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Certainty Distribution (Right) -->
+      <div class="card" style="flex: 1;">
+        <div class="card-header">
+          <span class="card-title">🧠 Expert Consensus</span>
+          <span class="card-badge badge-purple">256 AI VOICES</span>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap"><canvas id="certChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Epoch Log Table -->
+    <div class="card" style="grid-column: 1 / -1;">
+      <div class="card-header">
+        <span class="card-title">📋 AI Memory History</span>
+        <span class="card-badge badge-gold">STEP BY STEP</span>
+      </div>
+      <div class="card-body scrollable-table" style="padding:0">
+        <table class="trade-log">
+          <thead>
+            <tr>
+              <th>Step #</th>
+              <th>Win Rate</th>
+              <th>Confusion</th>
+              <th>Conviction</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="epochTableBody">
+            <tr>
+              <td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">Loading AI memory...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Help Guide -->
+    <div class="card chart-card-full" style="background:rgba(56,189,248,0.02)">
+      <div class="card-header">
+        <span class="card-title">❓ Quick Help Guide — What am I looking at?</span>
       </div>
       <div class="card-body">
-        <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
-      </div>
-    </div>
-
-    <!-- Strategist Hall of Fame (Right) -->
-    <div class="card" style="flex: 1;">
-      <div class="card-header">
-        <span class="card-title">🏆 Hall of Fame</span>
-        <span class="card-badge badge-gold">TOP PERFOMERS</span>
-      </div>
-      <div class="card-body" style="padding:1rem;">
-        <div id="hallOfFameList" style="display:flex; flex-direction:column; gap:0.8rem;">
-            <div style="color:var(--muted); font-size:0.7rem; text-align:center; padding:2rem">Analyzing mission performance...</div>
+        <!-- Strategist Biometrics (Expanded) -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+          <strong style="color:var(--gold); font-size:0.75rem; letter-spacing:1px">ACTIVE STRATEGIST BIOMETRICS</strong>
+          <span style="color:var(--muted); font-size:0.6rem; font-family:'JetBrains Mono'">[ REAL-TIME NEURAL TELEMETRY
+            ]</span>
+        </div>
+        <div id="biometricList" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1.5rem">
+          <!-- Pulsing biometrics generated via JS -->
         </div>
       </div>
     </div>
 
-    <!-- Certainty Distribution (Right) -->
-    <div class="card" style="flex: 1;">
-      <div class="card-header">
-        <span class="card-title">🧠 Expert Consensus</span>
-        <span class="card-badge badge-purple">256 AI VOICES</span>
-      </div>
-      <div class="card-body">
-        <div class="chart-wrap"><canvas id="certChart"></canvas></div>
-      </div>
-    </div>
-  </div>
 
-  <!-- Epoch Log Table -->
-  <div class="card" style="grid-column: 1 / -1;">
-    <div class="card-header">
-      <span class="card-title">📋 AI Memory History</span>
-      <span class="card-badge badge-gold">STEP BY STEP</span>
-    </div>
-    <div class="card-body scrollable-table" style="padding:0">
-      <table class="trade-log">
-        <thead>
-          <tr>
-            <th>Step #</th>
-            <th>Win Rate</th>
-            <th>Confusion</th>
-            <th>Conviction</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="epochTableBody">
-          <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">Loading AI memory...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
 
-  <!-- Help Guide -->
-  <div class="card chart-card-full" style="background:rgba(56,189,248,0.02)">
-    <div class="card-header">
-      <span class="card-title">❓ Quick Help Guide — What am I looking at?</span>
-    </div>
-    <div class="card-body" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:1.5rem">
-      <div style="font-size:0.75rem">
-        <strong style="color:var(--gold)">AI Brain Growth:</strong> This shows how far the AI is into its training journey. It's like a student in school.
-      </div>
-      <div style="font-size:0.75rem">
-        <strong style="color:var(--cyan)">Win Chance:</strong> The AI's accuracy. Anything over 50% is profitable for our strategy.
-      </div>
-      <div style="font-size:0.75rem">
-        <strong style="color:var(--green)">Confusion:</strong> Lower is better! As this number falls, the AI is "understanding" the market better.
-      </div>
-      <div style="font-size:0.75rem">
-        <strong style="color:var(--purple)">Expert Consensus:</strong> We have 256 "Experts" inside the AI. This shows how many of them agree on the move.
-      </div>
-    </div>
-  </div>
+  </main>
 
-</main>
+  <footer>
+    ⚓ Iron Oracle V12.0 &nbsp;|&nbsp; 256-Expert MoE &nbsp;|&nbsp; 45-Feature Sovereign Hive &nbsp;|&nbsp; 15m Swing
+    Trading
+    &nbsp;<span class="blink">|</span>
+  </footer>
 
-<footer>
-  ⚓ Iron Oracle V11.0 &nbsp;|&nbsp; 256-Expert MoE &nbsp;|&nbsp; 42-Feature Sovereign Hive &nbsp;|&nbsp; 15m Swing Trading
-  &nbsp;<span class="blink">|</span>
-</footer>
-
-<script>
-  // ── Sovereign V12 Initialization ──────────────────────────────
-  function updateClock() {
-    const options = { 
-      timeZone: 'Asia/Kolkata', 
-      hour: '2-digit', 
-      minute: '2-digit', 
-      second: '2-digit', 
-      hour12: true 
-    };
-    const istTime = new Intl.DateTimeFormat('en-IN', options).format(new Date());
-    document.getElementById('clockDisplay').textContent = istTime + ' IST';
-  }
-  setInterval(updateClock, 1000); updateClock();
-
-  // ── Chart defaults ─────────────────────────────────────────────
-  const base = {
-    responsive: true, maintainAspectRatio: false, animation: { duration: 600 },
-    plugins: { legend: { display: false }, tooltip: {
-      backgroundColor: '#0d1117', borderColor: '#1e2d3d', borderWidth: 1,
-      titleColor: '#e2e8f0', bodyColor: '#94a3b8', padding: 10
-    }},
-    scales: {
-      x: { grid: { color: '#1e2d3d' }, ticks: { color: '#64748b', font: { size: 10 } } },
-      y: { grid: { color: '#1e2d3d' }, ticks: { color: '#64748b', font: { size: 10 } } }
+  <script>
+    // ── Sovereign V12 Initialization ──────────────────────────────
+    function updateClock() {
+      const options = {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      };
+      const istTime = new Intl.DateTimeFormat('en-IN', options).format(new Date());
+      document.getElementById('clockDisplay').textContent = istTime + ' IST';
     }
-  };
+    setInterval(updateClock, 1000); updateClock();
 
-
-  // ── Certainty Chart ────────────────────────────────────────────
-  const certChart = new Chart(document.getElementById('certChart'), {
-    type: 'bar',
-    data: {
-      labels: ['<60%','60-65%','65-70%','70-75%','75-80%','80-85%','85-90%','>90%'],
-      datasets: [{
-        data: [45, 60, 72, 55, 30, 20, 12, 8],
-        backgroundColor: [
-          '#1e2d3d','#1e2d3d','#1e2d3d','#1e2d3d',
-          'rgba(240,180,41,0.3)','rgba(240,180,41,0.5)',
-          'rgba(240,180,41,0.7)','#f0b429'
-        ],
-        borderRadius: 4, borderWidth: 0
-      }]
-    },
-    options: { ...base, plugins: { ...base.plugins,
-      annotation: { annotations: {
-        line1: { type:'line', x: 4.5, borderColor:'#f0b429', borderWidth:2, borderDash:[4,4] }
-      }}
-    }}
-  });
-
-  const equityChart = new Chart(document.getElementById('equityChart'), {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        label: 'PnL ($)',
-        data: [],
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 0
-      }]
-    },
-    options: {
-      ...base,
+    // ── Chart defaults ─────────────────────────────────────────────
+    const base = {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 600 },
+      plugins: {
+        legend: { display: false }, tooltip: {
+          backgroundColor: '#0d1117', borderColor: '#1e2d3d', borderWidth: 1,
+          titleColor: '#e2e8f0', bodyColor: '#94a3b8', padding: 10
+        }
+      },
       scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 9 } } },
-        y: { grid: { color: 'rgba(30,45,61,0.5)' }, ticks: { font: { size: 10 } } }
+        x: { grid: { color: '#1e2d3d' }, ticks: { color: '#64748b', font: { size: 10 } } },
+        y: { grid: { color: '#1e2d3d' }, ticks: { color: '#64748b', font: { size: 10 } } }
       }
-    }
-  });
-
-  // ── Parse log file via /api/stats ──────────────────────────────
-  async function refresh() {
-    try {
-      const r = await fetch('/api/stats'); const d = await r.json();
-
-      if (d.epochs && d.epochs.length > 0) {
-        const epochs = d.epochs;
-        const latest = epochs[epochs.length - 1];
-
-        // KPIs
-        const totalEp = d.total_epochs || 300;
-        document.getElementById('kpiEpoch').textContent = latest.epoch;
-        document.getElementById('kpiStepNum').textContent = latest.epoch;
-        document.getElementById('kpiTotalSteps').textContent = totalEp;
-        document.getElementById('epochBar').style.width = (latest.epoch / totalEp * 100).toFixed(1) + '%';
-        document.getElementById('kpiAcc').textContent   = (latest.val_acc * 100).toFixed(2) + '%';
-        document.getElementById('kpiLoss').textContent  = latest.val_loss.toFixed(4);
-        document.getElementById('kpiCert').textContent  = latest.certainty.toFixed(1);
-
-        // Best loss ignoring 0.0 (unrecorded epochs)
-        const validLosses = epochs.map(e => e.val_loss).filter(l => l > 0);
-        const bestLoss = validLosses.length > 0 ? Math.min(...validLosses) : 0;
-        document.getElementById('kpiBestLoss').textContent = bestLoss.toFixed(4);
+    };
 
 
-        // ... Epoch table ...
-        const tbody = document.getElementById('epochTableBody');
-        const rows = [...epochs].reverse().slice(0, 10);
-        tbody.innerHTML = rows.map(e => {
-          let status;
-          if (e.val_acc >= 0.54) {
-            status = '<span style="color:var(--gold)">🏛️ SOVEREIGN PRIME</span>';
-          } else if (e.val_acc >= 0.53) {
-            status = '<span style="color:var(--green)">⚡ ALPHA FLOW</span>';
-          } else if (e.val_acc > 0) {
-            status = '<span style="color:var(--cyan)">⚓ LEARNING PHYSICS</span>';
-          } else {
-            status = '<span style="color:var(--muted)">🧬 SEQUENCING...</span>';
+    // ── Certainty Chart ────────────────────────────────────────────
+    const certChart = new Chart(document.getElementById('certChart'), {
+      type: 'bar',
+      data: {
+        labels: ['<60%', '60-65%', '65-70%', '70-75%', '75-80%', '80-85%', '85-90%', '>90%'],
+        datasets: [{
+          data: [45, 60, 72, 55, 30, 20, 12, 8],
+          backgroundColor: [
+            '#1e2d3d', '#1e2d3d', '#1e2d3d', '#1e2d3d',
+            'rgba(240,180,41,0.3)', 'rgba(240,180,41,0.5)',
+            'rgba(240,180,41,0.7)', '#f0b429'
+          ],
+          borderRadius: 4, borderWidth: 0
+        }]
+      },
+      options: {
+        ...base, plugins: {
+          ...base.plugins,
+          annotation: {
+            annotations: {
+              line1: { type: 'line', x: 4.5, borderColor: '#f0b429', borderWidth: 2, borderDash: [4, 4] }
+            }
           }
-          
-          return `<tr>
+        }
+      }
+    });
+
+    const equityChart = new Chart(document.getElementById('equityChart'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'PnL ($)',
+          data: [],
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0
+        }]
+      },
+      options: {
+        ...base,
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 9 } } },
+          y: { grid: { color: 'rgba(30,45,61,0.5)' }, ticks: { font: { size: 10 } } }
+        }
+      }
+    });
+
+    // ── Parse log file via /api/stats ──────────────────────────────
+    async function refresh() {
+      try {
+        const r = await fetch('/api/stats'); const d = await r.json();
+        const totalEp = d.total_epochs || 300;
+
+        // ── Live KPIs (Always updated) ──
+        const latest = (d.epochs && d.epochs.length > 0) ? d.epochs[d.epochs.length - 1] : {};
+
+        if (document.getElementById('kpiEpoch')) document.getElementById('kpiEpoch').textContent = d.current_epoch || 0;
+        if (document.getElementById('kpiTotalSteps')) document.getElementById('kpiTotalSteps').textContent = totalEp;
+        if (document.getElementById('epochBar')) document.getElementById('epochBar').style.width = ((d.current_epoch || 0) / totalEp * 100).toFixed(1) + '%';
+
+        if (document.getElementById('kpiAcc')) document.getElementById('kpiAcc').textContent = ((latest.val_acc || d.val_acc || 0) * 100).toFixed(2) + '%';
+        if (document.getElementById('kpiLoss')) document.getElementById('kpiLoss').textContent = (latest.val_loss || d.val_loss || 0).toFixed(4);
+        if (document.getElementById('kpiCert')) document.getElementById('kpiCert').textContent = (latest.certainty || d.certainty || 0.5).toFixed(1);
+
+        // Best loss calculation
+        const validLosses = (d.epochs || []).map(e => e.val_loss).filter(l => l > 0);
+        const bestLoss = validLosses.length > 0 ? Math.min(...validLosses) : (latest.val_loss || d.val_loss || 0);
+        if (document.getElementById('kpiBestLoss')) document.getElementById('kpiBestLoss').textContent = (bestLoss || 0).toFixed(4);
+
+        // Live Step Counter in Header
+        if (document.getElementById('stepCounter')) {
+          document.getElementById('stepCounter').textContent = `⚡ Step ${d.current_step || 0} / ${d.total_steps || 7578}`;
+        }
+
+        // ── Completed Epoch Table ──
+        if (d.epochs && d.epochs.length > 0) {
+          const epochs = d.epochs;
+
+
+
+
+
+          // ... Epoch table ...
+          const tbody = document.getElementById('epochTableBody');
+          const rows = [...epochs].reverse().slice(0, 10);
+          tbody.innerHTML = rows.map(e => {
+            let status;
+            if (e.val_acc >= 0.54) {
+              status = '<span style="color:var(--gold)">🏛️ SOVEREIGN PRIME</span>';
+            } else if (e.val_acc >= 0.53) {
+              status = '<span style="color:var(--green)">⚡ ALPHA FLOW</span>';
+            } else if (e.val_acc > 0) {
+              status = '<span style="color:var(--cyan)">⚓ LEARNING PHYSICS</span>';
+            } else {
+              status = '<span style="color:var(--muted)">🧬 SEQUENCING...</span>';
+            }
+
+            return `<tr>
             <td style="color:var(--gold)">#${e.epoch}</td>
-            <td style="color:var(--cyan)">${e.val_acc > 0 ? (e.val_acc*100).toFixed(2) + '%' : '---'}</td>
+            <td style="color:var(--cyan)">${e.val_acc > 0 ? (e.val_acc * 100).toFixed(2) + '%' : '---'}</td>
             <td>${e.val_loss > 0 ? e.val_loss.toFixed(4) : '---'}</td>
             <td style="color:var(--purple)">${e.certainty > 0 ? e.certainty.toFixed(2) : '---'}</td>
             <td>${status}</td>
           </tr>`;
-        }).join('');
-      }
+          }).join('');
+        }
 
-      // ROI data
-      if (d.roi) {
-        const roi = d.roi;
-        if (roi.expert_fight) {
+        // ROI data
+        if (d.roi) {
+          const roi = d.roi;
+          if (roi.expert_fight) {
             certChart.data.datasets[0].data = roi.expert_fight;
             certChart.update();
+          }
         }
-      }
 
-      // Recent Strike Feed
-      const tBody = document.getElementById('strikeTableBody');
-      if (tBody) {
-        if (!window.knownTradeKeys) window.knownTradeKeys = new Set();
+        // Recent Strike Feed
+        const tBody = document.getElementById('strikeTableBody');
+        if (tBody) {
+          if (!window.knownTradeKeys) window.knownTradeKeys = new Set();
 
-        if (d.trades && d.trades.length > 0) {
+          if (d.trades && d.trades.length > 0) {
             const trades = d.trades; // newest first
             const sorted = trades; // already oldest first from API
-            
+
             // ── Equity Chart Calibration (V11.2 Sovereign) ──
             const initialW = d.config ? (d.config.initial_wallet || 200.0) : 200.0;
             const pnlData = [initialW];
-            const labels  = ["Start"];
+            const labels = ["Start"];
 
-            sorted.forEach(t => {
-                pnlData.push(t.wallet_snapshot);
-                labels.push(t.timestamp);
+            sorted.forEach((t, idx) => {
+              // wallet_snapshot: use API field if present, else compound from net_pct
+              const posSize = d.config ? (d.config.initial_wallet || 200) : 200;
+              const prev = pnlData[pnlData.length - 1];
+              const snap = (t.wallet_snapshot != null)
+                ? t.wallet_snapshot
+                : prev * (1 + (t.net_pct || 0) / 100);
+              pnlData.push(snap);
+              labels.push(t.timestamp ? t.timestamp.slice(11, 16) : `T${idx}`);
             });
 
             const finalW = pnlData[pnlData.length - 1];
@@ -803,17 +1455,17 @@
             equityChart.data.datasets[0].data = pnlData;
             equityChart.data.datasets[0].borderColor = finalW >= initialW ? '#10b981' : '#ef4444';
             equityChart.data.datasets[0].backgroundColor = finalW >= initialW ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
-            
+
             // Update Equity Title
             document.getElementById('equityTitle').textContent = `📈 Equity Growth — Simulated $${initialW} Account`;
-            
+
             // Dynamic Strike Markers
             equityChart.data.datasets[0].pointRadius = 4;
             equityChart.data.datasets[0].pointHoverRadius = 6;
             equityChart.data.datasets[0].pointBackgroundColor = sorted.map(t => t.side === 'LONG' ? '#10b981' : '#ef4444');
             equityChart.data.datasets[0].pointBorderColor = '#0d1117';
             equityChart.data.datasets[0].pointBorderWidth = 1;
-            
+
             equityChart.update();
 
             tBody.innerHTML = d.trades.map(t => {
@@ -822,11 +1474,13 @@
               const tradeKey = `${t.timestamp}-${t.entry}-${t.side}`;
               const isNew = !window.knownTradeKeys.has(tradeKey);
               if (isNew) window.knownTradeKeys.add(tradeKey);
-              
-              const pnl = t.pnl_usd || 0;
+
+              // pnl_usd: use API field if present, else estimate from net_pct × position size
+              const _posSize = d.config ? (d.config.initial_wallet || 200) : 200;
+              const pnl = (t.pnl_usd != null) ? t.pnl_usd : (_posSize * (t.net_pct || 0) / 100);
               const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
               const pnlPrefix = pnl >= 0 ? '+' : '-';
-              
+
               return `<tr class="${isNew ? 'strike-entry' : ''}">
                 <td style="color:var(--muted); font-size:0.65rem;">${t.timestamp}</td>
                 <td style="display:flex; align-items:center; gap:0.4rem;">
@@ -839,11 +1493,11 @@
                 <td style="color:${color}; font-weight:700; font-size:0.9rem;">${t.net_pct >= 0 ? '+' : ''}${t.net_pct.toFixed(2)}%</td>
               </tr>`;
             }).join('');
-             
-             // Auto-scroll to bottom for latest trades
-             const container = document.getElementById('strikeFeedContainer');
-             if (container) container.scrollTop = container.scrollHeight;
-        } else {
+
+            // Auto-scroll to bottom for latest trades
+            const container = document.getElementById('strikeFeedContainer');
+            if (container) container.scrollTop = container.scrollHeight;
+          } else {
             tBody.innerHTML = `
               <tr>
                 <td colspan="6" style="padding:4rem 1rem; text-align:center;">
@@ -856,163 +1510,143 @@
                 </td>
               </tr>
             `;
+          }
         }
-      }
 
-      // PnL Counter & Metrics
-      const pnlEl = document.getElementById('highConfProfit');
-      const portfolioEl = document.getElementById('totalPortfolio');
-      const initialEl = document.getElementById('initialCapital');
-      if (pnlEl && portfolioEl && initialEl) {
-        const initCap = d.config.initial_wallet || 200;
-        const currentPnl = d.net_profit || 0;
-        const totalW = initCap + currentPnl;
-        
-        const sign = currentPnl >= 0 ? '+' : '-';
-        pnlEl.textContent = `${sign}$${Math.abs(currentPnl).toFixed(2)}`;
-        pnlEl.style.color = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
-        
-        initialEl.textContent = `$${initCap.toFixed(2)}`;
-        portfolioEl.textContent = `$${totalW.toFixed(2)}`;
-        portfolioEl.style.color = totalW >= initCap ? 'var(--green)' : 'var(--red)';
-        
-        // Progress Fill
-        const progress = document.getElementById('pnlProgress');
-        if (progress) {
-            const pnlPct = Math.min(Math.max((currentPnl / (initCap * 0.1)) * 100, 0), 100); 
+        // PnL Counter & Metrics
+        const pnlEl = document.getElementById('highConfProfit');
+        const portfolioEl = document.getElementById('totalPortfolio');
+        const initialEl = document.getElementById('initialCapital');
+        if (pnlEl && portfolioEl && initialEl) {
+          const initCap = d.config.initial_wallet || 200;
+          const currentPnl = d.net_profit || 0;
+          const totalW = initCap + currentPnl;
+
+          const sign = currentPnl >= 0 ? '+' : '-';
+          pnlEl.textContent = `${sign}$${Math.abs(currentPnl).toFixed(2)}`;
+          pnlEl.style.color = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+          initialEl.textContent = `$${initCap.toFixed(2)}`;
+          portfolioEl.textContent = `$${totalW.toFixed(2)}`;
+          portfolioEl.style.color = totalW >= initCap ? 'var(--green)' : 'var(--red)';
+
+          // Progress Fill
+          const progress = document.getElementById('pnlProgress');
+          if (progress) {
+            const pnlPct = Math.min(Math.max((currentPnl / (initCap * 0.1)) * 100, 0), 100);
             progress.style.width = pnlPct + '%';
             progress.style.background = currentPnl >= 0 ? 'var(--green)' : 'var(--red)';
+          }
         }
-      }
 
-      // ── ELITE AUGMENTATIONS ──
-      
-      // 1. Fee Burn Meter
-      if (document.getElementById('totalFeesPaid')) {
-          const feeRate = 0.001; // 0.1% as per config
-          const posSize = 200; 
+        // ── ELITE AUGMENTATIONS ──
+
+        // 1. Fee Burn Meter — use fee_rate from API config (synced with sovereign_config.py)
+        if (document.getElementById('totalFeesPaid')) {
+          const feeRate = (d.config && d.config.fee_rate) ? d.config.fee_rate : 0.0012;
+          const posSize = (d.config && d.config.initial_wallet) ? d.config.initial_wallet : 200;
           const nTrades = d.trades ? d.trades.length : 0;
           const totalFees = nTrades * (posSize * feeRate);
           document.getElementById('totalFeesPaid').textContent = `-$${totalFees.toFixed(2)}`;
-      }
+        }
 
-      // 2. Strategist Hall of Fame
-      if (document.getElementById('hallOfFameList') && d.trades) {
+        // 2. Strategist Hall of Fame
+        if (document.getElementById('hallOfFameList') && d.trades) {
           const experts = {};
           d.trades.forEach(t => {
-              if (!experts[t.expert]) experts[t.expert] = { name: t.expert, pnl: 0, win: 0, count: 0, avatar: t.avatar };
-              experts[t.expert].pnl += (t.net_pct || 0);
-              if (t.net_pct > 0) experts[t.expert].win++;
-              experts[t.expert].count++;
+            if (!experts[t.expert]) experts[t.expert] = { name: t.expert, pnl: 0, win: 0, count: 0, avatar: t.avatar };
+            experts[t.expert].pnl += (t.net_pct || 0);
+            if (t.net_pct > 0) experts[t.expert].win++;
+            experts[t.expert].count++;
           });
-          const top3 = Object.values(experts).sort((a,b) => b.pnl - a.pnl).slice(0, 3);
+          const top3 = Object.values(experts).sort((a, b) => b.pnl - a.pnl).slice(0, 3);
           const hofHtml = top3.map((e, i) => `
-            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.03); padding:0.6rem; border-radius:6px; border-left: 3px solid ${i==0?'var(--gold)':'var(--border)'}">
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.03); padding:0.6rem; border-radius:6px; border-left: 3px solid ${i == 0 ? 'var(--gold)' : 'var(--border)'}">
                 <div style="display:flex; align-items:center; gap:0.6rem;">
                     <span style="font-size:1.2rem">${e.avatar}</span>
                     <div>
                         <div style="font-size:0.75rem; font-weight:700; color:var(--text)">${e.name}</div>
-                        <div style="font-size:0.6rem; color:var(--muted)">${e.count} STRIKES | ${(e.win/e.count*100).toFixed(0)}% WIN</div>
+                        <div style="font-size:0.6rem; color:var(--muted)">${e.count} STRIKES | ${(e.win / e.count * 100).toFixed(0)}% WIN</div>
                     </div>
                 </div>
-                <div style="font-family:'JetBrains Mono'; font-weight:800; font-size:0.8rem; color:${e.pnl>=0?'var(--green)':'var(--red)'}">${e.pnl>=0?'+':''}${e.pnl.toFixed(2)}%</div>
+                <div style="font-family:'JetBrains Mono'; font-weight:800; font-size:0.8rem; color:${e.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${e.pnl >= 0 ? '+' : ''}${e.pnl.toFixed(2)}%</div>
             </div>
           `).join('');
           if (hofHtml) document.getElementById('hallOfFameList').innerHTML = hofHtml;
-      }
+        }
 
-      // 3. Ticker Jitter (Simulated Market Context)
-      if (d.trades && d.trades.length > 0) {
-          const lastPrice = d.trades[d.trades.length-1].entry;
+        // 3. Ticker Jitter (Simulated Market Context)
+        if (d.trades && d.trades.length > 0) {
+          const lastPrice = d.trades[d.trades.length - 1].entry;
           const jitter = () => (Math.random() - 0.5) * 10;
-          if (document.getElementById('tickerBTC')) document.getElementById('tickerBTC').textContent = `$${(lastPrice + jitter()).toLocaleString(undefined, {minimumFractionDigits:1})}`;
-          if (document.getElementById('tickerETH')) document.getElementById('tickerETH').textContent = `$${(2450 + jitter()/2).toLocaleString(undefined, {minimumFractionDigits:1})}`;
-          if (document.getElementById('tickerSOL')) document.getElementById('tickerSOL').textContent = `$${(145 + jitter()/10).toLocaleString(undefined, {minimumFractionDigits:1})}`;
-      }
+          if (document.getElementById('tickerBTC')) document.getElementById('tickerBTC').textContent = `$${(lastPrice + jitter()).toLocaleString(undefined, { minimumFractionDigits: 1 })}`;
+          if (document.getElementById('tickerETH')) document.getElementById('tickerETH').textContent = `$${(2450 + jitter() / 2).toLocaleString(undefined, { minimumFractionDigits: 1 })}`;
+          if (document.getElementById('tickerSOL')) document.getElementById('tickerSOL').textContent = `$${(145 + jitter() / 10).toLocaleString(undefined, { minimumFractionDigits: 1 })}`;
+        }
 
-      // 4. Epoch Countdown (ETR)
-      if (document.getElementById('currentEpoch')) {
-          const epValue = document.getElementById('currentEpoch').textContent;
-          if (!window.lastEpTime) window.lastEpTime = Date.now();
-          if (!window.lastEpVal) window.lastEpVal = epValue;
-          
-          if (epValue !== window.lastEpVal) {
-              window.lastEpTime = Date.now();
-              window.lastEpVal = epValue;
-          }
-          
-          const elapsed = (Date.now() - window.lastEpTime) / 1000;
-          const totalEst = 300; // Estimated seconds per epoch
-          const remaining = Math.max(0, totalEst - elapsed);
-          const mins = Math.floor(remaining / 60);
-          const secs = Math.floor(remaining % 60);
-          
-          const epLabel = document.querySelector('.kpi-card .kpi-label'); // Find epoch card
-          if (epLabel && epLabel.textContent === "EPOCH") {
-              const kpiCard = epLabel.parentElement;
-              let etr = kpiCard.querySelector('.etr-timer');
-              if (!etr) {
-                  etr = document.createElement('div');
-                  etr.className = 'etr-timer';
-                  etr.style = "font-size:0.6rem; color:var(--gold); margin-top:0.3rem; font-family:'JetBrains Mono'";
-                  kpiCard.appendChild(etr);
-              }
-              etr.textContent = `ETR: ${mins}m ${secs}s`;
-          }
-      }
+        // 4. Epoch Countdown (ETR)
+        if (document.getElementById('kpiEpoch')) {
+          const epValue = document.getElementById('kpiEpoch').textContent;
+          // Old ETR block removed — etrDisplay is now updated in the
+          // new step-counter block below (uses avg_epoch_secs from API).
+        }
 
-      // 5. Restoration of Foundation Metrics
-      if (document.getElementById('totalStrikes')) document.getElementById('totalStrikes').textContent = (d.trades ? d.trades.length : 0);
-      if (document.getElementById('winRate') && d.risk) document.getElementById('winRate').textContent = d.risk.win_rate.toFixed(1) + '%';
-      if (document.getElementById('sharpeRatio') && d.risk) document.getElementById('sharpeRatio').textContent = d.risk.sharpe.toFixed(2);
-      if (document.getElementById('profitFactor') && d.risk) document.getElementById('profitFactor').textContent = d.risk.profit_factor.toFixed(2);
-      if (document.getElementById('maxDrawdown') && d.risk) document.getElementById('maxDrawdown').textContent = (d.risk.max_dd * 100).toFixed(2) + '%';
+        // 5. Restoration of Foundation Metrics
+        if (document.getElementById('totalStrikes')) document.getElementById('totalStrikes').textContent = (d.trades ? d.trades.length : 0);
+        if (document.getElementById('winRate') && d.risk) document.getElementById('winRate').textContent = d.risk.win_rate.toFixed(1) + '%';
+        if (document.getElementById('sharpeRatio') && d.risk) document.getElementById('sharpeRatio').textContent = d.risk.sharpe.toFixed(2);
+        if (document.getElementById('profitFactor') && d.risk) document.getElementById('profitFactor').textContent = d.risk.profit_factor.toFixed(2);
+        if (document.getElementById('maxDrawdown') && d.risk) document.getElementById('maxDrawdown').textContent = (d.risk.max_dd * 100).toFixed(2) + '%';
 
-      // Expert Dialogue (Sovereign Dispatcher with TypewriterJS)
-      if (d.dialogue && d.dialogue.length > 0) {
+        // Expert Dialogue (Sovereign Dispatcher with TypewriterJS)
+        if (d.dialogue && d.dialogue.length > 0) {
           const dBox = document.getElementById('expertDialogue');
           if (!window.typedMessages) window.typedMessages = new Set();
           if (!window.dialogueQueue) window.dialogueQueue = [];
-          
+
           d.dialogue.forEach(m => {
-              const mKey = `${m.speaker}:${m.text}:${m.time}`;
-              if (!window.typedMessages.has(mKey)) {
-                  window.typedMessages.add(mKey);
-                  window.dialogueQueue.push(m);
-              }
+            // Use server nonce (m.id) if available, else fallback key
+            const mKey = m.id ? String(m.id) : `${m.speaker}:${m.text.slice(0, 30)}:${m.time}`;
+            if (!window.typedMessages.has(mKey)) {
+              window.typedMessages.add(mKey);
+              window.dialogueQueue.push(m);
+            }
           });
 
           if (!window.isTypingWorkerActive) {
-              const processQueue = async () => {
-                  if (window.dialogueQueue.length === 0) {
-                      window.isTypingWorkerActive = false;
-                      return;
-                  }
-                  
-                  window.isTypingWorkerActive = true;
-                  const m = window.dialogueQueue.shift();
-                  
-                  const div = document.createElement('div');
-                  div.style.marginBottom = '0.9rem';
-                  div.style.lineHeight = '1.5';
-                  div.style.opacity = '0';
-                  div.style.transition = 'opacity 0.4s ease';
-                  div.style.display = 'flex';
-                  div.style.gap = '0.6rem';
-                  div.style.alignItems = 'flex-start';
-                  
-                  let color = 'var(--gold)';
-                  if (m.speaker.includes('Scout')) color = 'var(--red)';
-                  if (m.speaker.includes('Tracker')) color = 'var(--cyan)';
-                  
-                  let highlightedText = m.text;
-                  const nameMap = {'Oracle':'var(--gold)','Sentinel':'var(--gold)','Tracker':'var(--cyan)','Scout':'var(--red)','Hunter':'var(--gold)'};
-                  Object.keys(nameMap).forEach(name => {
-                      const regex = new RegExp(`\\b${name}\\b`, 'g');
-                      highlightedText = highlightedText.replace(regex, `<span style="color:${nameMap[name]};font-weight:700">${name}</span>`);
-                  });
-                  
-                  div.innerHTML = `
+            const processQueue = async () => {
+              if (window._dialoguePaused) {
+                setTimeout(processQueue, 500); return;
+              }
+              if (window.dialogueQueue.length === 0) {
+                window.isTypingWorkerActive = false;
+                return;
+              }
+
+              window.isTypingWorkerActive = true;
+              const m = window.dialogueQueue.shift();
+
+              const div = document.createElement('div');
+              div.style.marginBottom = '0.9rem';
+              div.style.lineHeight = '1.5';
+              div.style.opacity = '0';
+              div.style.transition = 'opacity 0.4s ease';
+              div.style.display = 'flex';
+              div.style.gap = '0.6rem';
+              div.style.alignItems = 'flex-start';
+
+              let color = 'var(--gold)';
+              if (m.speaker.includes('Scout')) color = 'var(--red)';
+              if (m.speaker.includes('Tracker')) color = 'var(--cyan)';
+
+              let highlightedText = m.text;
+              const nameMap = { 'Oracle': 'var(--gold)', 'Sentinel': 'var(--gold)', 'Tracker': 'var(--cyan)', 'Scout': 'var(--red)', 'Hunter': 'var(--gold)' };
+              Object.keys(nameMap).forEach(name => {
+                const regex = new RegExp(`\\b${name}\\b`, 'g');
+                highlightedText = highlightedText.replace(regex, `<span style="color:${nameMap[name]};font-weight:700">${name}</span>`);
+              });
+
+              div.innerHTML = `
                       <span class="expert-avatar" style="font-size:1.2rem; filter: drop-shadow(0 0 5px ${color}44);">${m.avatar || '🤖'}</span>
                       <div style="flex:1">
                           <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.1rem">
@@ -1021,77 +1655,215 @@
                           </div>
                           <span class="type-target" style="font-family:'Inter'; font-size:0.9rem;"></span>
                       </div>`;
-                  
-                  dBox.appendChild(div);
-                  setTimeout(() => div.style.opacity = '1', 50);
-                  
-                  const target = div.querySelector('.type-target');
-                  const avatarEl = div.querySelector('.expert-avatar');
-                  
-                  // Start Talking Animation
-                  avatarEl.classList.add('talking-pulse');
-                  
-                  const typewriter = new Typewriter(target, {
-                      delay: 30,
-                      cursor: '<span class="typing-cursor pulse-cursor"></span>',
-                      autoStart: true
-                  });
 
-                  await new Promise(resolve => {
-                      typewriter
-                        .typeString(highlightedText)
-                        .callFunction(() => {
-                            avatarEl.classList.remove('talking-pulse');
-                            if (dBox.children.length > 60) dBox.removeChild(dBox.firstChild);
-                            resolve();
-                        })
-                        .start();
-                        
-                      const scrollInt = setInterval(() => {
-                          dBox.scrollTo({ top: dBox.scrollHeight, behavior: 'smooth' });
-                          if (!window.isTypingWorkerActive) clearInterval(scrollInt);
-                      }, 100);
-                  });
+              dBox.appendChild(div);
+              setTimeout(() => div.style.opacity = '1', 50);
 
-                  await new Promise(resolve => setTimeout(resolve, 800 + Math.random()*500));
-                  processQueue();
-              };
-              
-              window.isTypingWorkerActive = true;
+              const target = div.querySelector('.type-target');
+              const avatarEl = div.querySelector('.expert-avatar');
+
+              // Start Talking Animation
+              avatarEl.classList.add('talking-pulse');
+
+
+
+              const typewriter = new Typewriter(target, {
+                delay: 30,
+                cursor: '<span class="typing-cursor pulse-cursor"></span>',
+                autoStart: true
+              });
+
+              await new Promise(resolve => {
+                typewriter
+                  .typeString(highlightedText)
+                  .callFunction(() => {
+                    avatarEl.classList.remove('talking-pulse');
+                    if (dBox.children.length > 60) dBox.removeChild(dBox.firstChild);
+                    resolve();
+                  })
+                  .start();
+
+                const scrollInt = setInterval(() => {
+                  dBox.scrollTo({ top: dBox.scrollHeight, behavior: 'smooth' });
+                  if (!window.isTypingWorkerActive) clearInterval(scrollInt);
+                }, 100);
+              });
+
+              await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 500));
               processQueue();
+            };
+
+            window.isTypingWorkerActive = true;
+            processQueue();
           }
-      }
-
-      document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
-
-    } catch(e) {
-      console.warn('Feed offline — server may be loading.', e);
-    }
-  }
-
-  document.getElementById('recapBtn').addEventListener('click', async () => {
-    if (confirm("🚨 Institutional Warning: This will wipe the current simulation P&L and start a fresh $200 mission. Training progress will NOT be lost. Proceed?")) {
-        const r = await fetch('/api/reset_wallet', { method: 'POST' });
-        const d = await r.json();
-        if (d.status === 'success') {
-            alert("💰 Station Recapitalized. The next neural sweep will reflect the fresh slate.");
-            refresh();
         }
-    }
-  });
 
-  setInterval(refresh, 5000);
-  refresh();
+        document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
 
-  // ── Expert Fight Jitter (Visual Polish) ──
-  setInterval(() => {
-    if (certChart.data.datasets[0].data.length > 0) {
-        certChart.data.datasets[0].data = certChart.data.datasets[0].data.map(v => 
-            Math.max(0, v + (Math.random() * 0.5 - 0.25))
-        );
-        certChart.update('none');
+        // ── STRATEGIST BIOMETRICS UPDATE (3 COLUMN GRID) ──
+        if (document.getElementById('biometricList') && d.trades) {
+          const experts = {};
+          d.trades.forEach(t => {
+            if (!experts[t.expert]) experts[t.expert] = { name: t.expert, pnl: 0, win: 0, count: 0, avatar: t.avatar };
+            experts[t.expert].pnl += (t.net_pct || 0);
+            if (t.net_pct > 0) experts[t.expert].win++;
+            experts[t.expert].count++;
+          });
+          const top3 = Object.values(experts).sort((a, b) => b.pnl - a.pnl).slice(0, 3);
+          const bioHtml = top3.map((e, i) => `
+            <div style="background:rgba(255,255,255,0.03); padding:0.8rem 1.2rem; border-radius:12px; border-left:4px solid ${i == 0 ? 'var(--gold)' : 'var(--border)'}; border-bottom: 1px solid rgba(255,255,255,0.05)">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem">
+                    <div style="display:flex; align-items:center; gap:0.5rem">
+                        <span style="font-size:1.2rem">${e.avatar}</span>
+                        <span style="font-size:0.85rem; font-weight:800; color:var(--text)">${e.name.split(' [')[0]}</span>
+                    </div>
+                    <span style="font-size:0.6rem; color:var(--muted); font-family:'JetBrains Mono'">NEURAL-PULSE: <span style="color:var(--green)">${(65 + Math.random() * 25).toFixed(0)} BPM</span></span>
+                </div>
+                <div style="height:25px; display:flex; align-items:flex-end; gap:3px">
+                    ${Array.from({ length: 30 }).map(() => `<div style="flex:1; background:linear-gradient(to top, var(--green), transparent); opacity:${0.1 + Math.random() * 0.9}; height:${10 + Math.random() * 90}%"></div>`).join('')}
+                </div>
+            </div>
+          `).join('');
+          document.getElementById('biometricList').innerHTML = bioHtml || '<div style="color:var(--muted); grid-column: span 3; font-size:0.7rem; text-align:center; padding:2rem">Awaiting biometric neural uplink...</div>';
+        }
+
+        // ── Step Counter in header ──
+
+        if (d.current_step !== undefined) {
+          const cs = d.current_step || 0;
+          const ts = d.total_steps || 7578;
+          document.getElementById('stepCounter').textContent = `⚡ Step ${cs.toLocaleString()} / ${ts.toLocaleString()}`;
+          const sb = document.getElementById('stepBar');
+          if (sb) sb.style.width = (ts > 0 ? (cs / ts * 100).toFixed(1) : 0) + '%';
+        }
+
+        // ── Real ETR from avg_epoch_secs ──
+        const etrEl = document.getElementById('etrDisplay');
+        if (etrEl) {
+          const avgS = d.avg_epoch_secs;
+          if (avgS && avgS > 0) {
+            const remEp = (d.total_epochs || 300) - (d.current_epoch || 0);
+            const remS = avgS * remEp;
+            const days = Math.floor(remS / 86400);
+            const hrs = Math.floor((remS % 86400) / 3600);
+            const mins = Math.floor((remS % 3600) / 60);
+            etrEl.textContent = days > 0 ? `ETR: ~${days}d ${hrs}h` : hrs > 0 ? `ETR: ~${hrs}h ${mins}m` : `ETR: ~${mins}m`;
+            etrEl.style.color = 'var(--gold)';
+          } else {
+            // Fallback: estimate from 34h per epoch
+            const remEp = (d.total_epochs || 300) - (d.current_epoch || 0);
+            const remH = Math.round(remEp * 34);
+            const remD = Math.floor(remH / 24);
+            etrEl.textContent = `ETR: ~${remD}d ${remH % 24}h (est.)`;
+            etrEl.style.color = 'var(--muted)';
+          }
+        }
+
+        // ── Real certainty chart data from ROI tiers ──
+        if (d.roi && d.roi.expert_fight && d.roi.expert_fight.length > 0) {
+          certChart.data.datasets[0].data = d.roi.expert_fight;
+          certChart.update('none');
+        }
+
+      } catch (e) {
+        console.warn('Feed offline — server may be loading.', e);
+      }
     }
-  }, 200);
-</script>
+
+    // ── Health check (training alive) ────────────────────────────────
+    async function checkHealth() {
+      try {
+        const r = await fetch('/api/health');
+        const h = await r.json();
+        const pill = document.getElementById('trainingPill');
+        const dot = document.getElementById('trainingDot');
+        const lbl = document.getElementById('trainingLabel');
+        if (pill && dot && lbl) {
+          if (h.training) {
+            pill.className = 'status-pill training';
+            dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite;';
+            lbl.textContent = 'TRAINING ACTIVE';
+          } else {
+            pill.className = 'status-pill idle';
+            dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--red);';
+            lbl.textContent = 'TRAINING STOPPED';
+          }
+        }
+      } catch (e) { /* silent */ }
+    }
+
+    // ── Live BTC price poll ───────────────────────────────────────────
+    async function updateLivePrice() {
+      try {
+        const r = await fetch('/api/price');
+        const p = await r.json();
+        if (p.price > 0) {
+          const fmt = p.price.toLocaleString(undefined, { minimumFractionDigits: 1 });
+          const src = p.source === 'delta' ? '🇮🇳 Delta' : '⚠ Binance';
+          const btcEl = document.getElementById('tickerBTC');
+          if (btcEl) btcEl.textContent = `$${fmt} [${src}]`;
+          // ETH/SOL simulated jitter (Delta doesn't expose these)
+          const j = () => (Math.random() - 0.5) * 5;
+          const ethEl = document.getElementById('tickerETH');
+          if (ethEl) ethEl.textContent = '$' + (1800 + j() * 10).toLocaleString(undefined, { minimumFractionDigits: 1 });
+          const solEl = document.getElementById('tickerSOL');
+          if (solEl) solEl.textContent = '$' + (145 + j()).toLocaleString(undefined, { minimumFractionDigits: 1 });
+        }
+      } catch (e) { /* silent */ }
+    }
+
+    // ── Dialogue pause/clear controls ────────────────────────────────
+    window._dialoguePaused = false;
+    function toggleDialoguePause() {
+      window._dialoguePaused = !window._dialoguePaused;
+      const btn = document.getElementById('pauseDialogue');
+      if (btn) {
+        btn.textContent = window._dialoguePaused ? '▶ Resume' : '⏸ Pause';
+        btn.classList.toggle('paused', window._dialoguePaused);
+      }
+    }
+    function clearDialogue() {
+      const dBox = document.getElementById('expertDialogue');
+      if (dBox) {
+        // Keep the first static message
+        while (dBox.children.length > 1) dBox.removeChild(dBox.lastChild);
+      }
+      window.typedMessages = new Set();
+      window.dialogueQueue = [];
+      window.isTypingWorkerActive = false;
+    }
+
+    // ── Toast helper ─────────────────────────────────────────────────
+    function showToast(msg, color = 'var(--green)') {
+      const t = document.getElementById('toast');
+      if (!t) return;
+      t.textContent = msg;
+      t.style.borderColor = color;
+      t.style.color = color;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // ── Recapitalize confirm ──────────────────────────────────────────
+    document.getElementById('confirmRecap').addEventListener('click', async () => {
+      document.getElementById('recapModal').classList.remove('open');
+      const r = await fetch('/api/reset_wallet', { method: 'POST' });
+      const d = await r.json();
+      if (d.status === 'success') {
+        showToast('💰 Station Recapitalized! Fresh $200 mission started.');
+        refresh();
+      } else {
+        showToast('❌ Reset failed: ' + d.message, 'var(--red)');
+      }
+    });
+
+    setInterval(refresh, 5000);
+    setInterval(checkHealth, 10000);
+    setInterval(updateLivePrice, 60000);
+    refresh();
+    checkHealth();
+    updateLivePrice();
+  </script>
 </body>
+
 </html>

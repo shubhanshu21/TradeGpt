@@ -156,13 +156,17 @@ class MissionControl(keras.callbacks.Callback):
                         t_stamp = pd.to_datetime(df.index[idx + ctx - 1]).tz_localize(None)
                         if reset_ts and t_stamp < reset_ts: continue
                         
-                        raw_ret = price_move_pct
+                        # Bug Fix #1: Invert P&L for SHORT trades
+                        raw_ret = price_move_pct if side == "LONG" else -price_move_pct
                         net_ret = raw_ret - fee_rate
-                        # V11.7: Deterministic Strategist Assignment
+                        # Bug Fix #2: Deterministic Strategist (seeded by timestamp+entry)
                         prefixes = ["Neon", "Volt", "Cipher", "Ghost", "Logic", "Vector", "Pulse", "Neural", "Cyber", "Quant", "Delta", "Gamma", "Alpha", "Zenith", "Apex", "Flow"]
                         suffixes = ["Hunter", "Scout", "Tracker", "Oracle", "Sentinel", "Core", "Node", "Gate", "Shell", "Link", "Edge", "Vortex", "Matrix", "System", "Prime", "Zero"]
-                        import random
-                        expert = f"{random.choice(prefixes)}-{random.choice(suffixes)} #{random.randint(0, 255):03d}"
+                        import random, hashlib
+                        _seed_str = f"{df.index[idx + ctx - 1].isoformat()}{entry_p}"
+                        _seed = int(hashlib.md5(_seed_str.encode()).hexdigest(), 16)
+                        _rng = random.Random(_seed)
+                        expert = f"{_rng.choice(prefixes)}-{_rng.choice(suffixes)} #{_rng.randint(0, 255):03d}"
 
                         recent_trades.append({
                             "timestamp": df.index[idx + ctx - 1].isoformat(),
@@ -312,7 +316,7 @@ def train_kraken(args):
             str(CKPT_DIR / "hydra_checkpoint_E{epoch:03d}.keras"),
             save_freq="epoch", verbose=0),  # Save every epoch for resume support
         keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=7,  # 7 epochs * 12.5h = ~3.6 days max wait
+            monitor="val_loss", patience=20,  # 20 epochs * ~34h = ~28 days — safe for CPU
             restore_best_weights=True, verbose=1),
         CheckpointPruner(ckpt_dir=CKPT_DIR, keep_n=3),
         mc,

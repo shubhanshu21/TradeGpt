@@ -19,10 +19,13 @@ def visualize_performance(model_path: str, timeframe: str = "15m"):
     
     ctx = 120
     forecast = 15
-    n_feat = 42
-    
-    # 1. Build and Load
-    print(f"🏗️  Re-building Iron Oracle V11.0 (Phase 5)...")
+    features = build_feature_cols()
+    n_feat   = len(features)
+    models_dir  = ROOT / "models"
+    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
+    model_path  = model_path if Path(model_path).exists() and "checkpoint" in model_path \
+                  else (str(checkpoints[0]) if checkpoints else model_path)
+    print(f"🏗️  Re-building Iron Oracle V12.0 ({n_feat} features)...")
     model = build_kraken(n_features=n_feat, context_window=ctx, forecast_steps=forecast)
     model.load_weights(model_path)
     
@@ -96,5 +99,8 @@ def visualize_performance(model_path: str, timeframe: str = "15m"):
     print(f"📊 FINAL STATS (Visual): MAE ${avg_err:.2f} | DIR {dir_acc:.1f}%")
 
 if __name__ == "__main__":
-    MODEL_P = str(ROOT / "models/hydra_best.keras")
+    models_dir  = ROOT / "models"
+    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
+    MODEL_P = str(checkpoints[0]) if checkpoints else str(models_dir / "hydra_best.keras")
+    print(f"Using checkpoint: {Path(MODEL_P).name}")
     visualize_performance(MODEL_P)

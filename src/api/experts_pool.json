@@ -1,0 +1,1794 @@
+{
+    "0": {
+        "id": 0,
+        "name": "Zenith-Mean #000",
+        "role": "Mean Reversion Specialist",
+        "personality": "Analytical",
+        "bias": -0.65
+    },
+    "1": {
+        "id": 1,
+        "name": "Volt-Slippage #001",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Mathematical",
+        "bias": -0.94
+    },
+    "2": {
+        "id": 2,
+        "name": "Vortex-Order #002",
+        "role": "Order Flow Analyst",
+        "personality": "Intuitive",
+        "bias": 0.56
+    },
+    "3": {
+        "id": 3,
+        "name": "Apex-Volatility #003",
+        "role": "Volatility Arbitrageur",
+        "personality": "Mathematical",
+        "bias": -0.79
+    },
+    "4": {
+        "id": 4,
+        "name": "Cipher-High-Frequency #004",
+        "role": "High-Frequency Striker",
+        "personality": "Paranoid",
+        "bias": 0.4
+    },
+    "5": {
+        "id": 5,
+        "name": "Neon-Funding #005",
+        "role": "Funding Rate Analyst",
+        "personality": "Cautious",
+        "bias": -0.06
+    },
+    "6": {
+        "id": 6,
+        "name": "Neon-Cross-Exchange #006",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Observational",
+        "bias": -0.54
+    },
+    "7": {
+        "id": 7,
+        "name": "Flow-Certainty #007",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Skeptical",
+        "bias": -0.23
+    },
+    "8": {
+        "id": 8,
+        "name": "Neural-Macro #008",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Confident",
+        "bias": -0.45
+    },
+    "9": {
+        "id": 9,
+        "name": "Vortex-Funding #009",
+        "role": "Funding Rate Analyst",
+        "personality": "Intuitive",
+        "bias": -0.66
+    },
+    "10": {
+        "id": 10,
+        "name": "Cipher-Deep #010",
+        "role": "Deep Feature Interpreter",
+        "personality": "Analytical",
+        "bias": -0.32
+    },
+    "11": {
+        "id": 11,
+        "name": "Flow-High-Frequency #011",
+        "role": "High-Frequency Striker",
+        "personality": "Conservative",
+        "bias": 0.33
+    },
+    "12": {
+        "id": 12,
+        "name": "Beta-Gated #012",
+        "role": "Gated Neural Guardian",
+        "personality": "Skeptical",
+        "bias": 0.6
+    },
+    "13": {
+        "id": 13,
+        "name": "Delta-Funding #013",
+        "role": "Funding Rate Analyst",
+        "personality": "Intuitive",
+        "bias": -0.12
+    },
+    "14": {
+        "id": 14,
+        "name": "Vortex-Funding #014",
+        "role": "Funding Rate Analyst",
+        "personality": "Skeptical",
+        "bias": 0.6
+    },
+    "15": {
+        "id": 15,
+        "name": "Beta-Certainty #015",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Paranoid",
+        "bias": 0.94
+    },
+    "16": {
+        "id": 16,
+        "name": "Neon-Order #016",
+        "role": "Order Flow Analyst",
+        "personality": "Mathematical",
+        "bias": 0.18
+    },
+    "17": {
+        "id": 17,
+        "name": "Volt-Volatility #017",
+        "role": "Volatility Arbitrageur",
+        "personality": "Confident",
+        "bias": 0.53
+    },
+    "18": {
+        "id": 18,
+        "name": "Cipher-Volatility #018",
+        "role": "Volatility Arbitrageur",
+        "personality": "Mathematical",
+        "bias": -1.0
+    },
+    "19": {
+        "id": 19,
+        "name": "Apex-Cross-Exchange #019",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Skeptical",
+        "bias": -0.08
+    },
+    "20": {
+        "id": 20,
+        "name": "Gamma-Slippage #020",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Aggressive",
+        "bias": -0.05
+    },
+    "21": {
+        "id": 21,
+        "name": "Vortex-Macro #021",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Mathematical",
+        "bias": 0.13
+    },
+    "22": {
+        "id": 22,
+        "name": "Flow-Macro #022",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Mathematical",
+        "bias": -0.56
+    },
+    "23": {
+        "id": 23,
+        "name": "Beta-Slippage #023",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Observational",
+        "bias": 0.56
+    },
+    "24": {
+        "id": 24,
+        "name": "Neural-Volatility #024",
+        "role": "Volatility Arbitrageur",
+        "personality": "Aggressive",
+        "bias": 0.83
+    },
+    "25": {
+        "id": 25,
+        "name": "Neon-Gated #025",
+        "role": "Gated Neural Guardian",
+        "personality": "Mathematical",
+        "bias": 0.7
+    },
+    "26": {
+        "id": 26,
+        "name": "Cipher-Execution #026",
+        "role": "Execution Optimization Node",
+        "personality": "Paranoid",
+        "bias": 0.93
+    },
+    "27": {
+        "id": 27,
+        "name": "Beta-Execution #027",
+        "role": "Execution Optimization Node",
+        "personality": "Analytical",
+        "bias": 0.57
+    },
+    "28": {
+        "id": 28,
+        "name": "Apex-Gamma-Exposure #028",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Cautious",
+        "bias": 0.33
+    },
+    "29": {
+        "id": 29,
+        "name": "Flow-Execution #029",
+        "role": "Execution Optimization Node",
+        "personality": "Paranoid",
+        "bias": 0.02
+    },
+    "30": {
+        "id": 30,
+        "name": "Flow-High-Frequency #030",
+        "role": "High-Frequency Striker",
+        "personality": "Skeptical",
+        "bias": -0.05
+    },
+    "31": {
+        "id": 31,
+        "name": "Volt-Slippage #031",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Cautious",
+        "bias": 0.5
+    },
+    "32": {
+        "id": 32,
+        "name": "Delta-Macro #032",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Paranoid",
+        "bias": 0.41
+    },
+    "33": {
+        "id": 33,
+        "name": "Flow-Macro #033",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Confident",
+        "bias": -0.82
+    },
+    "34": {
+        "id": 34,
+        "name": "Apex-Delta-Neutral #034",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Observational",
+        "bias": 0.79
+    },
+    "35": {
+        "id": 35,
+        "name": "Neon-Mean #035",
+        "role": "Mean Reversion Specialist",
+        "personality": "Paranoid",
+        "bias": -0.26
+    },
+    "36": {
+        "id": 36,
+        "name": "Neural-Mean #036",
+        "role": "Mean Reversion Specialist",
+        "personality": "Mathematical",
+        "bias": 0.4
+    },
+    "37": {
+        "id": 37,
+        "name": "Apex-High-Frequency #037",
+        "role": "High-Frequency Striker",
+        "personality": "Conservative",
+        "bias": 0.97
+    },
+    "38": {
+        "id": 38,
+        "name": "Zenith-Mean #038",
+        "role": "Mean Reversion Specialist",
+        "personality": "Intuitive",
+        "bias": -0.18
+    },
+    "39": {
+        "id": 39,
+        "name": "Neon-Cross-Exchange #039",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Conservative",
+        "bias": -0.45
+    },
+    "40": {
+        "id": 40,
+        "name": "Cipher-Liquidity #040",
+        "role": "Liquidity Provisioner",
+        "personality": "Paranoid",
+        "bias": -0.6
+    },
+    "41": {
+        "id": 41,
+        "name": "Neural-Slippage #041",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Aggressive",
+        "bias": 0.1
+    },
+    "42": {
+        "id": 42,
+        "name": "Apex-Gated #042",
+        "role": "Gated Neural Guardian",
+        "personality": "Aggressive",
+        "bias": 0.27
+    },
+    "43": {
+        "id": 43,
+        "name": "Neon-Trend #043",
+        "role": "Trend Reversal Scout",
+        "personality": "Mathematical",
+        "bias": -0.06
+    },
+    "44": {
+        "id": 44,
+        "name": "Apex-Trend #044",
+        "role": "Trend Reversal Scout",
+        "personality": "Analytical",
+        "bias": -0.72
+    },
+    "45": {
+        "id": 45,
+        "name": "Delta-Certainty #045",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Aggressive",
+        "bias": 0.46
+    },
+    "46": {
+        "id": 46,
+        "name": "Cipher-Gamma-Exposure #046",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Conservative",
+        "bias": -0.04
+    },
+    "47": {
+        "id": 47,
+        "name": "Cipher-Liquidity #047",
+        "role": "Liquidity Provisioner",
+        "personality": "Aggressive",
+        "bias": -0.59
+    },
+    "48": {
+        "id": 48,
+        "name": "Delta-Risk #048",
+        "role": "Risk Management Auditor",
+        "personality": "Confident",
+        "bias": -0.79
+    },
+    "49": {
+        "id": 49,
+        "name": "Flow-Mean #049",
+        "role": "Mean Reversion Specialist",
+        "personality": "Aggressive",
+        "bias": 0.75
+    },
+    "50": {
+        "id": 50,
+        "name": "Volt-Execution #050",
+        "role": "Execution Optimization Node",
+        "personality": "Analytical",
+        "bias": 0.5
+    },
+    "51": {
+        "id": 51,
+        "name": "Cipher-Mean #051",
+        "role": "Mean Reversion Specialist",
+        "personality": "Paranoid",
+        "bias": 0.3
+    },
+    "52": {
+        "id": 52,
+        "name": "Apex-High-Frequency #052",
+        "role": "High-Frequency Striker",
+        "personality": "Cautious",
+        "bias": -0.25
+    },
+    "53": {
+        "id": 53,
+        "name": "Flow-Funding #053",
+        "role": "Funding Rate Analyst",
+        "personality": "Aggressive",
+        "bias": -0.81
+    },
+    "54": {
+        "id": 54,
+        "name": "Neural-High-Frequency #054",
+        "role": "High-Frequency Striker",
+        "personality": "Paranoid",
+        "bias": -0.52
+    },
+    "55": {
+        "id": 55,
+        "name": "Neural-Risk #055",
+        "role": "Risk Management Auditor",
+        "personality": "Confident",
+        "bias": -0.49
+    },
+    "56": {
+        "id": 56,
+        "name": "Volt-Gated #056",
+        "role": "Gated Neural Guardian",
+        "personality": "Analytical",
+        "bias": 0.04
+    },
+    "57": {
+        "id": 57,
+        "name": "Neon-Certainty #057",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Intuitive",
+        "bias": 0.1
+    },
+    "58": {
+        "id": 58,
+        "name": "Vortex-Order #058",
+        "role": "Order Flow Analyst",
+        "personality": "Mathematical",
+        "bias": 0.26
+    },
+    "59": {
+        "id": 59,
+        "name": "Alpha-Mean #059",
+        "role": "Mean Reversion Specialist",
+        "personality": "Skeptical",
+        "bias": -0.47
+    },
+    "60": {
+        "id": 60,
+        "name": "Vortex-Momentum #060",
+        "role": "Momentum Scalper",
+        "personality": "Cautious",
+        "bias": 0.78
+    },
+    "61": {
+        "id": 61,
+        "name": "Vortex-Momentum #061",
+        "role": "Momentum Scalper",
+        "personality": "Intuitive",
+        "bias": -0.43
+    },
+    "62": {
+        "id": 62,
+        "name": "Zenith-Risk #062",
+        "role": "Risk Management Auditor",
+        "personality": "Aggressive",
+        "bias": 0.04
+    },
+    "63": {
+        "id": 63,
+        "name": "Neural-Gamma-Exposure #063",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Paranoid",
+        "bias": 0.96
+    },
+    "64": {
+        "id": 64,
+        "name": "Vortex-High-Frequency #064",
+        "role": "High-Frequency Striker",
+        "personality": "Mathematical",
+        "bias": 0.8
+    },
+    "65": {
+        "id": 65,
+        "name": "Cipher-Momentum #065",
+        "role": "Momentum Scalper",
+        "personality": "Cautious",
+        "bias": -0.27
+    },
+    "66": {
+        "id": 66,
+        "name": "Zenith-Trend #066",
+        "role": "Trend Reversal Scout",
+        "personality": "Aggressive",
+        "bias": 0.56
+    },
+    "67": {
+        "id": 67,
+        "name": "Apex-Cross-Exchange #067",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Mathematical",
+        "bias": -0.04
+    },
+    "68": {
+        "id": 68,
+        "name": "Cipher-Execution #068",
+        "role": "Execution Optimization Node",
+        "personality": "Analytical",
+        "bias": 0.47
+    },
+    "69": {
+        "id": 69,
+        "name": "Apex-Funding #069",
+        "role": "Funding Rate Analyst",
+        "personality": "Cautious",
+        "bias": -0.77
+    },
+    "70": {
+        "id": 70,
+        "name": "Neural-Gated #070",
+        "role": "Gated Neural Guardian",
+        "personality": "Analytical",
+        "bias": -0.05
+    },
+    "71": {
+        "id": 71,
+        "name": "Delta-Volatility #071",
+        "role": "Volatility Arbitrageur",
+        "personality": "Cautious",
+        "bias": 0.58
+    },
+    "72": {
+        "id": 72,
+        "name": "Cipher-Execution #072",
+        "role": "Execution Optimization Node",
+        "personality": "Paranoid",
+        "bias": 0.03
+    },
+    "73": {
+        "id": 73,
+        "name": "Vortex-Trend #073",
+        "role": "Trend Reversal Scout",
+        "personality": "Observational",
+        "bias": -0.64
+    },
+    "74": {
+        "id": 74,
+        "name": "Neon-Macro #074",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Intuitive",
+        "bias": -0.97
+    },
+    "75": {
+        "id": 75,
+        "name": "Volt-Momentum #075",
+        "role": "Momentum Scalper",
+        "personality": "Analytical",
+        "bias": 0.22
+    },
+    "76": {
+        "id": 76,
+        "name": "Alpha-Order #076",
+        "role": "Order Flow Analyst",
+        "personality": "Confident",
+        "bias": -0.4
+    },
+    "77": {
+        "id": 77,
+        "name": "Neural-High-Frequency #077",
+        "role": "High-Frequency Striker",
+        "personality": "Cautious",
+        "bias": -0.05
+    },
+    "78": {
+        "id": 78,
+        "name": "Cipher-Delta-Neutral #078",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Aggressive",
+        "bias": -0.79
+    },
+    "79": {
+        "id": 79,
+        "name": "Vortex-Macro #079",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Observational",
+        "bias": 0.63
+    },
+    "80": {
+        "id": 80,
+        "name": "Neon-Delta-Neutral #080",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Cautious",
+        "bias": -0.39
+    },
+    "81": {
+        "id": 81,
+        "name": "Volt-Order #081",
+        "role": "Order Flow Analyst",
+        "personality": "Paranoid",
+        "bias": 0.74
+    },
+    "82": {
+        "id": 82,
+        "name": "Alpha-Momentum #082",
+        "role": "Momentum Scalper",
+        "personality": "Analytical",
+        "bias": 0.7
+    },
+    "83": {
+        "id": 83,
+        "name": "Volt-Order #083",
+        "role": "Order Flow Analyst",
+        "personality": "Skeptical",
+        "bias": -0.37
+    },
+    "84": {
+        "id": 84,
+        "name": "Cipher-Macro #084",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Confident",
+        "bias": -0.25
+    },
+    "85": {
+        "id": 85,
+        "name": "Volt-Funding #085",
+        "role": "Funding Rate Analyst",
+        "personality": "Observational",
+        "bias": -0.22
+    },
+    "86": {
+        "id": 86,
+        "name": "Neon-Risk #086",
+        "role": "Risk Management Auditor",
+        "personality": "Skeptical",
+        "bias": 0.81
+    },
+    "87": {
+        "id": 87,
+        "name": "Flow-Gamma-Exposure #087",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Observational",
+        "bias": -0.88
+    },
+    "88": {
+        "id": 88,
+        "name": "Delta-Order #088",
+        "role": "Order Flow Analyst",
+        "personality": "Paranoid",
+        "bias": -0.92
+    },
+    "89": {
+        "id": 89,
+        "name": "Delta-Order #089",
+        "role": "Order Flow Analyst",
+        "personality": "Cautious",
+        "bias": 0.86
+    },
+    "90": {
+        "id": 90,
+        "name": "Apex-Cross-Exchange #090",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Cautious",
+        "bias": 0.7
+    },
+    "91": {
+        "id": 91,
+        "name": "Neural-Order #091",
+        "role": "Order Flow Analyst",
+        "personality": "Mathematical",
+        "bias": -0.14
+    },
+    "92": {
+        "id": 92,
+        "name": "Flow-Order #092",
+        "role": "Order Flow Analyst",
+        "personality": "Intuitive",
+        "bias": 0.16
+    },
+    "93": {
+        "id": 93,
+        "name": "Gamma-Macro #093",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Confident",
+        "bias": 0.59
+    },
+    "94": {
+        "id": 94,
+        "name": "Alpha-High-Frequency #094",
+        "role": "High-Frequency Striker",
+        "personality": "Paranoid",
+        "bias": 0.46
+    },
+    "95": {
+        "id": 95,
+        "name": "Cipher-Risk #095",
+        "role": "Risk Management Auditor",
+        "personality": "Confident",
+        "bias": 0.15
+    },
+    "96": {
+        "id": 96,
+        "name": "Alpha-Order #096",
+        "role": "Order Flow Analyst",
+        "personality": "Confident",
+        "bias": 0.01
+    },
+    "97": {
+        "id": 97,
+        "name": "Gamma-Execution #097",
+        "role": "Execution Optimization Node",
+        "personality": "Intuitive",
+        "bias": 0.62
+    },
+    "98": {
+        "id": 98,
+        "name": "Apex-Delta-Neutral #098",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Cautious",
+        "bias": -0.31
+    },
+    "99": {
+        "id": 99,
+        "name": "Apex-Slippage #099",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Analytical",
+        "bias": -0.09
+    },
+    "100": {
+        "id": 100,
+        "name": "Vortex-Volatility #100",
+        "role": "Volatility Arbitrageur",
+        "personality": "Paranoid",
+        "bias": 0.27
+    },
+    "101": {
+        "id": 101,
+        "name": "Neon-High-Frequency #101",
+        "role": "High-Frequency Striker",
+        "personality": "Cautious",
+        "bias": 0.32
+    },
+    "102": {
+        "id": 102,
+        "name": "Delta-High-Frequency #102",
+        "role": "High-Frequency Striker",
+        "personality": "Conservative",
+        "bias": -0.85
+    },
+    "103": {
+        "id": 103,
+        "name": "Volt-Order #103",
+        "role": "Order Flow Analyst",
+        "personality": "Paranoid",
+        "bias": 0.34
+    },
+    "104": {
+        "id": 104,
+        "name": "Cipher-Gated #104",
+        "role": "Gated Neural Guardian",
+        "personality": "Conservative",
+        "bias": -0.64
+    },
+    "105": {
+        "id": 105,
+        "name": "Neural-Trend #105",
+        "role": "Trend Reversal Scout",
+        "personality": "Observational",
+        "bias": 0.98
+    },
+    "106": {
+        "id": 106,
+        "name": "Flow-Delta-Neutral #106",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Analytical",
+        "bias": 0.47
+    },
+    "107": {
+        "id": 107,
+        "name": "Neural-Gamma-Exposure #107",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Analytical",
+        "bias": 0.48
+    },
+    "108": {
+        "id": 108,
+        "name": "Volt-Mean #108",
+        "role": "Mean Reversion Specialist",
+        "personality": "Observational",
+        "bias": -0.38
+    },
+    "109": {
+        "id": 109,
+        "name": "Cipher-Funding #109",
+        "role": "Funding Rate Analyst",
+        "personality": "Paranoid",
+        "bias": 0.4
+    },
+    "110": {
+        "id": 110,
+        "name": "Gamma-Gamma-Exposure #110",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Cautious",
+        "bias": -0.74
+    },
+    "111": {
+        "id": 111,
+        "name": "Delta-Momentum #111",
+        "role": "Momentum Scalper",
+        "personality": "Confident",
+        "bias": 0.08
+    },
+    "112": {
+        "id": 112,
+        "name": "Neon-Mean #112",
+        "role": "Mean Reversion Specialist",
+        "personality": "Mathematical",
+        "bias": 0.11
+    },
+    "113": {
+        "id": 113,
+        "name": "Volt-Mean #113",
+        "role": "Mean Reversion Specialist",
+        "personality": "Cautious",
+        "bias": 0.6
+    },
+    "114": {
+        "id": 114,
+        "name": "Neural-Certainty #114",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Confident",
+        "bias": -0.64
+    },
+    "115": {
+        "id": 115,
+        "name": "Delta-Deep #115",
+        "role": "Deep Feature Interpreter",
+        "personality": "Aggressive",
+        "bias": -0.09
+    },
+    "116": {
+        "id": 116,
+        "name": "Beta-Funding #116",
+        "role": "Funding Rate Analyst",
+        "personality": "Skeptical",
+        "bias": -0.13
+    },
+    "117": {
+        "id": 117,
+        "name": "Flow-Gamma-Exposure #117",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Conservative",
+        "bias": 0.15
+    },
+    "118": {
+        "id": 118,
+        "name": "Flow-High-Frequency #118",
+        "role": "High-Frequency Striker",
+        "personality": "Intuitive",
+        "bias": 0.43
+    },
+    "119": {
+        "id": 119,
+        "name": "Apex-Gamma-Exposure #119",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Aggressive",
+        "bias": -0.81
+    },
+    "120": {
+        "id": 120,
+        "name": "Volt-Certainty #120",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Paranoid",
+        "bias": -0.94
+    },
+    "121": {
+        "id": 121,
+        "name": "Volt-Certainty #121",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Intuitive",
+        "bias": 0.47
+    },
+    "122": {
+        "id": 122,
+        "name": "Beta-Cross-Exchange #122",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Cautious",
+        "bias": -0.24
+    },
+    "123": {
+        "id": 123,
+        "name": "Volt-Funding #123",
+        "role": "Funding Rate Analyst",
+        "personality": "Confident",
+        "bias": 0.31
+    },
+    "124": {
+        "id": 124,
+        "name": "Alpha-Slippage #124",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Mathematical",
+        "bias": 0.25
+    },
+    "125": {
+        "id": 125,
+        "name": "Neural-Momentum #125",
+        "role": "Momentum Scalper",
+        "personality": "Conservative",
+        "bias": 0.13
+    },
+    "126": {
+        "id": 126,
+        "name": "Delta-Momentum #126",
+        "role": "Momentum Scalper",
+        "personality": "Mathematical",
+        "bias": 0.72
+    },
+    "127": {
+        "id": 127,
+        "name": "Neon-Gated #127",
+        "role": "Gated Neural Guardian",
+        "personality": "Confident",
+        "bias": -0.63
+    },
+    "128": {
+        "id": 128,
+        "name": "Vortex-Gated #128",
+        "role": "Gated Neural Guardian",
+        "personality": "Intuitive",
+        "bias": 0.37
+    },
+    "129": {
+        "id": 129,
+        "name": "Gamma-Gamma-Exposure #129",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Analytical",
+        "bias": -0.94
+    },
+    "130": {
+        "id": 130,
+        "name": "Gamma-Momentum #130",
+        "role": "Momentum Scalper",
+        "personality": "Confident",
+        "bias": 0.02
+    },
+    "131": {
+        "id": 131,
+        "name": "Vortex-Volatility #131",
+        "role": "Volatility Arbitrageur",
+        "personality": "Cautious",
+        "bias": 0.4
+    },
+    "132": {
+        "id": 132,
+        "name": "Alpha-Macro #132",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Analytical",
+        "bias": -0.27
+    },
+    "133": {
+        "id": 133,
+        "name": "Beta-Liquidity #133",
+        "role": "Liquidity Provisioner",
+        "personality": "Analytical",
+        "bias": -0.57
+    },
+    "134": {
+        "id": 134,
+        "name": "Neural-Macro #134",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Conservative",
+        "bias": 0.08
+    },
+    "135": {
+        "id": 135,
+        "name": "Volt-High-Frequency #135",
+        "role": "High-Frequency Striker",
+        "personality": "Intuitive",
+        "bias": -0.29
+    },
+    "136": {
+        "id": 136,
+        "name": "Alpha-Volatility #136",
+        "role": "Volatility Arbitrageur",
+        "personality": "Intuitive",
+        "bias": -0.09
+    },
+    "137": {
+        "id": 137,
+        "name": "Flow-Risk #137",
+        "role": "Risk Management Auditor",
+        "personality": "Cautious",
+        "bias": -0.04
+    },
+    "138": {
+        "id": 138,
+        "name": "Zenith-Gated #138",
+        "role": "Gated Neural Guardian",
+        "personality": "Analytical",
+        "bias": 0.61
+    },
+    "139": {
+        "id": 139,
+        "name": "Apex-Momentum #139",
+        "role": "Momentum Scalper",
+        "personality": "Mathematical",
+        "bias": -0.56
+    },
+    "140": {
+        "id": 140,
+        "name": "Zenith-Liquidity #140",
+        "role": "Liquidity Provisioner",
+        "personality": "Observational",
+        "bias": -0.86
+    },
+    "141": {
+        "id": 141,
+        "name": "Neural-Gamma-Exposure #141",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Skeptical",
+        "bias": -0.55
+    },
+    "142": {
+        "id": 142,
+        "name": "Alpha-Momentum #142",
+        "role": "Momentum Scalper",
+        "personality": "Paranoid",
+        "bias": 0.4
+    },
+    "143": {
+        "id": 143,
+        "name": "Neural-Trend #143",
+        "role": "Trend Reversal Scout",
+        "personality": "Cautious",
+        "bias": 0.56
+    },
+    "144": {
+        "id": 144,
+        "name": "Gamma-Gated #144",
+        "role": "Gated Neural Guardian",
+        "personality": "Confident",
+        "bias": -0.52
+    },
+    "145": {
+        "id": 145,
+        "name": "Zenith-Delta-Neutral #145",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Intuitive",
+        "bias": -0.03
+    },
+    "146": {
+        "id": 146,
+        "name": "Volt-Gated #146",
+        "role": "Gated Neural Guardian",
+        "personality": "Mathematical",
+        "bias": -0.54
+    },
+    "147": {
+        "id": 147,
+        "name": "Vortex-Mean #147",
+        "role": "Mean Reversion Specialist",
+        "personality": "Observational",
+        "bias": 0.31
+    },
+    "148": {
+        "id": 148,
+        "name": "Zenith-Gated #148",
+        "role": "Gated Neural Guardian",
+        "personality": "Confident",
+        "bias": -0.6
+    },
+    "149": {
+        "id": 149,
+        "name": "Vortex-High-Frequency #149",
+        "role": "High-Frequency Striker",
+        "personality": "Observational",
+        "bias": 0.41
+    },
+    "150": {
+        "id": 150,
+        "name": "Neural-Mean #150",
+        "role": "Mean Reversion Specialist",
+        "personality": "Cautious",
+        "bias": -0.01
+    },
+    "151": {
+        "id": 151,
+        "name": "Neural-Certainty #151",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Paranoid",
+        "bias": -0.27
+    },
+    "152": {
+        "id": 152,
+        "name": "Flow-Gamma-Exposure #152",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Confident",
+        "bias": 0.48
+    },
+    "153": {
+        "id": 153,
+        "name": "Delta-High-Frequency #153",
+        "role": "High-Frequency Striker",
+        "personality": "Cautious",
+        "bias": -0.31
+    },
+    "154": {
+        "id": 154,
+        "name": "Volt-Liquidity #154",
+        "role": "Liquidity Provisioner",
+        "personality": "Observational",
+        "bias": 0.56
+    },
+    "155": {
+        "id": 155,
+        "name": "Apex-High-Frequency #155",
+        "role": "High-Frequency Striker",
+        "personality": "Conservative",
+        "bias": -0.9
+    },
+    "156": {
+        "id": 156,
+        "name": "Volt-Certainty #156",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Cautious",
+        "bias": -0.47
+    },
+    "157": {
+        "id": 157,
+        "name": "Zenith-Slippage #157",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Analytical",
+        "bias": 0.83
+    },
+    "158": {
+        "id": 158,
+        "name": "Alpha-Trend #158",
+        "role": "Trend Reversal Scout",
+        "personality": "Cautious",
+        "bias": -0.67
+    },
+    "159": {
+        "id": 159,
+        "name": "Delta-Trend #159",
+        "role": "Trend Reversal Scout",
+        "personality": "Paranoid",
+        "bias": -0.38
+    },
+    "160": {
+        "id": 160,
+        "name": "Apex-Trend #160",
+        "role": "Trend Reversal Scout",
+        "personality": "Analytical",
+        "bias": -0.91
+    },
+    "161": {
+        "id": 161,
+        "name": "Delta-Gamma-Exposure #161",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Aggressive",
+        "bias": -0.14
+    },
+    "162": {
+        "id": 162,
+        "name": "Vortex-Execution #162",
+        "role": "Execution Optimization Node",
+        "personality": "Conservative",
+        "bias": 0.79
+    },
+    "163": {
+        "id": 163,
+        "name": "Apex-Cross-Exchange #163",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Observational",
+        "bias": 0.59
+    },
+    "164": {
+        "id": 164,
+        "name": "Zenith-Funding #164",
+        "role": "Funding Rate Analyst",
+        "personality": "Conservative",
+        "bias": 0.0
+    },
+    "165": {
+        "id": 165,
+        "name": "Neural-Macro #165",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Paranoid",
+        "bias": 0.19
+    },
+    "166": {
+        "id": 166,
+        "name": "Apex-Cross-Exchange #166",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Observational",
+        "bias": 0.02
+    },
+    "167": {
+        "id": 167,
+        "name": "Volt-Delta-Neutral #167",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Paranoid",
+        "bias": -0.68
+    },
+    "168": {
+        "id": 168,
+        "name": "Neural-Volatility #168",
+        "role": "Volatility Arbitrageur",
+        "personality": "Confident",
+        "bias": -0.73
+    },
+    "169": {
+        "id": 169,
+        "name": "Neon-Execution #169",
+        "role": "Execution Optimization Node",
+        "personality": "Observational",
+        "bias": -1.0
+    },
+    "170": {
+        "id": 170,
+        "name": "Apex-Order #170",
+        "role": "Order Flow Analyst",
+        "personality": "Mathematical",
+        "bias": 0.05
+    },
+    "171": {
+        "id": 171,
+        "name": "Delta-Deep #171",
+        "role": "Deep Feature Interpreter",
+        "personality": "Paranoid",
+        "bias": 0.12
+    },
+    "172": {
+        "id": 172,
+        "name": "Alpha-Delta-Neutral #172",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Mathematical",
+        "bias": -0.98
+    },
+    "173": {
+        "id": 173,
+        "name": "Neon-Certainty #173",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Confident",
+        "bias": 0.36
+    },
+    "174": {
+        "id": 174,
+        "name": "Zenith-Certainty #174",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Intuitive",
+        "bias": -0.04
+    },
+    "175": {
+        "id": 175,
+        "name": "Vortex-Risk #175",
+        "role": "Risk Management Auditor",
+        "personality": "Aggressive",
+        "bias": -0.36
+    },
+    "176": {
+        "id": 176,
+        "name": "Neon-High-Frequency #176",
+        "role": "High-Frequency Striker",
+        "personality": "Analytical",
+        "bias": 0.28
+    },
+    "177": {
+        "id": 177,
+        "name": "Delta-Delta-Neutral #177",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Aggressive",
+        "bias": 0.7
+    },
+    "178": {
+        "id": 178,
+        "name": "Gamma-Delta-Neutral #178",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Aggressive",
+        "bias": 0.76
+    },
+    "179": {
+        "id": 179,
+        "name": "Zenith-Mean #179",
+        "role": "Mean Reversion Specialist",
+        "personality": "Conservative",
+        "bias": -0.59
+    },
+    "180": {
+        "id": 180,
+        "name": "Delta-Gated #180",
+        "role": "Gated Neural Guardian",
+        "personality": "Cautious",
+        "bias": -0.7
+    },
+    "181": {
+        "id": 181,
+        "name": "Vortex-Certainty #181",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Confident",
+        "bias": 0.27
+    },
+    "182": {
+        "id": 182,
+        "name": "Cipher-Momentum #182",
+        "role": "Momentum Scalper",
+        "personality": "Aggressive",
+        "bias": 0.28
+    },
+    "183": {
+        "id": 183,
+        "name": "Alpha-High-Frequency #183",
+        "role": "High-Frequency Striker",
+        "personality": "Conservative",
+        "bias": 0.63
+    },
+    "184": {
+        "id": 184,
+        "name": "Flow-Liquidity #184",
+        "role": "Liquidity Provisioner",
+        "personality": "Aggressive",
+        "bias": 0.79
+    },
+    "185": {
+        "id": 185,
+        "name": "Zenith-High-Frequency #185",
+        "role": "High-Frequency Striker",
+        "personality": "Cautious",
+        "bias": 0.27
+    },
+    "186": {
+        "id": 186,
+        "name": "Vortex-Macro #186",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Conservative",
+        "bias": -0.32
+    },
+    "187": {
+        "id": 187,
+        "name": "Apex-Deep #187",
+        "role": "Deep Feature Interpreter",
+        "personality": "Confident",
+        "bias": -0.0
+    },
+    "188": {
+        "id": 188,
+        "name": "Gamma-High-Frequency #188",
+        "role": "High-Frequency Striker",
+        "personality": "Intuitive",
+        "bias": -0.39
+    },
+    "189": {
+        "id": 189,
+        "name": "Cipher-Funding #189",
+        "role": "Funding Rate Analyst",
+        "personality": "Conservative",
+        "bias": -0.17
+    },
+    "190": {
+        "id": 190,
+        "name": "Vortex-Certainty #190",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Observational",
+        "bias": 1.0
+    },
+    "191": {
+        "id": 191,
+        "name": "Zenith-Order #191",
+        "role": "Order Flow Analyst",
+        "personality": "Cautious",
+        "bias": -0.67
+    },
+    "192": {
+        "id": 192,
+        "name": "Apex-Order #192",
+        "role": "Order Flow Analyst",
+        "personality": "Analytical",
+        "bias": 0.96
+    },
+    "193": {
+        "id": 193,
+        "name": "Apex-Risk #193",
+        "role": "Risk Management Auditor",
+        "personality": "Paranoid",
+        "bias": -0.98
+    },
+    "194": {
+        "id": 194,
+        "name": "Delta-Gamma-Exposure #194",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Intuitive",
+        "bias": 0.66
+    },
+    "195": {
+        "id": 195,
+        "name": "Volt-High-Frequency #195",
+        "role": "High-Frequency Striker",
+        "personality": "Conservative",
+        "bias": 0.72
+    },
+    "196": {
+        "id": 196,
+        "name": "Flow-Gated #196",
+        "role": "Gated Neural Guardian",
+        "personality": "Observational",
+        "bias": -0.17
+    },
+    "197": {
+        "id": 197,
+        "name": "Gamma-Trend #197",
+        "role": "Trend Reversal Scout",
+        "personality": "Paranoid",
+        "bias": -0.89
+    },
+    "198": {
+        "id": 198,
+        "name": "Alpha-Volatility #198",
+        "role": "Volatility Arbitrageur",
+        "personality": "Confident",
+        "bias": 0.76
+    },
+    "199": {
+        "id": 199,
+        "name": "Cipher-Funding #199",
+        "role": "Funding Rate Analyst",
+        "personality": "Mathematical",
+        "bias": 0.86
+    },
+    "200": {
+        "id": 200,
+        "name": "Vortex-Execution #200",
+        "role": "Execution Optimization Node",
+        "personality": "Paranoid",
+        "bias": -0.41
+    },
+    "201": {
+        "id": 201,
+        "name": "Volt-High-Frequency #201",
+        "role": "High-Frequency Striker",
+        "personality": "Aggressive",
+        "bias": -0.43
+    },
+    "202": {
+        "id": 202,
+        "name": "Zenith-Funding #202",
+        "role": "Funding Rate Analyst",
+        "personality": "Observational",
+        "bias": -0.54
+    },
+    "203": {
+        "id": 203,
+        "name": "Delta-Mean #203",
+        "role": "Mean Reversion Specialist",
+        "personality": "Mathematical",
+        "bias": 0.72
+    },
+    "204": {
+        "id": 204,
+        "name": "Gamma-Funding #204",
+        "role": "Funding Rate Analyst",
+        "personality": "Paranoid",
+        "bias": 0.96
+    },
+    "205": {
+        "id": 205,
+        "name": "Gamma-Volatility #205",
+        "role": "Volatility Arbitrageur",
+        "personality": "Intuitive",
+        "bias": 0.6
+    },
+    "206": {
+        "id": 206,
+        "name": "Flow-High-Frequency #206",
+        "role": "High-Frequency Striker",
+        "personality": "Analytical",
+        "bias": 0.62
+    },
+    "207": {
+        "id": 207,
+        "name": "Gamma-Mean #207",
+        "role": "Mean Reversion Specialist",
+        "personality": "Paranoid",
+        "bias": 0.71
+    },
+    "208": {
+        "id": 208,
+        "name": "Volt-Risk #208",
+        "role": "Risk Management Auditor",
+        "personality": "Skeptical",
+        "bias": 0.87
+    },
+    "209": {
+        "id": 209,
+        "name": "Neon-Gated #209",
+        "role": "Gated Neural Guardian",
+        "personality": "Paranoid",
+        "bias": 0.19
+    },
+    "210": {
+        "id": 210,
+        "name": "Volt-Execution #210",
+        "role": "Execution Optimization Node",
+        "personality": "Paranoid",
+        "bias": 0.26
+    },
+    "211": {
+        "id": 211,
+        "name": "Delta-Volatility #211",
+        "role": "Volatility Arbitrageur",
+        "personality": "Conservative",
+        "bias": -0.31
+    },
+    "212": {
+        "id": 212,
+        "name": "Flow-Cross-Exchange #212",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Intuitive",
+        "bias": 0.79
+    },
+    "213": {
+        "id": 213,
+        "name": "Gamma-High-Frequency #213",
+        "role": "High-Frequency Striker",
+        "personality": "Confident",
+        "bias": 0.66
+    },
+    "214": {
+        "id": 214,
+        "name": "Apex-Risk #214",
+        "role": "Risk Management Auditor",
+        "personality": "Mathematical",
+        "bias": 0.84
+    },
+    "215": {
+        "id": 215,
+        "name": "Alpha-Volatility #215",
+        "role": "Volatility Arbitrageur",
+        "personality": "Mathematical",
+        "bias": -0.48
+    },
+    "216": {
+        "id": 216,
+        "name": "Neon-Macro #216",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Intuitive",
+        "bias": -0.3
+    },
+    "217": {
+        "id": 217,
+        "name": "Beta-Funding #217",
+        "role": "Funding Rate Analyst",
+        "personality": "Mathematical",
+        "bias": 0.97
+    },
+    "218": {
+        "id": 218,
+        "name": "Neon-Delta-Neutral #218",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Observational",
+        "bias": -0.51
+    },
+    "219": {
+        "id": 219,
+        "name": "Apex-High-Frequency #219",
+        "role": "High-Frequency Striker",
+        "personality": "Analytical",
+        "bias": 0.46
+    },
+    "220": {
+        "id": 220,
+        "name": "Apex-Certainty #220",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Observational",
+        "bias": 0.98
+    },
+    "221": {
+        "id": 221,
+        "name": "Volt-Mean #221",
+        "role": "Mean Reversion Specialist",
+        "personality": "Cautious",
+        "bias": -0.93
+    },
+    "222": {
+        "id": 222,
+        "name": "Cipher-Momentum #222",
+        "role": "Momentum Scalper",
+        "personality": "Mathematical",
+        "bias": -0.18
+    },
+    "223": {
+        "id": 223,
+        "name": "Delta-Volatility #223",
+        "role": "Volatility Arbitrageur",
+        "personality": "Paranoid",
+        "bias": -0.44
+    },
+    "224": {
+        "id": 224,
+        "name": "Gamma-Slippage #224",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Observational",
+        "bias": 0.22
+    },
+    "225": {
+        "id": 225,
+        "name": "Flow-Slippage #225",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Intuitive",
+        "bias": -0.37
+    },
+    "226": {
+        "id": 226,
+        "name": "Vortex-Order #226",
+        "role": "Order Flow Analyst",
+        "personality": "Aggressive",
+        "bias": -0.57
+    },
+    "227": {
+        "id": 227,
+        "name": "Cipher-Funding #227",
+        "role": "Funding Rate Analyst",
+        "personality": "Aggressive",
+        "bias": -0.93
+    },
+    "228": {
+        "id": 228,
+        "name": "Neural-Execution #228",
+        "role": "Execution Optimization Node",
+        "personality": "Cautious",
+        "bias": 0.75
+    },
+    "229": {
+        "id": 229,
+        "name": "Volt-Execution #229",
+        "role": "Execution Optimization Node",
+        "personality": "Paranoid",
+        "bias": -0.35
+    },
+    "230": {
+        "id": 230,
+        "name": "Zenith-Execution #230",
+        "role": "Execution Optimization Node",
+        "personality": "Mathematical",
+        "bias": 0.74
+    },
+    "231": {
+        "id": 231,
+        "name": "Zenith-Delta-Neutral #231",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Mathematical",
+        "bias": 0.74
+    },
+    "232": {
+        "id": 232,
+        "name": "Neon-Gated #232",
+        "role": "Gated Neural Guardian",
+        "personality": "Observational",
+        "bias": 0.07
+    },
+    "233": {
+        "id": 233,
+        "name": "Gamma-Gamma-Exposure #233",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Intuitive",
+        "bias": -0.14
+    },
+    "234": {
+        "id": 234,
+        "name": "Neon-Gamma-Exposure #234",
+        "role": "Gamma-Exposure Monitor",
+        "personality": "Observational",
+        "bias": -0.78
+    },
+    "235": {
+        "id": 235,
+        "name": "Volt-Certainty #235",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Mathematical",
+        "bias": -0.83
+    },
+    "236": {
+        "id": 236,
+        "name": "Gamma-Execution #236",
+        "role": "Execution Optimization Node",
+        "personality": "Cautious",
+        "bias": 0.05
+    },
+    "237": {
+        "id": 237,
+        "name": "Alpha-Risk #237",
+        "role": "Risk Management Auditor",
+        "personality": "Conservative",
+        "bias": 0.29
+    },
+    "238": {
+        "id": 238,
+        "name": "Delta-Delta-Neutral #238",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Cautious",
+        "bias": 0.77
+    },
+    "239": {
+        "id": 239,
+        "name": "Gamma-Funding #239",
+        "role": "Funding Rate Analyst",
+        "personality": "Confident",
+        "bias": 0.22
+    },
+    "240": {
+        "id": 240,
+        "name": "Gamma-Execution #240",
+        "role": "Execution Optimization Node",
+        "personality": "Confident",
+        "bias": 0.63
+    },
+    "241": {
+        "id": 241,
+        "name": "Delta-Risk #241",
+        "role": "Risk Management Auditor",
+        "personality": "Skeptical",
+        "bias": -0.43
+    },
+    "242": {
+        "id": 242,
+        "name": "Alpha-Certainty #242",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Conservative",
+        "bias": -0.98
+    },
+    "243": {
+        "id": 243,
+        "name": "Beta-Trend #243",
+        "role": "Trend Reversal Scout",
+        "personality": "Observational",
+        "bias": -0.1
+    },
+    "244": {
+        "id": 244,
+        "name": "Flow-Delta-Neutral #244",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Skeptical",
+        "bias": 0.11
+    },
+    "245": {
+        "id": 245,
+        "name": "Alpha-Funding #245",
+        "role": "Funding Rate Analyst",
+        "personality": "Mathematical",
+        "bias": -0.2
+    },
+    "246": {
+        "id": 246,
+        "name": "Alpha-Delta-Neutral #246",
+        "role": "Delta-Neutral Hedger",
+        "personality": "Cautious",
+        "bias": 0.64
+    },
+    "247": {
+        "id": 247,
+        "name": "Flow-Deep #247",
+        "role": "Deep Feature Interpreter",
+        "personality": "Analytical",
+        "bias": -0.96
+    },
+    "248": {
+        "id": 248,
+        "name": "Gamma-Macro #248",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Confident",
+        "bias": 0.94
+    },
+    "249": {
+        "id": 249,
+        "name": "Volt-Certainty #249",
+        "role": "Certainty Threshold Sentry",
+        "personality": "Observational",
+        "bias": 0.97
+    },
+    "250": {
+        "id": 250,
+        "name": "Apex-Volatility #250",
+        "role": "Volatility Arbitrageur",
+        "personality": "Confident",
+        "bias": -0.82
+    },
+    "251": {
+        "id": 251,
+        "name": "Volt-Liquidity #251",
+        "role": "Liquidity Provisioner",
+        "personality": "Mathematical",
+        "bias": 0.97
+    },
+    "252": {
+        "id": 252,
+        "name": "Zenith-Slippage #252",
+        "role": "Slippage Mitigation Lead",
+        "personality": "Paranoid",
+        "bias": 0.03
+    },
+    "253": {
+        "id": 253,
+        "name": "Flow-Macro #253",
+        "role": "Macro Sentiment Tracker",
+        "personality": "Aggressive",
+        "bias": 0.13
+    },
+    "254": {
+        "id": 254,
+        "name": "Volt-Cross-Exchange #254",
+        "role": "Cross-Exchange Arbiter",
+        "personality": "Observational",
+        "bias": -0.21
+    },
+    "255": {
+        "id": 255,
+        "name": "Flow-Execution #255",
+        "role": "Execution Optimization Node",
+        "personality": "Analytical",
+        "bias": -0.58
+    }
+}

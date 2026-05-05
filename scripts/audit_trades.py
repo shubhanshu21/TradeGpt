@@ -17,13 +17,17 @@ def generate_trade_report():
     print("⚓ SOVEREIGN TRADE AUDIT — Memory-Safe Mode")
     print("="*50)
     
-    # 1. Load the "Best" Model
-    model_p = ROOT / "models" / "hydra_best.keras"
+    # Smart checkpoint — latest epoch, fallback to best
+    features    = build_feature_cols()
+    n_feat      = len(features)
+    models_dir  = ROOT / "models"
+    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
+    model_p     = checkpoints[0] if checkpoints else models_dir / "hydra_best.keras"
     if not model_p.exists():
-        print("❌ No model found.")
-        return
-        
-    model = build_kraken(n_features=42, context_window=120)
+        print(f"❌ No model checkpoint found in {models_dir}"); return
+
+    print(f"🧠 Loading: {model_p.name} | Features: {n_feat}")
+    model = build_kraken(n_features=n_feat, context_window=120)
     model.load_weights(str(model_p))
     
     # 2. Fetch Backtest Data (Last 500 candles)

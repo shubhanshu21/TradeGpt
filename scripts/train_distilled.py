@@ -14,7 +14,8 @@ import pandas as pd
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.hydra import build_kraken, Distiller, SovereignLoss, SovereignAccuracy, CertaintyMetric
+from core.hydra import build_kraken, SovereignLoss, SovereignAccuracy, CertaintyMetric
+from keras import Distiller  # Keras built-in knowledge distillation utility
 from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
 
 def run_distillation(args):

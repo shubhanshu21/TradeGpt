@@ -68,15 +68,9 @@ def mode_predict(args):
     from exchange.fetch_data     import fetch_live_kat_data
 
     model_file = SAVED_MODELS / "hydra_best.keras" if "hydra" in args.model else SAVED_MODELS / f"{args.model}_best.keras"
-    scaler_p   = SAVED_MODELS / "scaler_base.pkl"
+    # DLS pipeline: no global scaler needed
+    scaler = None
 
-    if not model_file.exists():
-        print(f"❌ Model file not found: {model_file}")
-        return
-    if scaler_p.exists():
-        scaler = KATScaler.load(str(scaler_p))
-    else:
-        scaler = None # Phase 2 uses DLS
     print(f"📡 Fetching live data for {args.symbol} {args.model} prediction...")
     df = fetch_live_kat_data(symbol=args.symbol, n_candles=300, timeframe=args.timeframe)
     if df is None or len(df) < 120:
@@ -113,9 +107,11 @@ def mode_predict(args):
         }
     if "hydra" in args.model:
         from core.hydra import build_kraken
-        model = build_kraken(n_features=42)
+        from data.preprocess import build_feature_cols as _bfc
+        _n_feat = len(_bfc())
+        model = build_kraken(n_features=_n_feat)
         model.load_weights(str(model_file))
-        print(f"✅ Weights loaded from {model_file.name}")
+        print(f"✅ Weights loaded from {model_file.name} | Features: {_n_feat}")
 
     # ── Predict ──────────────────────────────────────────────────────────────
     # ── Phase 2: Dynamic Local Scaling (DLS) ─────────────────────────────────
