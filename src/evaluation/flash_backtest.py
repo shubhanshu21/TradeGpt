@@ -18,7 +18,7 @@ def run_flash():
     checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
     model_p     = checkpoints[0] if checkpoints else models_dir / "hydra_best.keras"
     if not model_p.exists():
-        print(f"❌ No checkpoint found in {models_dir}"); return
+        print(f"❌ No model found in {models_dir}"); return
     print(f"🧠 Loading: {model_p.name} | Features: {n_feat}")
     model = build_kraken(n_feat, 120, 15)
     model.load_weights(str(model_p))
@@ -31,35 +31,49 @@ def run_flash():
     def _scale(window): return (window - window.mean(0)) / (window.std(0) + 1e-8)
     scaled = data
     
-    results = []
+    preds       = []
+    actuals     = []
+    certainties = []
+    
     ctx = 120
     print(f"🔬 Evaluating {len(data) - ctx - 15} windows...")
     for i in range(ctx, len(data) - 15):
         X_in = _scale(data[i - ctx : i]).reshape(1, ctx, n_feat)
         out = model(X_in, training=False)
-        pred = out[0].numpy()[0] # (16, 3)
         
         # Predicted move at T+15
-        p_15 = pred[15, 0]
-        dir_pred = np.sign(p_15)
+        pred_vals = out[0].numpy()[0]
+        p_15 = pred_vals[15, 0]
+        preds.append(np.sign(p_15))
+        
+        # Certainty (Channel 1)
+        cert_val = np.mean(out[1].numpy())
+        certainties.append(cert_val)
         
         # Actual move at T+15
         v_now = scaled[i, close_idx]
         v_15  = scaled[i+15, close_idx]
-        dir_actual = np.sign(v_15 - v_now)
+        actuals.append(np.sign(v_15 - v_now))
         
-        hit = (dir_pred == dir_actual)
-        results.append(hit)
-        
-        # Print progress every 20 steps
-        if len(results) % 20 == 0:
-            moving_acc = np.mean(results) * 100
-            print(f"   Step {len(results):3d}: Moving Acc: {moving_acc:5.2f}% | Last Pred: {dir_pred:2.1f} Act: {dir_actual:2.1f}")
+        if len(preds) % 20 == 0:
+            print(f"   Step {len(preds):3d}...")
+
+    preds       = np.array(preds)
+    actuals     = np.array(actuals)
+    certainties = np.array(certainties)
     
-    acc = np.mean(results) * 100
+    # Normalize certainty 0-100
+    c_min, c_max = certainties.min(), certainties.max()
+    c_pct = (certainties - c_min) / (c_max - c_min + 1e-9) * 100
+    
     print(f"\n======================================")
-    print(f"📊 FLASH RESULTS (T+15 TREND): {acc:.2f}% Accuracy")
-    print(f"   Steps: {len(results)} | Threshold: 0.0")
+    print(f"📊 FLASH RESULTS (Filtered by Certainty)")
+    print(f"--------------------------------------")
+    for th in [0, 50, 80, 90]:
+        mask = c_pct >= th
+        hits = (preds[mask] == actuals[mask])
+        acc  = np.mean(hits) * 100 if len(hits) > 0 else 0
+        print(f"🎯 Threshold {th}% | Acc: {acc:6.2f}% | Trades: {len(hits)}")
     print(f"======================================\n")
 
 if __name__ == "__main__":

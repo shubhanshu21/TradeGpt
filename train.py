@@ -200,8 +200,7 @@ class MissionControl(keras.callbacks.Callback):
             pass
 
     def on_batch_end(self, batch, logs=None):
-        if batch % 50 == 0:  # Update every 50 batches for 'Live' feel
-            self._update_dashboard(logs)
+        pass # V12.1: Removed batch-end updates to maximize training velocity
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
