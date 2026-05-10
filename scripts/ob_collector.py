@@ -30,8 +30,8 @@ def collect():
                 with open(filename, "w") as f:
                     json.dump(ob, f)
                 
-                # --- AUTO-PURGE: Keep only last 12 hours ---
-                cutoff = ts - (12 * 3600)
+                # --- AUTO-PURGE: Keep only last 48 hours ---
+                cutoff = ts - (48 * 3600)
                 for old_file in data_dir.glob("ob_*.json"):
                     try:
                         file_ts = int(old_file.stem.split("_")[1])
