@@ -86,8 +86,8 @@ def fetch_history():
 
     log(f"   Target: {len(days_to_fetch)} days remaining.")
     
-    # Process in batches of 2 to stay safe with 24GB RAM (each worker uses ~4GB)
-    with concurrent.futures.ProcessPoolExecutor(max_workers=2) as executor:
+    # Process with 1 worker only for absolute stability (prevents RAM hangs)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
         futures = {executor.submit(process_day, d): d for d in days_to_fetch}
         for future in concurrent.futures.as_completed(futures):
             date_str, result = future.result()
