@@ -416,18 +416,18 @@ def build_kraken(n_features=38, context_window=120, forecast_steps=15,
         inputs, [preds, avg_consensus, reasoning],
         name="iron_oracle_v11_phase5")
 
-    # Cosine Decay LR: 1e-5 → 1e-6 over 10,000 steps
+    # Cosine Decay LR: 5e-6 → 5e-7 over 10,000 steps
     lr_schedule = keras.optimizers.schedules.CosineDecay(
-        initial_learning_rate=1e-5,
+        initial_learning_rate=5e-6,
         decay_steps=10000,
-        alpha=0.1   # floor = 1e-6
+        alpha=0.1   # floor = 5e-7
     )
 
     model.compile(
         optimizer=keras.optimizers.AdamW(
             learning_rate=lr_schedule,
             weight_decay=0.01,
-            clipnorm=1.0       # Gradient clipping for MoE spike stability
+            clipnorm=0.5       # Tightened clipping for MoE stability
         ),
         loss={
             "prediction": SovereignLoss(direction_weight=10.0),

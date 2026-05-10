@@ -32,7 +32,7 @@ EPOCHS       = 5        # Fine-tune epochs — keep small (3–10)
 LR           = 1e-6     # Very low LR — nudge, don't overwrite base knowledge
 CTX_WIN      = 120      # Must match training context window
 BATCH        = 64       # Smaller batch for fine-tune stability
-FREEZE_BELOW = 9        # Freeze first N blocks (protect foundational patterns)
+FREEZE_BELOW = 6        # Freeze foundational blocks (0-5), adapt top blocks (6-7)
 MODEL_FILE   = "hydra_best.keras"
 SYMBOL       = "BTCUSD"
 TIMEFRAME    = "15m"   # Switched to 15m for maximum SNR (Phase 5+)
@@ -154,6 +154,14 @@ log(f"\n📊 Results: loss {initial_loss:.4f} → {final_loss:.4f} (Δ{delta:+.4
 if delta > 0:
     model.save(str(MODEL_PATH))
     log(f"✅ Model updated — improved by {delta:.4f}")
+    
+    # --- CLEANUP: Clear used L5 snapshots to save space ---
+    log("🗑️  Cleaning up processed L5 snapshots...")
+    SNAPSHOT_DIR = ROOT / "data/orderbook_history"
+    if SNAPSHOT_DIR.exists():
+        for f_path in SNAPSHOT_DIR.glob("ob_*.json"):
+            f_path.unlink()
+        log("   ✅ L5 Snapshots purged.")
 else:
     shutil.copy2(backup_path, MODEL_PATH)
     log(f"⚠️  No improvement — restored yesterday's model")

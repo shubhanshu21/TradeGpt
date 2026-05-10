@@ -237,13 +237,14 @@ def train_kraken(args):
     DATA_DIR.mkdir(exist_ok=True)
     CKPT_DIR.mkdir(exist_ok=True)
     LOG_DIR.mkdir(exist_ok=True)
-    CACHE_P = DATA_DIR / f"{args.symbol}_{args.timeframe}_history_{CANDLES}.parquet"
-
+    # Use a dynamic 'master' filename to avoid hardcoding
+    CACHE_P = DATA_DIR / f"{args.symbol}_{args.timeframe}_history_master.parquet"
+    
     if CACHE_P.exists():
-        print(f"📖 CACHE: Loading {CANDLES:,} candles...")
+        print(f"📖 CACHE: Loading {CANDLES:,} candles from {CACHE_P.name}...")
         df = pd.read_parquet(CACHE_P).tail(CANDLES)
     else:
-        print(f"📡 Fetching {CANDLES:,} live candles...")
+        print(f"📡 No master cache found for {args.symbol}. Fetching fresh candles...")
         df = fetch_live_kat_data(symbol=args.symbol, n_candles=CANDLES, timeframe=args.timeframe)
         if df is not None and len(df) > 0:
             df.to_parquet(CACHE_P)
