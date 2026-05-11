@@ -102,6 +102,7 @@ def bridge():
             try:
                 l2_master = pd.read_csv(MASTER_L2, index_col=0)
                 l2_master.index = pd.to_datetime(l2_master.index, utc=True)
+                l2_master = l2_master[~l2_master.index.duplicated(keep='last')]
                 
         # Merge real data
                 log(f"   Merging {len(l2_master):,} snapshots...")

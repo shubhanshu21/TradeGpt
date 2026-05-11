@@ -30,6 +30,8 @@ def fetch_live_kat_data(symbol: str = "BTCUSDT", n_candles: int = 1000, timefram
         try:
             master_l2 = pd.read_csv(master_l2_path, index_col=0)
             master_l2.index = pd.to_datetime(master_l2.index, utc=True)
+            # Deduplicate to prevent .loc[] from returning a DataFrame
+            master_l2 = master_l2[~master_l2.index.duplicated(keep='last')]
             print(f"   📖 Loaded {len(master_l2):,} real snapshots from {master_l2_path.name}")
         except: pass
 
