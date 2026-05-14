@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Iron Oracle V12.0 — Command Center</title>
+  <title>Iron Oracle V12.1 — Command Center</title>
   <link id="gfonts"
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&family=Outfit:wght@400;600;800&display=swap"
     rel="stylesheet">
@@ -957,7 +957,7 @@
     <div class="logo">
       <div class="logo-icon"><img src="/static/img/logo.png" alt="Sovereign Logo"></div>
       <div class="logo-text">
-        <h1>Iron Oracle V12.0</h1>
+        <h1>Iron Oracle V12.1</h1>
         <p>SOVEREIGN NEURAL COMMAND CENTER</p>
       </div>
     </div>
@@ -973,7 +973,7 @@
   <div class="modal-overlay" id="recapModal">
     <div class="modal-box">
       <h3>⚠️ Recapitalize Station?</h3>
-      <p>This will wipe the current simulation P&amp;L and start a fresh $200 mission.<br><strong>Training progress will
+      <p>This will wipe the current simulation P&amp;L and start a fresh mission.<br><strong>Training progress will
           NOT be lost.</strong></p>
       <div class="modal-btns">
         <button class="btn btn-cancel"
@@ -1167,8 +1167,7 @@
           </div>
           <div style="border-top:1px solid var(--border);padding-top:0.6rem;margin-top:0.2rem">
             <div style="font-size:0.68rem;color:var(--muted);margin-bottom:0.3rem">MARKET STRATEGY</div>
-            <div id="deployStatus" style="font-size:0.8rem;font-weight:600;color:var(--gold)">⏳ Training in progress...
-            </div>
+            <div id="deployStatus" style="font-size:0.8rem;font-weight:600;color:var(--gold)">📡 SCANNING MARKET...</div>
           </div>
           <div style="font-size:0.68rem;color:var(--muted);margin-top:0.4rem;font-family:'JetBrains Mono',monospace"
             id="lastUpdated">Last updated: --</div>
@@ -1237,35 +1236,6 @@
       </div>
     </div>
 
-    <!-- ── Neural Topology Map (Dynamic Network) ── -->
-    <div class="card chart-card-full" style="background:rgba(56,189,248,0.02)">
-      <div class="card-header">
-        <span class="card-title" style="color:var(--cyan)">🌐 Live Neural Topology Map</span>
-        <span class="card-badge badge-cyan" id="topologyStatus">HIVE-SYNC: ACTIVE</span>
-      </div>
-      <div class="card-body" id="neuralMapContainer" style="height: 400px; position: relative; padding:0; overflow:hidden">
-        <div id="neuralCanvas" style="width:100%; height:100%"></div>
-        <!-- Fullscreen Toggle Icon -->
-        <div id="fsToggle" style="position: absolute; top: 15px; right: 15px; z-index: 100; cursor: pointer; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 8px; border: 1px solid rgba(56,189,248,0.3); backdrop-filter: blur(10px); transition: 0.3s;" onmouseover="this.style.background='rgba(56,189,248,0.2)'" onmouseout="this.style.background='rgba(0,0,0,0.6)'">
-           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-        </div>
-        <div style="position:absolute; bottom:1rem; left:1rem; pointer-events:none">
-          <div style="color:var(--muted); font-size:0.6rem; font-family:'JetBrains Mono'; margin-bottom:0.2rem">NETWORK
-            DENSITY</div>
-          <div style="width:120px; height:4px; background:var(--border); border-radius:2px">
-            <div id="densityBar"
-              style="width:40%; height:100%; background:var(--cyan); box-shadow:0 0 10px var(--cyan)"></div>
-          </div>
-        </div>
-        <!-- Biometrics overlay -->
-        <div
-          style="position:absolute; top:1rem; right:1rem; background:rgba(0,0,0,0.4); padding:0.8rem; border-radius:8px; border:1px solid var(--border); backdrop-filter:blur(4px)">
-          <div style="color:var(--gold); font-size:0.65rem; font-weight:800; margin-bottom:0.4rem">SYNAPTIC LOAD</div>
-          <div id="synapticStats" style="font-family:'JetBrains Mono'; font-size:0.8rem; color:var(--text)">0/256 ACTIVE
-          </div>
-        </div>
-      </div>
-    </div>
 
 
 
@@ -1274,7 +1244,7 @@
   </main>
 
   <footer>
-    ⚓ Iron Oracle V12.0 &nbsp;|&nbsp; 256-Expert MoE &nbsp;|&nbsp; 45-Feature Sovereign Hive &nbsp;|&nbsp; 15m Swing
+    ⚓ Iron Oracle V12.1 &nbsp;|&nbsp; 256-Expert MoE &nbsp;|&nbsp; 45-Feature Sovereign Hive &nbsp;|&nbsp; 15m Swing
     Trading
     &nbsp;<span class="blink">|</span>
   </footer>
@@ -1449,7 +1419,6 @@
               const isNew = !window.knownTradeKeys.has(tradeKey);
               if (isNew) {
                 window.knownTradeKeys.add(tradeKey);
-                if (window.neuralViz) window.neuralViz.triggerActivation(1.0);
               }
 
 
@@ -1538,10 +1507,13 @@
             experts[t.expert].count++;
           });
           const top3 = Object.values(experts).sort((a, b) => b.pnl - a.pnl).slice(0, 3);
-          const hofHtml = top3.map((e, i) => `
+          const hofHtml = top3.map((e, i) => {
+            const fallbackAvatar = e.name.includes('System') ? '🧠' : '🤖';
+            const avatar = e.avatar || fallbackAvatar;
+            return `
             <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.03); padding:0.6rem; border-radius:6px; border-left: 3px solid ${i == 0 ? 'var(--gold)' : 'var(--border)'}">
                 <div style="display:flex; align-items:center; gap:0.6rem;">
-                    <span style="font-size:1.2rem">${e.avatar}</span>
+                    <span style="font-size:1.2rem">${avatar}</span>
                     <div>
                         <div style="font-size:0.75rem; font-weight:700; color:var(--text)">${e.name}</div>
                         <div style="font-size:0.6rem; color:var(--muted)">${e.count} STRIKES | ${(e.win / e.count * 100).toFixed(0)}% WIN</div>
@@ -1549,7 +1521,7 @@
                 </div>
                 <div style="font-family:'JetBrains Mono'; font-weight:800; font-size:0.8rem; color:${e.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${e.pnl >= 0 ? '+' : ''}${e.pnl.toFixed(2)}%</div>
             </div>
-          `).join('');
+          `;}).join('');
           if (hofHtml) document.getElementById('hallOfFameList').innerHTML = hofHtml;
         }
 
@@ -1678,10 +1650,7 @@
 
         document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
 
-        // ── Update Neural Topology ──
-        if (window.neuralViz) {
-          window.neuralViz.update(d.expert_heatmap || [], d.current_epoch || 0);
-        }
+
 
 
 
@@ -1709,9 +1678,9 @@
             etrEl.textContent = days > 0 ? `ETR: ~${days}d ${hrs}h` : hrs > 0 ? `ETR: ~${hrs}h ${mins}m` : `ETR: ~${mins}m`;
             etrEl.style.color = 'var(--gold)';
           } else {
-            // Fallback: estimate from 34h per epoch
+            // Fallback: estimate from 14h per epoch (CPU velocity)
             const remEp = (d.total_epochs || 300) - (d.current_epoch || 0);
-            const remH = Math.round(remEp * 34);
+            const remH = Math.round(remEp * 14.2);
             const remD = Math.floor(remH / 24);
             etrEl.textContent = `ETR: ~${remD}d ${remH % 24}h (est.)`;
             etrEl.style.color = 'var(--muted)';
@@ -1737,10 +1706,16 @@
             pill.className = 'status-pill training';
             dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite;';
             lbl.textContent = 'TRAINING ACTIVE';
+            if (document.getElementById('deployStatus')) {
+               const cs = d.current_step || 0;
+               document.getElementById('deployStatus').textContent = cs > 0 ? '🧠 NEURAL SYNAPTIC TRAINING' : '📡 SCANNING MARKET...';
+               document.getElementById('deployStatus').style.color = cs > 0 ? 'var(--cyan)' : 'var(--gold)';
+            }
           } else {
             pill.className = 'status-pill idle';
             dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--red);';
             lbl.textContent = 'TRAINING STOPPED';
+            if (document.getElementById('deployStatus')) document.getElementById('deployStatus').textContent = '🛑 MISSION HALTED';
           }
         }
       } catch (e) { /* silent */ }
@@ -1801,225 +1776,13 @@
       const r = await fetch('/api/reset_wallet', { method: 'POST' });
       const d = await r.json();
       if (d.status === 'success') {
-        showToast('💰 Station Recapitalized! Fresh $200 mission started.');
+        showToast('💰 Station Recapitalized! Fresh mission started.');
         refresh();
       } else {
         showToast('❌ Reset failed: ' + d.message, 'var(--red)');
       }
     });
-  </script>
 
-  <script src="/static/js/3d-force-graph.min.js"></script>
-
-  <script>
-    // ── Hyper-Realistic 3D Neural Engine (Unified V12.0) ────────
-    class NeuralNetworkVisualizer {
-      constructor(containerId) {
-        this.containerId = containerId;
-        this.nodes = [];
-        this.links = [];
-        this.currentEpoch = 0;
-        this.holograms = [];
-        this.isReady = false;
-        this.THREE = null;
-
-        this.initEngine();
-      }
-
-      initEngine() {
-        const el = document.getElementById(this.containerId);
-        if (!el || typeof ForceGraph3D === 'undefined') {
-          setTimeout(() => this.initEngine(), 500);
-          return;
-        }
-
-        const layerColors = ['#fbbf24', '#a78bfa', '#38bdf8', '#34d399', '#f43f5e'];
-        const layerNames = ['MARKET_INPUT', 'PATTERN_V1', 'MOE_CORE_256', 'VOTING_GATE', 'STRIKE_CMD'];
-
-        this.graph = ForceGraph3D()(el)
-          .backgroundColor('rgba(0,0,0,0)')
-          .showNavInfo(false)
-          .nodeColor(node => node.active > 0.4 ? layerColors[node.layer] : '#1e2d3d')
-          .nodeLabel(node => {
-            const expertId = node.id.split('-').pop();
-            return `<div style="background:rgba(0,0,0,0.9); padding:10px; border:1px solid ${layerColors[node.layer]}; border-radius:6px; backdrop-filter:blur(10px); min-width:140px">
-                <div style="color:${layerColors[node.layer]}; font-weight:900; letter-spacing:1px; margin-bottom:4px">${layerNames[node.layer]}</div>
-                <div style="color:var(--text); font-size:11px; font-family:'JetBrains Mono'">[ NODE_${node.id} ]</div>
-                <div style="color:var(--muted); font-size:10px; margin-top:4px">CONVICTION: ${(node.active * 100).toFixed(1)}%</div>
-                ${node.layer === 2 ? `<div style="color:var(--gold); font-size:9px; margin-top:4px">PERSONA: Expert_Council_${expertId}</div>` : ''}
-              </div>`;
-          })
-          .nodeRelSize(5)
-          .nodeResolution(32)
-          .linkColor(() => 'rgba(56, 189, 248, 0.25)')
-          .linkWidth(0.8)
-          .linkDirectionalParticles(3)
-          .linkDirectionalParticleWidth(link => (link.alpha || 0.1) * 10)
-          .linkDirectionalParticleColor(link => layerColors[link.source.layer || 0])
-          .linkDirectionalParticleSpeed(0.01)
-          .width(el.parentElement.clientWidth)
-          .height(el.parentElement.clientHeight);
-
-        this.graph.controls().autoRotate = true;
-        this.graph.controls().autoRotateSpeed = 0.6;
-
-        // Enhanced THREE Context extraction
-        try {
-          this.THREE = window.THREE || (typeof ForceGraph3D !== 'undefined' ? ForceGraph3D.THREE : null);
-          if (!this.THREE) {
-            this.THREE = this.graph.scene().constructor.prototype.constructor.THREE || this.graph.renderer().constructor.THREE;
-          }
-        } catch (e) { console.warn("Acquiring 3D Context..."); }
-
-        this.isReady = true;
-        this.initNodes(0);
-        this.updateHolograms(0);
-      }
-
-      // Tactical Fullscreen Handshake
-      initFullscreen() {
-        const toggle = document.getElementById('fsToggle');
-        const container = document.getElementById('neuralMapContainer');
-        if (!toggle || !container) return;
-
-        toggle.addEventListener('click', () => {
-          if (!document.fullscreenElement) {
-            container.requestFullscreen().catch(err => {
-              showToast(`Fullscreen Denied: ${err.message}`, 'var(--red)');
-            });
-          } else {
-            document.exitFullscreen();
-          }
-        });
-
-        document.addEventListener('fullscreenchange', () => {
-          const isFs = !!document.fullscreenElement;
-          if (this.graph) {
-            const w = isFs ? window.innerWidth : container.parentElement.clientWidth;
-            const h = isFs ? window.innerHeight : 400;
-            this.graph.width(w).height(h);
-          }
-          
-          if (isFs) {
-            container.style.height = '100vh';
-            toggle.style.background = 'rgba(56,189,248,0.3)';
-          } else {
-            container.style.height = '400px';
-            toggle.style.background = 'rgba(0,0,0,0.6)';
-          }
-        });
-      }
-
-      createTextTexture(text, color) {
-        if (!this.THREE) return null;
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 256;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = color;
-        ctx.font = 'bold 80px "JetBrains Mono"';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(text, 256, 128);
-        const tex = new this.THREE.CanvasTexture(canvas);
-        tex.minFilter = this.THREE.LinearFilter;
-        return tex;
-      }
-
-      initNodes(epochFactor = 0) {
-        if (!this.isReady || !this.graph) return;
-        const growth = Math.floor(epochFactor / 20);
-        const layers = [4, 8 + growth, 12 + growth, 8 + growth, 1];
-        const nodes = [];
-        const links = [];
-
-        layers.forEach((count, lIdx) => {
-          for (let i = 0; i < count; i++) {
-            nodes.push({ id: `n-${lIdx}-${i}`, layer: lIdx, active: 0.1, fx: (lIdx - 2) * 120, fy: (i - count / 2) * 45, fz: 0 });
-          }
-        });
-
-        for (let l = 0; l < layers.length - 1; l++) {
-          const sLayer = nodes.filter(n => n.layer === l);
-          const tLayer = nodes.filter(n => n.layer === l + 1);
-          sLayer.forEach(s => {
-            tLayer.forEach(t => { links.push({ source: s.id, target: t.id, alpha: 0.05 }); });
-          });
-        }
-        this.graph.graphData({ nodes, links });
-      }
-
-      update(heatmap = [], epoch = 0) {
-        if (!this.isReady || !this.graph) return;
-        if (epoch > this.currentEpoch) {
-          this.currentEpoch = epoch;
-          this.initNodes(epoch);
-          this.updateHolograms(epoch);
-        }
-
-        const { nodes, links } = this.graph.graphData();
-        const activeCount = heatmap.filter(v => v > 0.35).length;
-        const confidence = (activeCount / 256 * 100).toFixed(0);
-
-        if (this.holograms && this.holograms[4] && this.THREE) {
-          const strikeText = `STRIKE_CMD (${confidence}%)`;
-          this.holograms[4].material.map = this.createTextTexture(strikeText, '#f43f5e');
-        }
-
-        nodes.forEach((n, i) => {
-          if (n.layer > 0 && n.layer < 4) {
-            const hIdx = i % heatmap.length;
-            n.active = 0.1 + (heatmap[hIdx] || 0) * 0.9;
-          } else if (n.layer === 0) {
-            n.active = 0.4 + Math.random() * 0.3;
-          } else {
-            n.active = activeCount > 20 ? 0.9 : 0.2;
-          }
-        });
-
-        links.forEach(l => {
-          if (l.source && l.target) {
-            // High-visibility alpha scaling
-            l.alpha = 0.2 + (l.source.active + l.target.active) * 0.4;
-          }
-        });
-
-        this.graph.nodeColor(this.graph.nodeColor());
-        this.graph.linkDirectionalParticleColor(this.graph.linkDirectionalParticleColor());
-        const stats = document.getElementById('synapticStats');
-        if (stats) stats.textContent = `${activeCount}/256 ACTIVE`;
-      }
-
-      updateHolograms(epoch) {
-        if (!this.isReady || !this.graph || !this.THREE) return;
-        if (this.holograms) this.holograms.forEach(h => this.graph.scene().remove(h));
-        this.holograms = [];
-
-        const growth = Math.floor(epoch / 20);
-        const stage = epoch < 50 ? 'WIRING' : (epoch < 150 ? 'EVOLVING' : 'SOVEREIGN');
-        const layerColors = ['#fbbf24', '#a78bfa', '#38bdf8', '#34d399', '#f43f5e'];
-        const dynamicNames = [`MARKET_IN [${stage}]`, `PATTERN_V${Math.floor(epoch / 100) + 1}`, `MOE_CORE (${12 + growth}N)`, `VOTING_GATE`, `STRIKE_CMD`];
-
-        dynamicNames.forEach((name, i) => {
-          const tex = this.createTextTexture(name, layerColors[i]);
-          if (!tex) return;
-          const sprite = new this.THREE.Sprite(new this.THREE.SpriteMaterial({ map: tex, transparent: true }));
-          sprite.position.set((i - 2) * 120, 300, 0);
-          sprite.scale.set(80, 40, 1);
-          this.graph.scene().add(sprite);
-          this.holograms.push(sprite);
-        });
-      }
-
-      triggerActivation() {
-        if (!this.isReady || !this.graph) return;
-        this.graph.linkDirectionalParticleSpeed(0.06);
-        setTimeout(() => { if (this.graph) this.graph.linkDirectionalParticleSpeed(0.01); }, 2000);
-      }
-    }
-
-    window.neuralViz = new NeuralNetworkVisualizer('neuralCanvas');
-    window.neuralViz.initFullscreen();
     setInterval(refresh, 5000);
     setInterval(checkHealth, 10000);
     setInterval(updateLivePrice, 60000);
