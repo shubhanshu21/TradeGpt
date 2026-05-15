@@ -47,6 +47,85 @@
       --text: #e2e8f0;
       --muted: #64748b;
       --glow: 0 0 20px rgba(240, 180, 41, 0.15);
+      --gauge-bg: #1a222c;
+    }
+
+    .mission-progress-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: var(--gauge-bg);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--cyan), var(--purple));
+      width: 0%;
+      transition: width 1s ease-in-out;
+      box-shadow: 0 0 10px var(--cyan);
+    }
+
+    .consensus-gauge {
+      position: relative;
+      width: 120px;
+      height: 60px;
+      overflow: hidden;
+    }
+
+    .gauge-svg {
+      width: 120px;
+      height: 120px;
+    }
+
+    .gauge-bg {
+      fill: none;
+      stroke: var(--gauge-bg);
+      stroke-width: 12;
+    }
+
+    .gauge-fill {
+      fill: none;
+      stroke: var(--gold);
+      stroke-width: 12;
+      stroke-dasharray: 188.5;
+      stroke-dashoffset: 188.5;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 1s ease-out;
+      filter: drop-shadow(0 0 5px var(--gold));
+    }
+
+    .gauge-text {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 1.2rem;
+      color: var(--gold);
+    }
+
+    .expert-specialty {
+      font-size: 0.6rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      background: rgba(167, 139, 250, 0.15);
+      color: var(--purple);
+      border: 1px solid rgba(167, 139, 250, 0.3);
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-top: 2px;
+      display: inline-block;
     }
 
     * {
@@ -169,6 +248,26 @@
     }
 
     .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .consensus-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .consensus-label {
+      font-size: 0.6rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    .status-badge {
       display: flex;
       align-items: center;
       gap: 0.5rem;
@@ -961,13 +1060,58 @@
         <p>SOVEREIGN NEURAL COMMAND CENTER</p>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;">
-      <div class="step-counter" id="stepCounter" title="Live batch step within current epoch">⚡ Step -- / --</div>
-      <div class="status-pill unknown" id="trainingPill"><span class="status-dot" id="trainingDot"></span><span
-          id="trainingLabel">CHECKING...</span></div>
-      <div class="header-time" id="clockDisplay">--:--:-- IST</div>
+    <div class="status-pill">
+      <div class="consensus-block">
+        <span class="consensus-label">Live Consensus</span>
+        <div class="consensus-gauge">
+          <svg class="gauge-svg" viewBox="0 0 120 120">
+            <path class="gauge-bg" d="M 15 60 A 45 45 0 0 1 105 60" />
+            <path id="consensusFill" class="gauge-fill" d="M 15 60 A 45 45 0 0 1 105 60" />
+          </svg>
+          <span id="consensusValue" class="gauge-text">0%</span>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:0.4rem;">
+        <div class="status-badge" id="trainingPill">
+          <div class="status-dot" id="trainingDot"></div>
+          <span id="trainingLabel">CHECKING...</span>
+        </div>
+        <div class="header-time" id="clockDisplay" style="font-size:0.6rem; color:var(--muted); text-align:right;">--:--:-- IST</div>
+      </div>
     </div>
   </header>
+
+  <main>
+    <!-- Live Ticker & Progress (V12.2) -->
+    <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1rem; position: relative; z-index: 5;">
+      <div class="mission-progress-container">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <span style="font-size:0.65rem; color:var(--muted); font-weight:700; text-transform:uppercase;">Epoch 
+              Progress (<span id="epochProgressLabel">0</span>%)</span>
+            <div class="progress-bar-bg" style="width: 300px;">
+              <div id="epochProgressBar" class="progress-bar-fill"></div>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <span style="font-size:0.65rem; color:var(--muted); font-weight:700; text-transform:uppercase;">Mission Completion</span>
+            <div style="font-size: 0.9rem; font-weight:800; color:#fff;">ETA: <span id="missionEta" style="color:var(--cyan)">Scanning...</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="mission-progress-container">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+           <div>
+             <span style="font-size:0.65rem; color:var(--muted); font-weight:700; text-transform:uppercase;">Mission Depth</span>
+             <div style="font-size: 0.9rem; font-weight:800; color:#fff;">EPOCH <span id="missionEpoch" style="color:var(--purple)">0</span> / 300</div>
+           </div>
+           <div style="text-align:right">
+             <span style="font-size:0.65rem; color:var(--muted); font-weight:700; text-transform:uppercase;">Safety Sentinel</span>
+             <div style="font-size: 0.8rem; font-weight:700; color:var(--red);">Max DD: <span id="maxDrawdownMission">0.0%</span></div>
+           </div>
+        </div>
+      </div>
+    </div>
 
   <!-- ── MODAL ── -->
   <div class="modal-overlay" id="recapModal">
@@ -987,10 +1131,10 @@
   <div id="toast">✅ Action complete</div>
 
   <!-- ── MAIN GRID ── -->
-  <main>
+
 
     <!-- ── ROW 1: KPI Cards ── -->
-    <div class="stats-row kpi-cards-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;">
+    <div class="stats-row kpi-cards-row" style="grid-column: 1 / -1; display:grid; grid-template-columns:repeat(4,1fr); gap:1rem;">
 
       <div class="kpi-card kpi-gold">
         <div class="kpi-label">AI Brain Growth</div>
@@ -1029,7 +1173,7 @@
 
     <!-- ── ROW 2: Side-by-Side Feed (ELEVATED) ── -->
     <div class="stats-row"
-      style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin-top: -0.5rem; align-items: stretch;">
+      style="grid-column: 1 / -1; display: flex; gap: 1rem; width: 100%; max-width: 100%; margin-top: -0.5rem; align-items: stretch;">
 
       <!-- Latest AI Strikes Feed (Left) -->
       <div class="card" style="flex: 2; min-width: 0;">
@@ -1047,11 +1191,10 @@
             <thead>
               <tr>
                 <th style="font-family:'Outfit'; width: 140px;">DATE / TIME (IST)</th>
-                <th style="font-family:'Outfit'">STRATEGIST</th>
                 <th style="font-family:'Outfit'">SIDE</th>
-                <th style="font-family:'Outfit'">PnL ($)</th>
-                <th style="font-family:'Outfit'">ENTRY</th>
+                <th style="font-family:'Outfit'">ENTRY PRICE</th>
                 <th style="font-family:'Outfit'">NET ROI</th>
+                <th style="font-family:'Outfit'">STRATEGIST</th>
               </tr>
             </thead>
             <tbody id="strikeTableBody">
@@ -1220,16 +1363,17 @@
         <table class="trade-log">
           <thead>
             <tr>
-              <th>Step #</th>
+              <th>Epoch #</th>
               <th>Win Rate</th>
               <th>Confusion</th>
+              <th>Profit/Loss</th>
               <th>Conviction</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody id="epochTableBody">
             <tr>
-              <td colspan="5" style="color:var(--muted);text-align:center;padding:1.5rem">Loading AI memory...</td>
+              <td colspan="6" style="color:var(--muted);text-align:center;padding:1.5rem">Loading AI memory...</td>
             </tr>
           </tbody>
         </table>
@@ -1344,23 +1488,23 @@
           const rows = [...epochs].reverse().slice(0, 10);
           tbody.innerHTML = rows.map(e => {
             let status;
-            if (e.val_acc >= 0.54) {
-              status = '<span style="color:var(--gold)">🏛️ SOVEREIGN PRIME</span>';
-            } else if (e.val_acc >= 0.53) {
-              status = '<span style="color:var(--green)">⚡ ALPHA FLOW</span>';
-            } else if (e.val_acc > 0) {
-              status = '<span style="color:var(--cyan)">⚓ LEARNING PHYSICS</span>';
-            } else {
-              status = '<span style="color:var(--muted)">🧬 SEQUENCING...</span>';
-            }
+            if (e.val_acc >= 0.54) status = '<span style="color:var(--gold)">🏛️ SOVEREIGN PRIME</span>';
+            else if (e.val_acc >= 0.53) status = '<span style="color:var(--green)">⚡ ALPHA FLOW</span>';
+            else if (e.val_acc > 0) status = '<span style="color:var(--cyan)">⚓ LEARNING PHYSICS</span>';
+            else status = '<span style="color:var(--muted)">🧬 SEQUENCING...</span>';
+
+            const roiVal = (e.roi && e.roi !== '---') ? parseFloat(e.roi.replace('$','')) : 0;
+            const roiColor = roiVal > 0 ? 'var(--green)' : (roiVal < 0 ? 'var(--red)' : 'var(--muted)');
+            const roiText = (e.roi && e.roi !== '---') ? e.roi : '---';
 
             return `<tr>
-            <td style="color:var(--gold)">#${e.epoch}</td>
-            <td style="color:var(--cyan)">${e.val_acc > 0 ? (e.val_acc * 100).toFixed(2) + '%' : '---'}</td>
-            <td>${e.val_loss > 0 ? e.val_loss.toFixed(4) : '---'}</td>
-            <td style="color:var(--purple)">${e.certainty > 0 ? e.certainty.toFixed(2) : '---'}</td>
-            <td>${status}</td>
-          </tr>`;
+              <td style="color:var(--gold); font-weight:800">#${e.epoch}</td>
+              <td style="color:var(--cyan)">${e.val_acc > 0 ? (e.val_acc * 100).toFixed(2) + '%' : '---'}</td>
+              <td>${e.val_loss > 0 ? e.val_loss.toFixed(4) : '---'}</td>
+              <td style="color:${roiColor}; font-weight:bold">${roiText}</td>
+              <td style="color:var(--purple); font-weight:700">${e.certainty > 0 ? e.certainty.toFixed(2) : '---'}</td>
+              <td style="font-size:0.65rem">${status}</td>
+            </tr>`;
           }).join('');
         }
 
@@ -1413,34 +1557,40 @@
             equityChart.update();
 
             tBody.innerHTML = d.trades.map(t => {
-              const color = t.net_pct >= 0 ? 'var(--green)' : 'var(--red)';
-              const sideColor = t.side === 'LONG' ? 'var(--green)' : 'var(--red)';
+              const resColor = t.net_pct >= 0 ? 'var(--green)' : 'var(--red)';
               const tradeKey = `${t.timestamp}-${t.entry}-${t.side}`;
               const isNew = !window.knownTradeKeys.has(tradeKey);
-              if (isNew) {
-                window.knownTradeKeys.add(tradeKey);
-              }
+              if (isNew) window.knownTradeKeys.add(tradeKey);
 
+              // Expert Specialty mapping
+              let specialty = "Generalist";
+              if (t.expert.includes("Neon") || t.expert.includes("Volt")) specialty = "Momentum Striker";
+              if (t.expert.includes("Cipher") || t.expert.includes("Ghost")) specialty = "Order-Flow Spec";
+              if (t.expert.includes("Pulse") || t.expert.includes("Flow")) specialty = "Structural Lead";
+              if (t.expert.includes("Neural") || t.expert.includes("Quant")) specialty = "Volatility Arb";
 
-              // pnl_usd: use API field if present, else estimate from net_pct × position size
-              const _posSize = d.config ? (d.config.initial_wallet || 200) : 200;
-              const pnl = (t.pnl_usd != null) ? t.pnl_usd : (_posSize * (t.net_pct || 0) / 100);
-              const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-              const pnlPrefix = pnl >= 0 ? '+' : '-';
-
-              return `<tr class="${isNew ? 'strike-entry' : ''}">
-                <td style="color:var(--muted); font-size:0.65rem;">${t.timestamp}</td>
-                <td style="display:flex; align-items:center; gap:0.4rem;">
-                  <span style="font-size:0.9rem;">${t.avatar || '🤖'}</span>
-                  <span style="color:var(--text); font-weight:600; font-size:0.75rem;">${t.expert || 'Neural Gate'}</span>
-                </td>
-                <td style="color:${sideColor}; font-weight:700">${t.side}</td>
-                <td style="color:${pnlColor}; font-weight:bold">${pnlPrefix}$${Math.abs(pnl).toFixed(2)}</td>
-                <td>$${t.entry.toLocaleString()}</td>
-                <td style="color:${color}; font-weight:700; font-size:0.9rem;">${t.net_pct >= 0 ? '+' : ''}${t.net_pct.toFixed(2)}%</td>
-              </tr>`;
+              return `<tr class="strike-row ${isNew ? 'strike-entry' : ''}">
+              <td>
+                <div style="font-size:0.75rem; font-weight:600; color:#fff">${t.timestamp}</div>
+                <div style="font-size:0.6rem; color:var(--muted)">DELTA_EX_HIVE</div>
+              </td>
+              <td>
+                <span class="badge-${t.side === 'LONG' ? 'cyan' : 'gold'}">${t.side}</span>
+              </td>
+              <td>
+                <div style="font-weight:700; font-size:0.8rem">$${t.entry.toLocaleString()}</div>
+                <div style="font-size:0.6rem; color:var(--muted)">BTC/USD</div>
+              </td>
+              <td>
+                <div style="color:${resColor}; font-weight:800">${t.net_pct > 0 ? '+' : ''}${t.net_pct.toFixed(2)}%</div>
+                <div style="font-size:0.6rem; color:var(--muted)">Net Realized</div>
+              </td>
+              <td>
+                <div style="font-weight:600; color:var(--text); font-size:0.75rem">${t.expert}</div>
+                <div class="expert-specialty">${specialty}</div>
+              </td>
+            </tr>`;
             }).join('');
-
             // Auto-scroll to bottom for latest trades
             const container = document.getElementById('strikeFeedContainer');
             if (container) container.scrollTop = container.scrollHeight;
@@ -1534,11 +1684,38 @@
           if (document.getElementById('tickerSOL')) document.getElementById('tickerSOL').textContent = `$${(145 + jitter() / 10).toLocaleString(undefined, { minimumFractionDigits: 1 })}`;
         }
 
-        // 4. Epoch Countdown (ETR)
-        if (document.getElementById('kpiEpoch')) {
-          const epValue = document.getElementById('kpiEpoch').textContent;
-          // Old ETR block removed — etrDisplay is now updated in the
-          // new step-counter block below (uses avg_epoch_secs from API).
+        // 4. Update Gauges & Progress (V12.2)
+        if (d.consensus_pct !== undefined) {
+          const fill = document.getElementById('consensusFill');
+          const val = document.getElementById('consensusValue');
+          if (fill && val) {
+            const circum = 141.4;
+            const offset = circum - (d.consensus_pct / 100 * circum);
+            fill.style.strokeDashoffset = offset;
+            val.innerText = `${Math.round(d.consensus_pct)}%`;
+            if (d.consensus_pct > 90) fill.style.stroke = 'var(--cyan)';
+            else if (d.consensus_pct > 70) fill.style.stroke = 'var(--gold)';
+            else fill.style.stroke = 'var(--muted)';
+          }
+        }
+
+        if (d.progress) {
+          const eBar = document.getElementById('epochProgressBar');
+          const eLabel = document.getElementById('epochProgressLabel');
+          const mEta = document.getElementById('missionEta');
+          const mEpoch = document.getElementById('missionEpoch');
+          if (eBar) eBar.style.width = `${d.progress.epoch}%`;
+          if (eLabel) eLabel.innerText = d.progress.epoch;
+          if (mEta) mEta.innerText = `${d.progress.mission_eta_days} Days`;
+          if (mEpoch) mEpoch.innerText = d.current_epoch;
+        }
+
+        if (d.risk && d.risk.max_dd !== undefined) {
+          const ddMission = document.getElementById('maxDrawdownMission');
+          const ddCard = document.getElementById('maxDrawdown');
+          const val = `${(d.risk.max_dd * 100).toFixed(2)}%`;
+          if (ddMission) ddMission.innerText = val;
+          if (ddCard) ddCard.innerText = val;
         }
 
         // 5. Restoration of Foundation Metrics
@@ -1546,7 +1723,7 @@
         if (document.getElementById('winRate') && d.risk) document.getElementById('winRate').textContent = d.risk.win_rate.toFixed(1) + '%';
         if (document.getElementById('sharpeRatio') && d.risk) document.getElementById('sharpeRatio').textContent = d.risk.sharpe.toFixed(2);
         if (document.getElementById('profitFactor') && d.risk) document.getElementById('profitFactor').textContent = d.risk.profit_factor.toFixed(2);
-        if (document.getElementById('maxDrawdown') && d.risk) document.getElementById('maxDrawdown').textContent = (d.risk.max_dd * 100).toFixed(2) + '%';
+
 
         // Expert Dialogue (Sovereign Dispatcher with TypewriterJS)
         if (d.dialogue && d.dialogue.length > 0) {

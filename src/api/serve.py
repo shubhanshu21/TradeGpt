@@ -186,7 +186,7 @@ def parse_training_log():
         val_losses = val_loss_pat.findall(raw)
 
         # Dashboard Table Parser
-        table_pat = re.compile(r"(\d{2}:\d{2}:\d{2})\s*\|\s*(\d+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)")
+        table_pat = re.compile(r"(\d{2}:\d{2}:\d{2})\s*\|\s*(\d+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*(?:\|\s*([^|\n]+))?")
         seen = {}
         for m in table_pat.finditer(raw):
             ep_int = int(m.group(2))
@@ -197,10 +197,14 @@ def parse_training_log():
                         v_loss = float(val_losses[ep_int - 1])
                     except: pass
                 
+                roi_val = m.group(5).strip() if m.group(5) else "---"
+                if roi_val != "---" and not roi_val.startswith("$"):
+                    roi_val = f"${roi_val}"
                 seen[ep_int] = {
                     "epoch": ep_int, 
                     "val_acc": float(m.group(3)),
                     "certainty": float(m.group(4)), 
+                    "roi": roi_val,
                     "val_loss": v_loss,
                     "completed_at": 0
                 }
@@ -342,11 +346,26 @@ async def get_stats():
         except Exception as e:
             print(f"DEBUG: Risk calc error: {e}")
 
+    # Progress & ETA
+    epoch_progress = (current_step / total_steps * 100) if total_steps > 0 else 0
+    
+    # Calculate Mission ETA (300 epochs)
+    # Estimate time per step (roughly 16s on CPU)
+    seconds_per_step = 16.0 
+    remaining_steps_this_epoch = total_steps - current_step
+    remaining_epochs = 300 - current_epoch_num
+    total_remaining_seconds = (remaining_steps_this_epoch * seconds_per_step) + (remaining_epochs * total_steps * seconds_per_step)
+    
+    mission_eta_days = total_remaining_seconds / 86400
+    
     price = await get_live_btc_price()
     dialogue = discourse_engine.generate_debate({
         "price": price, "certainty": latest.get("certainty", 0.0),
         "expert_heatmap": expert_heatmap, "epoch": current_epoch_num, "current_step": current_step
     })
+
+    certainty_val = latest.get("certainty", 0.0)
+    consensus_pct = (certainty_val / 120.0) * 100 if certainty_val > 0 else 0
 
     return {
         "status": "TRAINING" if current_step > 0 else "IDLE",
@@ -355,6 +374,12 @@ async def get_stats():
         "current_epoch": current_epoch_num,
         "current_step": current_step,
         "total_steps": total_steps,
+        "progress": {
+            "epoch": round(epoch_progress, 1),
+            "mission_eta_days": round(mission_eta_days, 1),
+            "mission_pct": round((current_epoch_num / 300) * 100, 1)
+        },
+        "consensus_pct": round(consensus_pct, 1),
         "net_profit": (roi_block["net"] or 0) if roi_block["status"] == "live" else 0,
         "risk": risk_metrics,
         "trades": recent_trades,

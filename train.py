@@ -57,7 +57,7 @@ class MissionControl(keras.callbacks.Callback):
     """
     def on_train_begin(self, logs=None):
         print("\n" + "="*50)
-        print(f"{'Time':<10} | {'Epoch':<5} | {'Val_Acc':<8} | {'Certainty':<10} | {'Status'}")
+        print(f"{'Time':<10} | {'Epoch':<5} | {'Val_Acc':<8} | {'Certainty':<10} | {'ROI':<10} | {'Status'}")
         print("-" * 50)
 
     def _update_dashboard(self, logs=None):
@@ -67,6 +67,7 @@ class MissionControl(keras.callbacks.Callback):
         cert  = logs.get("certainty_certainty", 0.0)
         ts    = datetime.now().strftime("%H:%M:%S")
         
+        net_80 = 0.0
         # ── Automated Sovereign Benchmarking (V11.1) ────────────────────────
         try:
             import json
@@ -127,6 +128,7 @@ class MissionControl(keras.callbacks.Callback):
                         gross = float((directions * (usd_diffs[mask] / e_p) * pos_size).sum())
                         fees = float(n_t * (pos_size * fee_rate))
                         roi_data["tiers"][str(th)] = {"trades": n_t, "net": gross - fees}
+                        if th == 80: net_80 = gross - fees
                 
                 # 3. Save detailed recent trades for dashboard feed
                 recent_trades = []
@@ -196,8 +198,9 @@ class MissionControl(keras.callbacks.Callback):
                     json.dump(roi_data, f_json, indent=4)
                 with open(ROOT / "logs" / "recent_sim_trades.json", "w") as f_trades:
                     json.dump(recent_trades[::-1], f_trades, indent=4)
+                return net_80
         except Exception as e:
-            pass
+            return 0.0
 
     def on_batch_end(self, batch, logs=None):
         pass # V12.1: Removed batch-end updates to maximize training velocity
@@ -208,12 +211,15 @@ class MissionControl(keras.callbacks.Callback):
         cert  = logs.get("val_certainty_certainty", 0.0)
         ts    = datetime.now().strftime("%H:%M:%S")
         
+        # ── V12.2: Live Benchmark First ─────────────────────────────────────
+        net_roi = self._update_dashboard(logs) or 0.0
+        
         status = "⚓ LEARNING"
         if v_acc >= 0.54: status = "🏛️ SOVEREIGN"
         elif v_acc >= 0.53: status = "⚡ ALPHA FLOW"
         
-        print(f"{ts:<10} | {epoch+1:<5} | {v_acc:<8.4f} | {cert:<10.3f} | {status}")
-        self._update_dashboard(logs)
+        roi_str = f"{'+' if net_roi >= 0 else ''}${net_roi:.2f}"
+        print(f"{ts:<10} | {epoch+1:<5} | {v_acc:<8.4f} | {cert:<10.3f} | {roi_str:<10} | {status}")
 
 
 def train_kraken(args):
