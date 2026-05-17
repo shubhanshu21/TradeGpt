@@ -33,7 +33,7 @@ LR           = 1e-6     # Very low LR — nudge, don't overwrite base knowledge
 CTX_WIN      = 120      # Must match training context window
 BATCH        = 64       # Smaller batch for fine-tune stability
 FREEZE_BELOW = 6        # Freeze foundational blocks (0-5), adapt top blocks (6-7)
-MODEL_FILE   = "hydra_best.keras"
+MODEL_FILE   = "sandbox_active.keras"
 SYMBOL       = "BTCUSD"
 TIMEFRAME    = "15m"   # Switched to 15m for maximum SNR (Phase 5+)
 KEEP_BACKUPS = 7        # Days of backups to retain
@@ -59,113 +59,131 @@ log("=" * 55)
 # ── 1. Validate model ─────────────────────────────────────────────────────────
 if not MODEL_PATH.exists():
     log(f"❌ Model not found: {MODEL_PATH}")
-    log("   Run train.py first to generate hydra_best.keras")
+    log("   Run: cp models/hydra_best.keras models/sandbox_active.keras first.")
     sys.exit(1)
 
 # ── 2. Backup yesterday's model ───────────────────────────────────────────────
 BACKUP_DIR.mkdir(exist_ok=True)
 date_str    = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
-backup_path = BACKUP_DIR / f"hydra_best_{date_str}.keras"
+backup_path = BACKUP_DIR / f"sandbox_active_{date_str}.keras"
 shutil.copy2(MODEL_PATH, backup_path)
 log(f"💾 Backup: {backup_path.name}")
 
 # Prune old backups — keep last KEEP_BACKUPS
-all_backups = sorted(BACKUP_DIR.glob("hydra_best_*.keras"))
+all_backups = sorted(BACKUP_DIR.glob("sandbox_active_*.keras"))
 for old in all_backups[:-KEEP_BACKUPS]:
     old.unlink()
     log(f"🗑️  Pruned: {old.name}")
 
-# ── 3. Fetch fresh data ───────────────────────────────────────────────────────
-log(f"📡 Fetching {CANDLES:,} fresh candles...")
+# ── 3. High-level Safeguard Training Pipeline ──────────────────────────────────
 try:
-    df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CANDLES, timeframe=TIMEFRAME)
-    log(f"   ✅ {len(df):,} candles received")
+    log(f"📡 Fetching {CANDLES:,} fresh candles...")
+    try:
+        df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CANDLES, timeframe=TIMEFRAME)
+        log(f"   ✅ {len(df):,} candles received")
+    except Exception as e:
+        log(f"❌ Fetch failed: {e}")
+        import traceback
+        log(traceback.format_exc())
+        sys.exit(1)
+
+    if len(df) < CTX_WIN + 50:
+        log(f"❌ Insufficient data: {len(df)} candles")
+        sys.exit(1)
+
+    # ── 4. Streaming dataset (DLS — no global scaler needed) ──────────────────────
+    log("🌊 Building fine-tune stream (DLS — Dynamic Local Scaling)...")
+    ds_info  = build_dataset_streaming(df, context_window=CTX_WIN, forecast_steps=15,
+                                        batch_size=BATCH)
+    tr_ds    = ds_info["tr_ds"]
+    va_ds    = ds_info["va_ds"]
+    steps_tr = ds_info["steps_tr"]
+    steps_va = ds_info["steps_va"]
+    log(f"   ✅ {steps_tr} train steps | {steps_va} val steps")
+
+    # V10.6 Phase 3: Re-build from scratch to avoid deserialization issues
+    log("🏗️  Re-building Phase 3 architecture and loading weights...")
+    from data.preprocess import build_feature_cols
+    _features = build_feature_cols()
+    _n_feat   = len(_features)
+    log(f"   Dynamic feature count: {_n_feat}")
+    model = build_kraken(n_features=_n_feat, context_window=CTX_WIN, forecast_steps=15)
+    try:
+        model.load_weights(str(MODEL_PATH))
+        log(f"✅ Weights loaded from {MODEL_FILE}")
+    except Exception as e:
+        log(f"⚠️  Weight load warning (shape mismatch if upgrading phase): {e}")
+        log("   Starting from scratch for this fine-tune session.")
+
+    # ── 7. Freeze bottom blocks ───────────────────────────────────────────────────
+    frozen = 0
+    for layer in model.layers:
+        if "hydra_block" in layer.name:
+            idx = int(layer.name.split("_")[-1]) if layer.name[-1].isdigit() else 0
+            if idx < FREEZE_BELOW:
+                layer.trainable = False
+                frozen += 1
+
+    trainable = sum(w.numpy().size for w in model.trainable_weights)
+    total     = sum(w.numpy().size for w in model.weights)
+    log(f"🔒 Frozen {frozen} blocks → {trainable:,} / {total:,} params active")
+
+    # ── 8. Recompile at low LR ────────────────────────────────────────────────────
+    model.compile(
+        optimizer=keras.optimizers.AdamW(LR, weight_decay=0.01, clipnorm=0.5),
+        loss={
+            "prediction": SovereignLoss(direction_weight=10.0),
+            "certainty":  None,   # Certainty head is not trained during fine-tune
+            "reasoning":  "sparse_categorical_crossentropy"
+        },
+        metrics={
+            "prediction": [SovereignAccuracy(name="dir_acc"), "mae"],
+            "certainty":  [CertaintyMetric(name="certainty")]
+        }
+    )
+
+    # ── 9. Fine-tune ──────────────────────────────────────────────────────────────
+    log(f"\n Fine-tuning: {EPOCHS} epochs on latest {DAYS}-day data...")
+    history = model.fit(tr_ds, validation_data=va_ds,
+                        epochs=EPOCHS, steps_per_epoch=steps_tr,
+                        validation_steps=steps_va, verbose=1)
+
+    initial_loss = history.history["loss"][0]
+    final_loss   = history.history["loss"][-1]
+    val_loss     = history.history["val_loss"][-1]
+    delta        = initial_loss - final_loss
+
+    # ── 10. Save or rollback ──────────────────────────────────────────────────────
+    log(f"\n📊 Results: loss {initial_loss:.4f} → {final_loss:.4f} (Δ{delta:+.4f}) | val: {val_loss:.4f}")
+
+    if delta > 0:
+        model.save(str(MODEL_PATH))
+        log(f"✅ Sandbox model updated — improved by {delta:.4f}")
+        
+        # --- CLEANUP: Clear used L5 snapshots to save space ---
+        log("🗑️  Cleaning up processed L5 snapshots...")
+        SNAPSHOT_DIR = ROOT / "data/orderbook_history"
+        if SNAPSHOT_DIR.exists():
+            for f_path in SNAPSHOT_DIR.glob("ob_*.json"):
+                f_path.unlink()
+            log("   ✅ L5 Snapshots purged.")
+    else:
+        shutil.copy2(backup_path, MODEL_PATH)
+        log(f"⚠️  No improvement — restored yesterday's model")
+
+    log("=" * 55)
+    log(f"✅ Fine-tune complete. Brain adapted to {DAYS}-day regime.")
+    log("=" * 55)
 except Exception as e:
-    log(f"❌ Fetch failed: {e}"); sys.exit(1)
-
-if len(df) < CTX_WIN + 50:
-    log(f"❌ Insufficient data: {len(df)} candles"); sys.exit(1)
-
-# ── 4. Streaming dataset (DLS — no global scaler needed) ──────────────────────
-log("🌊 Building fine-tune stream (DLS — Dynamic Local Scaling)...")
-ds_info  = build_dataset_streaming(df, context_window=CTX_WIN, forecast_steps=15,
-                                    batch_size=BATCH)
-tr_ds    = ds_info["tr_ds"]
-va_ds    = ds_info["va_ds"]
-steps_tr = ds_info["steps_tr"]
-steps_va = ds_info["steps_va"]
-log(f"   ✅ {steps_tr} train steps | {steps_va} val steps")
-
-# V10.6 Phase 3: Re-build from scratch to avoid deserialization issues
-log("🏗️  Re-building Phase 3 architecture and loading weights...")
-from data.preprocess import build_feature_cols
-_features = build_feature_cols()
-_n_feat   = len(_features)
-log(f"   Dynamic feature count: {_n_feat}")
-model = build_kraken(n_features=_n_feat, context_window=CTX_WIN, forecast_steps=15)
-try:
-    model.load_weights(str(MODEL_PATH))
-    log(f"✅ Weights loaded from {MODEL_FILE}")
-except Exception as e:
-    log(f"⚠️  Weight load warning (shape mismatch if upgrading phase): {e}")
-    log("   Starting from scratch for this fine-tune session.")
-
-# ── 7. Freeze bottom blocks ───────────────────────────────────────────────────
-frozen = 0
-for layer in model.layers:
-    if "hydra_block" in layer.name:
-        idx = int(layer.name.split("_")[-1]) if layer.name[-1].isdigit() else 0
-        if idx < FREEZE_BELOW:
-            layer.trainable = False
-            frozen += 1
-
-trainable = sum(w.numpy().size for w in model.trainable_weights)
-total     = sum(w.numpy().size for w in model.weights)
-log(f"🔒 Frozen {frozen} blocks → {trainable:,} / {total:,} params active")
-
-# ── 8. Recompile at low LR ────────────────────────────────────────────────────
-model.compile(
-    optimizer=keras.optimizers.AdamW(LR, weight_decay=0.01, clipnorm=0.5),
-    loss={
-        "prediction": SovereignLoss(direction_weight=10.0),
-        "certainty":  None,   # Certainty head is not trained during fine-tune
-        "reasoning":  "sparse_categorical_crossentropy"
-    },
-    metrics={
-        "prediction": [SovereignAccuracy(name="dir_acc"), "mae"],
-        "certainty":  [CertaintyMetric(name="certainty")]
-    }
-)
-
-# ── 9. Fine-tune ──────────────────────────────────────────────────────────────
-log(f"\n� Fine-tuning: {EPOCHS} epochs on latest {DAYS}-day data...")
-history = model.fit(tr_ds, validation_data=va_ds,
-                    epochs=EPOCHS, steps_per_epoch=steps_tr,
-                    validation_steps=steps_va, verbose=1)
-
-initial_loss = history.history["loss"][0]
-final_loss   = history.history["loss"][-1]
-val_loss     = history.history["val_loss"][-1]
-delta        = initial_loss - final_loss
-
-# ── 10. Save or rollback ──────────────────────────────────────────────────────
-log(f"\n📊 Results: loss {initial_loss:.4f} → {final_loss:.4f} (Δ{delta:+.4f}) | val: {val_loss:.4f}")
-
-if delta > 0:
-    model.save(str(MODEL_PATH))
-    log(f"✅ Model updated — improved by {delta:.4f}")
+    import traceback
+    log(f"❌ CRITICAL FINE-TUNE RUNTIME ERROR: {e}")
+    log(traceback.format_exc())
     
-    # --- CLEANUP: Clear used L5 snapshots to save space ---
-    log("🗑️  Cleaning up processed L5 snapshots...")
-    SNAPSHOT_DIR = ROOT / "data/orderbook_history"
-    if SNAPSHOT_DIR.exists():
-        for f_path in SNAPSHOT_DIR.glob("ob_*.json"):
-            f_path.unlink()
-        log("   ✅ L5 Snapshots purged.")
-else:
-    shutil.copy2(backup_path, MODEL_PATH)
-    log(f"⚠️  No improvement — restored yesterday's model")
-
-log("=" * 55)
-log(f"✅ Fine-tune complete. Brain adapted to {DAYS}-day regime.")
-log("=" * 55)
+    # Safe Rollback Safeguard
+    if 'backup_path' in locals() and backup_path.exists() and MODEL_PATH.exists():
+        try:
+            shutil.copy2(backup_path, MODEL_PATH)
+            log(f"🛡️  SAFEGUARD: Rolled back sandbox active model to clean state from backup: {backup_path.name}")
+        except Exception as rollback_err:
+            log(f"❌ CRITICAL: Safe rollback failed: {rollback_err}")
+    sys.exit(1)

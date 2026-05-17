@@ -198,8 +198,12 @@ def parse_training_log():
                     except: pass
                 
                 roi_val = m.group(5).strip() if m.group(5) else "---"
-                if roi_val != "---" and not roi_val.startswith("$"):
-                    roi_val = f"${roi_val}"
+                clean_roi = roi_val.replace("$", "").strip()
+                try:
+                    val = float(clean_roi)
+                    roi_val = f"+${val:.2f}" if val >= 0 else f"-${abs(val):.2f}"
+                except ValueError:
+                    pass
                 seen[ep_int] = {
                     "epoch": ep_int, 
                     "val_acc": float(m.group(3)),

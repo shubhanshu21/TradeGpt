@@ -50,20 +50,19 @@ def log(msg, color=C_RESET):
     print(f"[{C_CYAN}{stamp}{C_RESET}] {color}{msg}{C_RESET}", flush=True)
 
 def load_model():
-    """Load the trained Iron Oracle brain with smart checkpoint selection."""
+    """Load the trained Iron Oracle brain from the isolated sandbox copy."""
     from core.hydra import build_kraken
     from data.preprocess import build_feature_cols
-    models_dir  = ROOT / "models"
-    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
-    model_p     = checkpoints[0] if checkpoints else models_dir / "hydra_best.keras"
+    model_p = ROOT / "models" / "sandbox_active.keras"
     if not model_p.exists():
-        log(f"❌ No model checkpoint found in {models_dir}", C_RED); sys.exit(1)
+        log(f"❌ No sandbox model found at {model_p}", C_RED); sys.exit(1)
     n_feat = len(build_feature_cols())
-    log(f"🏗️  Re-building Iron Oracle V12.0 ({n_feat} features) | Loading: {model_p.name}...")
+    log(f"🏗️  Re-building Iron Oracle V12.0 ({n_feat} features) | Loading sandbox active brain...")
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN)
     model.load_weights(str(model_p))
-    log("✅ Brain sync complete.", C_GREEN)
-    return model
+    mtime = model_p.stat().st_mtime
+    log(f"✅ Sandbox Brain sync complete: sandbox_active.keras (mtime: {mtime})", C_GREEN)
+    return model, mtime
 
 def get_neural_signal(model):
     """
@@ -71,36 +70,45 @@ def get_neural_signal(model):
     FIX #1: Uses Dynamic Local Scaling (DLS) — matching training pipeline.
     Returns (mean_price_move, certainty_pct, mean_volatility, full_pred_array).
     """
-    features = build_feature_cols()
-    n_feats  = len(features)  # 42
+    try:
+        features = build_feature_cols()
+        n_feats  = len(features)  # 42
 
-    # Fetch CTX_WIN + buffer for indicator warm-up
-    df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CTX_WIN + 150, timeframe=TIMEFRAME)
-    df_feat = compute_indicators(df)
-    data    = df_feat[features].values.astype("float32")
+        # Fetch CTX_WIN + buffer for indicator warm-up
+        df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CTX_WIN + 150, timeframe=TIMEFRAME)
+        if df is None or len(df) == 0:
+            raise ValueError("fetch_live_kat_data returned empty or None dataframe")
+            
+        df_feat = compute_indicators(df)
+        data    = df_feat[features].values.astype("float32")
 
-    # FIX #1: DLS — scale using the local window stats (same as training)
-    x_raw  = data[-CTX_WIN:]
-    l_mean = x_raw.mean(axis=0)
-    l_std  = x_raw.std(axis=0) + 1e-8
-    x_scaled = (x_raw - l_mean) / l_std
-    X_in   = x_scaled[np.newaxis].astype("float32")  # (1, 120, 42)
+        # FIX #1: DLS — scale using the local window stats (same as training)
+        x_raw  = data[-CTX_WIN:]
+        l_mean = x_raw.mean(axis=0)
+        l_std  = x_raw.std(axis=0) + 1e-8
+        x_scaled = (x_raw - l_mean) / l_std
+        X_in   = x_scaled[np.newaxis].astype("float32")  # (1, 120, 42)
 
-    # Iron Oracle returns [prediction_trajectory, certainty_map, reasoning_head]
-    outputs      = model(X_in, training=False)
-    pred         = outputs[0].numpy()[0]   # (16, 3)
-    certainty_2d = outputs[1].numpy()[0]   # (120,) per-step certainty
-    reasoning    = int(np.argmax(outputs[2].numpy()[0]))
+        # Iron Oracle returns [prediction_trajectory, certainty_map, reasoning_head]
+        outputs      = model(X_in, training=False)
+        pred         = outputs[0].numpy()[0]   # (16, 3)
+        certainty_2d = outputs[1].numpy()[0]   # (120,) per-step certainty
+        reasoning    = int(np.argmax(outputs[2].numpy()[0]))
 
-    pred_future  = pred[1:]                # (15, 3) — future steps only
-    p_curve      = pred_future[:, 0]       # price trajectory
-    v_curve      = pred_future[:, 1]       # volatility
+        pred_future  = pred[1:]                # (15, 3) — future steps only
+        p_curve      = pred_future[:, 0]       # price trajectory
+        v_curve      = pred_future[:, 1]       # volatility
 
-    # Normalize certainty to 0–100%
-    cert_mean    = float(np.mean(certainty_2d))
-    cert_pct     = cert_mean
+        # Normalize certainty to 0–100%
+        cert_mean    = float(np.mean(certainty_2d))
+        cert_pct     = cert_mean
 
-    return np.mean(p_curve), cert_pct, np.mean(v_curve), reasoning, pred_future
+        return np.mean(p_curve), cert_pct, np.mean(v_curve), reasoning, pred_future
+    except Exception as e:
+        import traceback
+        log(f"❌ Error in get_neural_signal: {e}", C_RED)
+        log(traceback.format_exc(), C_RED)
+        raise e
 
 def run_pilot():
     from config.sovereign_config import LABELS
@@ -112,11 +120,21 @@ def run_pilot():
     print("="*60)
 
     client = DeltaClient(testnet=True)
-    model  = load_model()  # FIX #1: DLS — no scaler needed
+    model, last_mtime = load_model()  # FIX #1: DLS — no scaler needed
 
     last_trade_time = 0
     while True:
         try:
+            # ── Hot-Reload Check (Sandbox Active) ────────────────────────────
+            model_p = ROOT / "models" / "sandbox_active.keras"
+            if model_p.exists():
+                curr_mtime = model_p.stat().st_mtime
+                if curr_mtime > last_mtime:
+                    log(f"🔄 ACTIVE SANDBOX BRAIN UPDATE DETECTED! Hot-reloading weights...", C_CYAN)
+                    model.load_weights(str(model_p))
+                    last_mtime = curr_mtime
+                    log("✅ Hot-reload complete. Active model upgraded in real-time!", C_GREEN)
+
             current_time = time.time()
             log(f"📡 Polling {SYMBOL} [{TIMEFRAME}] market stream...")
 
@@ -131,7 +149,7 @@ def run_pilot():
             # mean_price is a Z-score, so we map it back to roughly $150/unit
             est_swing = abs(mean_price * 150.0)
 
-            cert_norm = min(1.0, max(0.0, (cert_raw - 100.0) / 30.0 + 0.5))
+            cert_norm = cert_raw
 
             log(f"🔮 REASONING     : {LABELS[reasoning]}")
             log(f"🔮 EXPECTED SWING: ±${est_swing:.2f}  (min: ${MIN_SWING:.0f})")
@@ -199,7 +217,9 @@ def run_pilot():
             log("🛑 Pilot stopped by operator.", C_YELLOW)
             break
         except Exception as e:
+            import traceback
             log(f"⚠️  Loop error: {e}", C_RED)
+            log(traceback.format_exc(), C_RED)
             time.sleep(30)
 
 if __name__ == "__main__":

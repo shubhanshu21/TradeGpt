@@ -218,7 +218,7 @@ class MissionControl(keras.callbacks.Callback):
         if v_acc >= 0.54: status = "🏛️ SOVEREIGN"
         elif v_acc >= 0.53: status = "⚡ ALPHA FLOW"
         
-        roi_str = f"{'+' if net_roi >= 0 else ''}${net_roi:.2f}"
+        roi_str = f"+${net_roi:.2f}" if net_roi >= 0 else f"-${abs(net_roi):.2f}"
         print(f"{ts:<10} | {epoch+1:<5} | {v_acc:<8.4f} | {cert:<10.3f} | {roi_str:<10} | {status}")
 
 

@@ -19,3 +19,6 @@ SOVEREIGN_MULTIPLIER = 1.0  # Strategic Scaling Constant
 # Neural Architecture
 CONTEXT_WINDOW = 120
 FORECAST_STEPS = 15
+
+# Reasoning head label map
+LABELS = {0: "SOVEREIGN_LONG 🏹", 1: "SOVEREIGN_SHORT 📉", 2: "FEE_TRAP ⚠️", 3: "NOISE 😴"}
