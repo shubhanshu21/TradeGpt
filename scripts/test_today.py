@@ -1,164 +1,153 @@
-import os
+"""
+📊 SOVEREIGN KRAKEN — Live Performance Evaluator (Today's Data)
+==============================================================
+Loads the active Sandbox brain, fetches all real-time 15m candles from today,
+runs inference at every single bar of today's session, and evaluates the exact
+directional accuracy against the actual realized price changes.
+"""
+
 import sys
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-import keras
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
-# Setup paths
 ROOT = Path(__file__).parent.parent
-sys.path.append(str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from core.hydra import build_kraken, init_kraken_hardware, CertaintyMetric, SovereignAccuracy, SovereignLoss
-from data.preprocess import compute_indicators, build_feature_cols
+from core.hydra import build_kraken
 from exchange.fetch_data import fetch_live_kat_data
+from data.preprocess import build_feature_cols, compute_indicators
 
-def run_today_audit():
-    print("\n" + "="*60)
-    print("🚀 IRON ORACLE V11: TODAY'S DATA AUDIT")
-    print("="*60)
-    
-    # 1. Initialize and Build Model
-    model_path = ROOT / "models" / "hydra_best.keras"
-    if not model_path.exists():
-        print(f"❌ Error: Model weights not found at {model_path}")
-        return
-    
-    n_features = len(build_feature_cols())
-    print(f"🏗️ Building Hydra V11.0 architecture ({n_features} features)...")
-    try:
-        # Build the model manually first to avoid Lambda deserialization issues
-        model = build_kraken(context_window=120, n_features=n_features)
-        print("📂 Loading weights into architecture...")
-        model.load_weights(model_path)
-        print("✅ Model ready for inference.")
-    except Exception as e:
-        print(f"❌ Error building/loading model: {e}")
-        # Fallback to direct load if build fails
-        print("🔄 Attempting direct load with safe_mode=False...")
-        try:
-            keras.config.enable_unsafe_deserialization()
-            model = keras.models.load_model(model_path, custom_objects={
-                "SovereignLoss": SovereignLoss,
-                "CertaintyMetric": CertaintyMetric,
-                "SovereignAccuracy": SovereignAccuracy
-            })
-            print("✅ Direct load successful.")
-        except Exception as e2:
-            print(f"❌ Critical Error: {e2}")
-            return
+def evaluate_today():
+    print("=" * 60)
+    print("🔮 EVALUATING ACTIVE BRAIN ON TODAY'S LIVE DATA (MAY 19, 2026)")
+    print("=" * 60)
 
-    # 2. Fetch live data for today
-    symbol = "BTCUSD"
-    timeframe = "15m"
-    n_candles = 300 
-    print(f"📡 Fetching live {symbol} market context...")
-    
-    try:
-        df_raw = fetch_live_kat_data(symbol, n_candles, timeframe)
-        df = compute_indicators(df_raw)
-        features = build_feature_cols()
-        data = df[features].values.astype('float32')
-        raw_prices = df['close'].values
-        timestamps = df.index
-    except Exception as e:
-        print(f"❌ Error fetching data: {e}")
+    # 1. Load active sandbox model
+    model_p = ROOT / "models" / "sandbox_active.keras"
+    if not model_p.exists():
+        print(f"❌ Active model weights not found at {model_p}")
         return
 
-    print(f"📊 Data synced. Current local time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"📊 Last candle in dataset: {timestamps[-1]}")
-    
-    # 3. Run inference on the LATEST window
-    ctx = 120
-    if len(data) < ctx:
-        print(f"❌ Error: Not enough data ({len(data)} < {ctx})")
+    features = build_feature_cols()
+    n_feats = len(features)
+    CTX_WIN = 120
+    FORECAST = 15
+
+    print("🏗️  Building neural structure...")
+    model = build_kraken(n_features=n_feats, context_window=CTX_WIN)
+    model.load_weights(str(model_p))
+    print("✅ Model loaded successfully!")
+
+    # 2. Fetch candles covering today
+    # 24 hours * 4 candles = 96 candles + CTX_WIN + FORECAST = ~250 candles
+    print("\n📡 Fetching live market stream for May 19 session...")
+    df = fetch_live_kat_data(symbol="BTCUSD", n_candles=250, timeframe="15m")
+    if df is None or len(df) == 0:
+        print("❌ Failed to fetch candles.")
         return
-    
-    latest_x = data[-ctx:]
-    local_mean = latest_x.mean(axis=0)
-    local_std  = latest_x.std(axis=0)
-    local_std = np.maximum(local_std, 1e-3) # Stability floor from preprocess.py
-    
-    x_scaled = np.clip((latest_x - local_mean) / local_std, -5.0, 5.0)
-    X = np.expand_dims(x_scaled, axis=0)
-    
-    outputs = model(X, training=False)
-    forecast = outputs[0].numpy()[0]
-    certainty = np.mean(outputs[1].numpy()[0])
-    reasoning = int(np.argmax(outputs[2].numpy()[0]))
-    
-    bias_map = {0: "SOVEREIGN_LONG 🏹", 1: "SOVEREIGN_SHORT 📉", 2: "FEE_TRAP ⚠️", 3: "NOISE 😴"}
-    current_bias = bias_map.get(reasoning, "UNKNOWN")
-    
-    print("\n" + "─"*30)
-    print(f"🧠 LIVE MARKET VERDICT")
-    print(f"Current Price:  ${raw_prices[-1]:,.2f}")
-    print(f"Model Bias:     {current_bias}")
-    print(f"Certainty:      {certainty:.3f}")
-    print("─"*30)
 
-    # 4. Detailed Performance Check on Today's candles (May 15)
-    # Today's data starts at 00:00 UTC on May 15
-    today_start = pd.Timestamp(datetime.now().date(), tz='UTC')
-    today_mask = timestamps >= today_start
-    today_indices = np.where(today_mask)[0]
-    
-    if len(today_indices) == 0:
-        print("\n⚠️ No candles recorded yet for today (May 15). Showing last 20 candles instead.")
-        today_indices = range(len(data)-20, len(data))
+    df = compute_indicators(df)
+    data = df[features].values.astype("float32")
+    closes = df['close'].values
 
-    print(f"\n📜 PERFORMANCE AUDIT (Today: {today_start.strftime('%Y-%m-%d')})")
-    print(f"{'Time (UTC)':<18} | {'Side':<6} | {'Entry':<10} | {'Exit':<10} | {'Result':<8}")
-    print("-" * 65)
+    # Determine index where today starts (2026-05-19 00:00:00 UTC)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    today_start = datetime(2026, 5, 19, 0, 0, 0, tzinfo=timezone.utc)
     
-    f = 15 # 15-step (3h 45m) forward horizon
-    total_net = 0
-    trades = 0
-    wins = 0
-    fee_rate = 0.0012
-    
-    # We test each candle for today that has enough forward context
-    for i in today_indices:
-        if i + f >= len(data): continue
-        if i < ctx: continue
-        
-        # Prepare window
-        win_x = data[i-ctx:i]
-        l_mean = win_x.mean(axis=0)
-        l_std  = np.maximum(win_x.std(axis=0), 1e-3)
-        xs = np.clip((win_x - l_mean) / l_std, -5.0, 5.0)
-        inp = np.expand_dims(xs, axis=0)
-        
-        out = model(inp, training=False)
-        reas = int(np.argmax(out[2].numpy()[0]))
-        cert = np.mean(out[1].numpy()[0])
-        
-        # Lower certainty threshold for audit to see more trades, 
-        # but Sovereign moves only
-        if reas in [0, 1] and cert > 110.0:
-            side = "LONG" if reas == 0 else "SHORT"
-            entry = raw_prices[i-1]
-            exit_p = raw_prices[i+f-1]
-            
-            raw_ret = (exit_p - entry) / entry if side == "LONG" else (entry - exit_p) / entry
-            net_ret = raw_ret - fee_rate
-            
-            total_net += net_ret
-            trades += 1
-            if net_ret > 0: wins += 1
-            
-            ts_str = timestamps[i-1].strftime("%H:%M")
-            print(f"{ts_str:<18} | {side:<6} | {entry:<10.1f} | {exit_p:<10.1f} | {net_ret*100:>+7.2f}%")
+    # Find indices that fall inside today
+    today_indices = df[df['timestamp'] >= today_start].index.tolist()
+    if not today_indices:
+        print("⚠️ No candles found for today yet. Using the last 80 candles as proxy.")
+        today_indices = list(range(len(df) - 80 - FORECAST, len(df) - FORECAST))
 
-    if trades > 0:
-        print("-" * 65)
-        print(f"SUMMARY: {trades} Trades | {wins} Wins | Win Rate: {(wins/trades*100):.1f}%")
-        print(f"TOTAL NET ROI FOR TODAY: {total_net*100:>+7.2f}%")
-    else:
-        print("\n😴 Model was in deep scanning mode today. No high-conviction trades fired.")
-    print("="*60 + "\n")
+    # Filter out indices that don't have enough forward data to check realization
+    eval_indices = [idx for idx in today_indices if idx >= CTX_WIN and idx < len(df) - FORECAST]
+
+    if not eval_indices:
+        print("❌ Not enough completed candles today yet to evaluate a 15-bar forecast.")
+        return
+
+    print(f"📈 Found {len(eval_indices)} complete validation steps for today's session.")
+    print("🧠 Running forward neural simulation step-by-step...")
+
+    correct_predictions = 0
+    total_predictions = 0
+    certainties_correct = []
+    certainties_incorrect = []
+
+    results = []
+
+    for idx in eval_indices:
+        # Context window slicing
+        x_raw = data[idx - CTX_WIN + 1 : idx + 1]
+        l_mean = x_raw.mean(axis=0)
+        l_std = x_raw.std(axis=0) + 1e-8
+        x_scaled = (x_raw - l_mean) / l_std
+        X_in = x_scaled[np.newaxis].astype("float32")
+
+        # Inference
+        outputs = model(X_in, training=False)
+        pred = outputs[0].numpy()[0]          # (16, 3)
+        certainty_2d = outputs[1].numpy()[0]  # (120,)
+        
+        # Predicted price trajectory trajectory
+        pred_future = pred[1:]                 # (15, 3)
+        p_curve = pred_future[:, 0]
+        predicted_move = np.mean(p_curve)     # Z-score mean move
+
+        # Actual realization check
+        actual_curr_p = closes[idx]
+        actual_future_prices = closes[idx + 1 : idx + FORECAST + 1]
+        actual_mean_future = np.mean(actual_future_prices)
+        actual_move = actual_mean_future - actual_curr_p
+
+        # Classify direction
+        pred_dir = 1 if predicted_move > 0 else -1
+        actual_dir = 1 if actual_move > 0 else -1
+
+        is_correct = (pred_dir == actual_dir)
+        cert_pct = float(np.mean(certainty_2d)) * 100
+
+        if is_correct:
+            correct_predictions += 1
+            certainties_correct.append(cert_pct)
+        else:
+            certainties_incorrect.append(cert_pct)
+
+        total_predictions += 1
+
+        results.append({
+            "Time": df['timestamp'].iloc[idx].strftime("%H:%M UTC"),
+            "Price": f"${actual_curr_p:,.2f}",
+            "Pred Move": f"{'+' if pred_dir > 0 else ''}{predicted_move:.2f}σ",
+            "Actual Move": f"{'+' if actual_move > 0 else ''}${actual_move:.2f}",
+            "Certainty": f"{cert_pct:.1f}%",
+            "Result": "🟢 CORRECT" if is_correct else "🔴 INCORRECT"
+        })
+
+    # Summary calculations
+    acc = (correct_predictions / total_predictions) * 100 if total_predictions > 0 else 0
+    avg_cert_c = np.mean(certainties_correct) if certainties_correct else 0
+    avg_cert_i = np.mean(certainties_incorrect) if certainties_incorrect else 0
+
+    # Print Table
+    print("\n" + "=" * 85)
+    print(f"{'TIMESTAMP':<12} | {'BTC PRICE':<12} | {'PREDICTED SWING':<15} | {'REALIZED MOVE':<15} | {'CERTAINTY':<10} | {'OUTCOME':<12}")
+    print("=" * 85)
+    for r in results[-15:]:  # Print the last 15 steps for readability
+        print(f"{r['Time']:<12} | {r['Price']:<12} | {r['Pred Move']:<15} | {r['Actual Move']:<15} | {r['Certainty']:<10} | {r['Result']:<12}")
+    print("=" * 85)
+
+    print("\n📊 SUMMARY PERFORMANCE METRICS FOR TODAY:")
+    print("=" * 60)
+    print(f"   Total Evaluated Steps : {total_predictions}")
+    print(f"   Correct Predictions   : {correct_predictions}")
+    print(f"   Directional Accuracy  : {acc:.2%}" if total_predictions > 0 else "   Directional Accuracy  : 0.00%")
+    print(f"   Avg Certainty (Wins)  : {avg_cert_c:.2f}%")
+    print(f"   Avg Certainty (Losses): {avg_cert_i:.2f}%")
+    print("=" * 60)
 
 if __name__ == "__main__":
-    run_today_audit()
+    evaluate_today()

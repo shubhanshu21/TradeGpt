@@ -77,6 +77,22 @@ for old in all_backups[:-KEEP_BACKUPS]:
 
 # ── 3. High-level Safeguard Training Pipeline ──────────────────────────────────
 try:
+    # ── RAM OOM Safeguard: Terminate base training process temporarily ─────────
+    import os, subprocess
+    try:
+        # Find train.py processes
+        pids_raw = subprocess.check_output(["pgrep", "-f", "train.py"]).decode().strip().split()
+        pids = [int(p) for p in pids_raw if p.isdigit()]
+        for pid in pids:
+            if pid != os.getpid():
+                log(f"🛑 RAM SAFEGUARD: Found running base training process (PID {pid}).")
+                log("   Terminating base training temporarily to free RAM and prevent OOM crash...")
+                subprocess.run(["kill", "-9", str(pid)])
+                log("   ✅ Base training terminated successfully. Memory freed.")
+    except Exception:
+        # No train.py process running or pgrep failed, safe to proceed
+        pass
+
     log(f"📡 Fetching {CANDLES:,} fresh candles...")
     try:
         df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CANDLES, timeframe=TIMEFRAME)
@@ -187,3 +203,27 @@ except Exception as e:
         except Exception as rollback_err:
             log(f"❌ CRITICAL: Safe rollback failed: {rollback_err}")
     sys.exit(1)
+finally:
+    # 🚀 Self-Healing Watchdog: Restart the base training orchestrator train.py in background
+    try:
+        # Check if already running to avoid duplicates
+        import subprocess, os
+        pids_raw = subprocess.check_output(["pgrep", "-f", "train.py"]).decode().strip().split()
+        is_running = any(int(p) != os.getpid() for p in pids_raw if p.isdigit())
+    except Exception:
+        is_running = False
+
+    if not is_running:
+        log("🚀 SELF-HEALING WATCHDOG: Restarting the base training orchestrator train.py in background...")
+        try:
+            subprocess.Popen(
+                "nohup /root/miniconda3/bin/python -u /var/www/html/ML/kat/train.py --resume --epochs 300 > /var/www/html/ML/kat/logs/iron_oracle_v11.log 2>&1 &",
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            log("   ✅ Base training process restarted cleanly.")
+        except Exception as relaunch_err:
+            log(f"❌ SELF-HEALING: Failed to restart base training: {relaunch_err}")
+    else:
+        log("ℹ️  Base training process is already running.")

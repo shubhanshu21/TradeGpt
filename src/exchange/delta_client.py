@@ -201,6 +201,14 @@ class DeltaClient:
         resp = self._get("/v2/positions/margined", auth=True)
         return resp.get("result", [])
 
+    def set_leverage(self, symbol: str, leverage: int) -> dict:
+        """Set order leverage for a specific product."""
+        product_id = self._resolve_product_id(symbol)
+        payload = {
+            "leverage": str(leverage)
+        }
+        return self._post(f"/v2/products/{product_id}/orders/leverage", payload)
+
     def _resolve_product_id(self, symbol: str) -> int:
         """Dynamic resolution of product_id for a symbol."""
         try:

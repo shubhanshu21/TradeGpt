@@ -12,6 +12,7 @@ CURRENT_FEE_PCT = FEE_RATE  # Legacy Alias
 # Sovereign Wallet Management
 INITIAL_WALLET_USD = 200.0  # Mission Starting Capital
 POSITION_SIZE_PCT  = 1.0    # 1.0 = 100% of current wallet (Full-Port)
+LEVERAGE           = 10     # Dynamic order leverage (10 = 10x)
 PROFIT_GOAL_PCT    = 0.1    # 10% profit target for UI progress bars
 RISK_MULTIPLIER    = 100.0  # Max Drawdown penalty for Station Health   # 1.0 = 100% (Full-Port) | 0.1 = 10%
 SOVEREIGN_MULTIPLIER = 1.0  # Strategic Scaling Constant

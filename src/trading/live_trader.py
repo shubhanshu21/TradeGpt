@@ -27,6 +27,7 @@ from exchange.fetch_data   import fetch_live_kat_data
 from data.preprocess       import build_feature_cols, compute_indicators
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
+from config.sovereign_config import LEVERAGE
 SYMBOL         = "BTCUSD"
 SIZE           = 1              # Contract size
 MIN_SWING      = 100.0          # Only trade if expected move > $100 (to beat fees)
@@ -116,10 +117,22 @@ def run_pilot():
     print(f"  ⚓ IRON ORACLE V11.0 — [ {SYMBOL} ] LIVE PILOT")
     print(f"  📡 Timeframe : {TIMEFRAME}")
     print(f"  🎯 Certainty : {CERT_THRESHOLD*100:.0f}%+ required to trade")
-    print(f"  💰 Position  : {SIZE} contract(s)")
+    print(f"  💰 Position  : {SIZE} contract(s) | {LEVERAGE}x Leverage")
     print("="*60)
 
     client = DeltaClient(testnet=True)
+    
+    # Programmatically set leverage to configured value
+    log(f"⚙️  Enforcing {LEVERAGE}x Leverage on Exchange for {SYMBOL}...", C_CYAN)
+    try:
+        lev_resp = client.set_leverage(SYMBOL, LEVERAGE)
+        if lev_resp and lev_resp.get("success", False):
+            log(f"✅ Exchange Leverage successfully locked at {LEVERAGE}x!", C_GREEN)
+        else:
+            log(f"⚠️  Leverage sync warning: {lev_resp}", C_YELLOW)
+    except Exception as e:
+        log(f"⚠️  Could not programmatically set leverage: {e}", C_YELLOW)
+
     model, last_mtime = load_model()  # FIX #1: DLS — no scaler needed
 
     last_trade_time = 0
