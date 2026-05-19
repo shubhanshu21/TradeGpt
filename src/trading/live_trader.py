@@ -97,14 +97,20 @@ def get_neural_signal(model):
         reasoning    = int(np.argmax(outputs[2].numpy()[0]))
 
         pred_future  = pred[1:]                # (15, 3) — future steps only
+        p_anchor     = pred[0, 0]              # Z-score at anchor price
         p_curve      = pred_future[:, 0]       # price trajectory
         v_curve      = pred_future[:, 1]       # volatility
+
+        p_change     = p_curve - p_anchor      # Trajectory delta relative to anchor
 
         # Normalize certainty to 0–100%
         cert_mean    = float(np.mean(certainty_2d))
         cert_pct     = cert_mean
 
-        return np.mean(p_curve), cert_pct, np.mean(v_curve), reasoning, pred_future
+        t_close      = features.index('close')
+        close_std    = l_std[t_close]
+
+        return np.mean(p_change), cert_pct, np.mean(v_curve), reasoning, pred_future, close_std
     except Exception as e:
         import traceback
         log(f"❌ Error in get_neural_signal: {e}", C_RED)
@@ -152,15 +158,14 @@ def run_pilot():
             log(f"📡 Polling {SYMBOL} [{TIMEFRAME}] market stream...")
 
             # ── Inference ────────────────────────────────────────────────────
-            mean_price, cert_raw, mean_vol, reasoning, pred = get_neural_signal(model)
+            mean_price, cert_raw, mean_vol, reasoning, pred, close_std = get_neural_signal(model)
 
             # Get current price for swing calculation
             df_curr = fetch_live_kat_data(SYMBOL, 1, TIMEFRAME)
             curr_price = df_curr['close'].iloc[-1]
             
-            # Predict actual dollar move (approximate)
-            # mean_price is a Z-score, so we map it back to roughly $150/unit
-            est_swing = abs(mean_price * 150.0)
+            # Predict actual dollar move (using actual local standard deviation)
+            est_swing = abs(mean_price) * close_std
 
             cert_norm = cert_raw
 

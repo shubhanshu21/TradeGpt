@@ -133,13 +133,10 @@ def mode_predict(args):
         p_future = pred_all[1:, 0]
         
         # Unscaled USD Price for reporting
-        last_known = (seed[-1, 3]) # Seed was already raw before local scaling? 
-        # Wait, auto_run data is raw until we scale it.
-        # So seed is raw data.
-        last_known_usd = seed[-1, 3]
+        t_close = features.index('close')
+        last_known_usd = seed[-1, t_close]
         
         # Unscaled deltas (USD) = (p_future - p_anchor) * local_std[close]
-        t_close = 3 
         usd_deltas = (p_future - p_anchor) * local_std[t_close]
         
         print(f"\nLast known close: ${last_known_usd:,.2f}")

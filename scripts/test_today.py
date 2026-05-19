@@ -24,10 +24,17 @@ def evaluate_today():
     print("🔮 EVALUATING ACTIVE BRAIN ON TODAY'S LIVE DATA (MAY 19, 2026)")
     print("=" * 60)
 
-    # 1. Load active sandbox model
-    model_p = ROOT / "models" / "sandbox_active.keras"
+    # 1. Load the absolute latest trained epoch checkpoint
+    model_dir = ROOT / "models"
+    checkpoints = sorted(list(model_dir.glob("hydra_checkpoint_E*.keras")))
+    if checkpoints:
+        model_p = checkpoints[-1]
+    else:
+        model_p = model_dir / "hydra_best.keras"
+        
+    print(f"🧠 Loading latest trained model weights: {model_p.name}...")
     if not model_p.exists():
-        print(f"❌ Active model weights not found at {model_p}")
+        print(f"❌ Weights not found at {model_p}")
         return
 
     features = build_feature_cols()
@@ -49,6 +56,7 @@ def evaluate_today():
         return
 
     df = compute_indicators(df)
+    df = df.reset_index()  # Convert timestamp index to standard column
     data = df[features].values.astype("float32")
     closes = df['close'].values
 
@@ -144,7 +152,7 @@ def evaluate_today():
     print("=" * 60)
     print(f"   Total Evaluated Steps : {total_predictions}")
     print(f"   Correct Predictions   : {correct_predictions}")
-    print(f"   Directional Accuracy  : {acc:.2%}" if total_predictions > 0 else "   Directional Accuracy  : 0.00%")
+    print(f"   Directional Accuracy  : {acc:.2f}%" if total_predictions > 0 else "   Directional Accuracy  : 0.00%")
     print(f"   Avg Certainty (Wins)  : {avg_cert_c:.2f}%")
     print(f"   Avg Certainty (Losses): {avg_cert_i:.2f}%")
     print("=" * 60)

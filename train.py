@@ -97,8 +97,9 @@ class MissionControl(keras.callbacks.Callback):
                 certs       = np.mean(outputs[1].numpy(), axis=1) # Avg certainty
                 
                 # ── V11.2: Neural De-Scaling Patch ──────────────────────────
-                close_means = np.array([data[i:i+ctx, 3].mean() for i in indices])
-                close_stds  = np.array([data[i:i+ctx, 3].std() + 1e-8 for i in indices])
+                t_close     = features.index('close')
+                close_means = np.array([data[i:i+ctx, t_close].mean() for i in indices])
+                close_stds  = np.array([data[i:i+ctx, t_close].std() + 1e-8 for i in indices])
                 traj_usd    = (traj_scaled * close_stds) + close_means
                 
                 # Normalize certainty for bench (80-100% range)
@@ -280,12 +281,13 @@ def train_kraken(args):
     train_end    = int(len(df) * 0.8)
     sample_limit = min(train_end, 5000)
     raw_data  = df.iloc[:sample_limit]
-    ret_col   = (raw_data["close"].pct_change(1).fillna(0)).values  # 15m candle impact
+    ret_col   = (raw_data["close"].pct_change(15).fillna(0)).values  # 15-candle forecast impact (MTP-15)
+    fee_threshold = FEE_RATE  # 0.0012 (0.12%)
     for r in ret_col:
-        if   r >  0.01: label_counts[0] += 1   # Bull
-        elif r < -0.01: label_counts[1] += 1   # Bear
-        elif abs(r) < 0.002: label_counts[2] += 1  # Sideways
-        else: label_counts[3] += 1             # Trend
+        if   r >  fee_threshold: label_counts[0] += 1          # Bull (Beats fees)
+        elif r < -fee_threshold: label_counts[1] += 1          # Bear (Beats fees)
+        elif abs(r) < (fee_threshold * 0.5): label_counts[2] += 1  # Sideways (Noise)
+        else: label_counts[3] += 1                             # Trend (Fee Trap)
     label_counts = np.maximum(label_counts, 1)
     total = label_counts.sum()
     class_weights = {i: total / (4 * label_counts[i]) for i in range(4)}
@@ -297,7 +299,31 @@ def train_kraken(args):
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN, 
                         forecast_steps=FORECAST)
     
-    # We allow build_kraken to handle the optimizer initialization
+    # Custom weighted loss for reasoning to circumvent Keras 3 tf_dataset_adapter class_weight bug
+    weights = [class_weights[i] for i in range(4)]
+    weights_tensor = tf.constant(weights, dtype=tf.float32)
+    
+    def weighted_reasoning_loss(y_true, y_pred):
+        unweighted = tf.keras.losses.sparse_categorical_crossentropy(y_true, y_pred)
+        y_true_int = tf.cast(y_true, tf.int32)
+        if len(y_true_int.shape) > 1 and y_true_int.shape[-1] == 1:
+            y_true_int = tf.squeeze(y_true_int, axis=-1)
+        sample_weights = tf.gather(weights_tensor, y_true_int)
+        return unweighted * sample_weights
+
+    print("   ⚖️  Recompiling model with custom weighted sparse categorical crossentropy...")
+    model.compile(
+        optimizer=model.optimizer,
+        loss={
+            "prediction": SovereignLoss(direction_weight=10.0),
+            "certainty":  None,
+            "reasoning":  weighted_reasoning_loss
+        },
+        metrics={
+            "prediction": [SovereignAccuracy()],
+            "certainty":  [CertaintyMetric()]
+        }
+    )
 
     # ── 4. Load Weights ───────────────────────────────────────────────────────
     CKPT_BEST = CKPT_DIR / "hydra_best.keras"
