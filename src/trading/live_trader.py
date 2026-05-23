@@ -27,9 +27,10 @@ from exchange.fetch_data   import fetch_live_kat_data
 from data.preprocess       import build_feature_cols, compute_indicators
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-from config.sovereign_config import LEVERAGE
+from config.sovereign_config import (LEVERAGE, POSITION_SIZE_PCT, MAX_TRADES_PER_DAY,
+                                     BREAKEVEN_TRIGGER_PCT, TRAILING_STOP_PCT)
 SYMBOL         = "BTCUSD"
-SIZE           = 1              # Contract size
+SIZE           = 1              # Legacy fallback contract size
 MIN_SWING      = 100.0          # Only trade if expected move > $100 (to beat fees)
 THRESHOLD      = 0.08           # Increased base conviction (was 0.05)
 TIMEFRAME      = "15m"          # Match training timeframe (15m)
@@ -142,6 +143,11 @@ def run_pilot():
     model, last_mtime = load_model()  # FIX #1: DLS — no scaler needed
 
     last_trade_time = 0
+    daily_trades = []  # Keep track of rolling 24-hour trade timestamps
+    peak_price = 0.0
+    breakeven_activated = False
+    exchange_sl_price = 0.0  # Track the current active SL price registered on the exchange
+    original_tp_price = 0.0  # Track the original Take Profit price from exchange
     while True:
         try:
             # ── Hot-Reload Check (Sandbox Active) ────────────────────────────
@@ -155,6 +161,143 @@ def run_pilot():
                     log("✅ Hot-reload complete. Active model upgraded in real-time!", C_GREEN)
 
             current_time = time.time()
+
+            # ── Active Position Monitoring (Trailing Stop & Breakeven) ──────
+            pos = client.get_positions()
+            product_id = client._resolve_product_id(SYMBOL)
+            my_pos = [p for p in pos if int(p["product_id"]) == product_id]
+            is_in_long = any(float(p["size"]) > 0 for p in my_pos)
+            is_in_short = any(float(p["size"]) < 0 for p in my_pos)
+            has_active_position = (is_in_long or is_in_short)
+            
+            if has_active_position:
+                try:
+                    active_pos = my_pos[0]
+                    size = float(active_pos.get('size', 0.0))
+                    entry_p = float(active_pos.get('entry_price', 0.0))
+                    mark_p = float(active_pos.get('mark_price', 0.0))
+                    
+                    is_long = size > 0
+                    
+                    # 1. Fetch active brackets directly from Delta Exchange to update state variables
+                    try:
+                        open_orders = client._get("/v2/orders", params={"symbol": SYMBOL}, auth=True).get("result", [])
+                        bracket_orders = [o for o in open_orders if o.get("bracket_order") == True and o.get("state") == "pending"]
+                        
+                        exchange_sl_price = 0.0
+                        original_tp_price = 0.0
+                        for o in bracket_orders:
+                            s_type = o.get("stop_order_type")
+                            s_price = o.get("stop_price")
+                            if s_type == "stop_loss_order" and s_price:
+                                exchange_sl_price = float(s_price)
+                            elif s_type == "take_profit_order" and s_price:
+                                original_tp_price = float(s_price)
+                    except Exception as e:
+                        log(f"⚠️ Failed to sync active exchange brackets: {e}", C_YELLOW)
+                    
+                    # Estimate if not set on exchange yet
+                    if exchange_sl_price == 0.0:
+                        exchange_sl_price = entry_p * (1 - 0.012) if is_long else entry_p * (1 + 0.012)
+                    
+                    # Update peak price
+                    if is_long:
+                        if peak_price == 0.0 or mark_p > peak_price:
+                            peak_price = mark_p
+                        profit_pct = (mark_p - entry_p) / entry_p * 100
+                    else:
+                        if peak_price == 0.0 or mark_p < peak_price:
+                            peak_price = mark_p
+                        profit_pct = (entry_p - mark_p) / entry_p * 100
+                        
+                    # Breakeven Activation & Exchange SL Update
+                    if profit_pct >= BREAKEVEN_TRIGGER_PCT and not breakeven_activated:
+                        # Double check if exchange-side SL is already locked at breakeven
+                        is_sl_at_breakeven = False
+                        if is_long and exchange_sl_price >= entry_p:
+                            is_sl_at_breakeven = True
+                        elif not is_long and exchange_sl_price <= entry_p:
+                            is_sl_at_breakeven = True
+                            
+                        if not is_sl_at_breakeven:
+                            breakeven_activated = True
+                            log(f"🛡️  BREAKEVEN TRIGGERED: Profit hit +{profit_pct:.2f}% (Price: ${mark_p:.2f} | Entry: ${entry_p:.2f}). Stop Loss is now locking at break-even on Delta Exchange.", C_GREEN)
+                            try:
+                                sl_price = round(entry_p, 1)
+                                client.update_bracket_order(SYMBOL, sl_price=sl_price)
+                                exchange_sl_price = sl_price
+                                log(f"✅ DELTA EXCHANGE SERVER SL UPDATED: Locked Stop Loss at entry ${sl_price} on Exchange UI!", C_GREEN)
+                            except Exception as api_err:
+                                log(f"⚠️ Failed to update breakeven SL on Delta Server: {api_err}", C_YELLOW)
+                                breakeven_activated = False # retry next loop if failed
+                        else:
+                            breakeven_activated = True
+                        
+                    # Breakeven Floor Enforcement (Python Fallback)
+                    if breakeven_activated:
+                        if is_long and mark_p <= entry_p:
+                            log(f"🚨 BREAKEVEN FLOOR HIT: Price ${mark_p:.2f} returned to entry ${entry_p:.2f}. Closing position to protect capital.", C_YELLOW)
+                            client.place_order(SYMBOL, abs(size), "sell" if is_long else "buy")
+                            peak_price = 0.0
+                            breakeven_activated = False
+                            exchange_sl_price = 0.0
+                            time.sleep(10); continue
+                        elif not is_long and mark_p >= entry_p:
+                            log(f"🚨 BREAKEVEN FLOOR HIT: Price ${mark_p:.2f} returned to entry ${entry_p:.2f}. Closing position to protect capital.", C_YELLOW)
+                            client.place_order(SYMBOL, abs(size), "sell" if is_long else "buy")
+                            peak_price = 0.0
+                            breakeven_activated = False
+                            exchange_sl_price = 0.0
+                            time.sleep(10); continue
+                            
+                    # Trailing Stop Enforcement
+                    if profit_pct >= 0.5:
+                        target_ts_price = round(peak_price * (1 - TRAILING_STOP_PCT/100) if is_long else peak_price * (1 + TRAILING_STOP_PCT/100), 1)
+                        
+                        # Python Fallback: If price pulls back below target stop, close immediately!
+                        if (is_long and mark_p <= target_ts_price) or (not is_long and mark_p >= target_ts_price):
+                            log(f"🚨 TRAILING STOP TRIGGERED: Profit pulled back below target ${target_ts_price} (Current: ${mark_p:.2f}). Locking in profits!", C_GREEN)
+                            client.place_order(SYMBOL, abs(size), "sell" if is_long else "buy")
+                            peak_price = 0.0
+                            breakeven_activated = False
+                            exchange_sl_price = 0.0
+                            time.sleep(10); continue
+                            
+                        # Exchange-Side Trailing Update: If target stop has moved up significantly (>= $50), update exchange!
+                        should_update_exchange = False
+                        if is_long and target_ts_price > (exchange_sl_price + 50.0):
+                            should_update_exchange = True
+                        elif not is_long and target_ts_price < (exchange_sl_price - 50.0):
+                            should_update_exchange = True
+                            
+                        if should_update_exchange:
+                            try:
+                                log(f"📈 TRAILING STOP UPDATING: Trailing stop price ${target_ts_price} has moved in favor of current exchange SL ${exchange_sl_price} by >= $50. Updating on Delta Exchange.", C_CYAN)
+                                client.update_bracket_order(SYMBOL, sl_price=target_ts_price)
+                                exchange_sl_price = target_ts_price
+                                log(f"📈 DELTA EXCHANGE SERVER SL DYNAMICALLY TRAILED: Adjusted Stop Loss to ${target_ts_price} on Exchange UI!", C_GREEN)
+                            except Exception as api_err:
+                                log(f"⚠️ Failed to update trailing SL on Delta Server: {api_err}", C_YELLOW)
+                        
+                    # Status Log
+                    side_str = "LONG" if is_long else "SHORT"
+                    log(f"⚡ MONITORING: {side_str} ({abs(size)} contracts) | Entry: ${entry_p:.2f} | Mark: ${mark_p:.2f} | P/L: +{profit_pct:.2f}% | Peak: ${peak_price:.2f} | BE: {breakeven_activated} | Active Exchange SL: ${exchange_sl_price:.2f} | Preserved TP: ${original_tp_price:.2f}", C_CYAN)
+                except Exception as monitor_err:
+                    log(f"⚠️ Error in active position monitor: {monitor_err}", C_YELLOW)
+                    
+                # High-speed adaptive sleep (10s)
+                time.sleep(10); continue
+            else:
+                peak_price = 0.0
+                breakeven_activated = False
+                exchange_sl_price = 0.0
+
+            # ── Rolling 24h Daily Circuit Breaker ────────────────────────────
+            daily_trades = [t for t in daily_trades if current_time - t < 86400]
+            if len(daily_trades) >= MAX_TRADES_PER_DAY:
+                log(f"🛑 DAILY CIRCUIT BREAKER ACTIVE ({len(daily_trades)}/{MAX_TRADES_PER_DAY} trades taken in last 24h). Halting new entries.", C_RED)
+                time.sleep(SLEEP_S); continue
+
             log(f"📡 Polling {SYMBOL} [{TIMEFRAME}] market stream...")
 
             # ── Inference ────────────────────────────────────────────────────
@@ -203,6 +346,28 @@ def run_pilot():
             dyn_sl = base_sl * vol_multiplier
             dyn_tp = base_tp * vol_multiplier
 
+            # ── Dynamic Sizing Strategy ───────────────────────────────────────
+            dynamic_size = SIZE
+            try:
+                balances = client._get('/v2/wallet/balances', auth=True).get('result', [])
+                usd_bal = [b for b in balances if b.get('asset_symbol') == 'USD']
+                if usd_bal:
+                    available_usd = float(usd_bal[0].get('available_balance', 0.0))
+                    allowed_margin = available_usd * POSITION_SIZE_PCT
+                    allowed_notional_usd = allowed_margin * LEVERAGE
+                    
+                    # 1 contract value = 0.001 * current BTCUSD price
+                    ob = client.get_orderbook(SYMBOL)
+                    best_bid = float(ob['buy'][0]['price'])
+                    best_ask = float(ob['sell'][0]['price'])
+                    mid_p   = (best_bid + best_ask) / 2
+                    contract_val_usd = 0.001 * mid_p
+                    
+                    dynamic_size = max(1, int(allowed_notional_usd / contract_val_usd))
+                    log(f"💰 POSITION SIZING: Available USD: ${available_usd:.2f} | Target Margin: ${allowed_margin:.2f} | Dynamic Size: {dynamic_size} contracts", C_CYAN)
+            except Exception as size_err:
+                log(f"⚠️ Sizing calculation error: {size_err}. Falling back to default SIZE: {SIZE}", C_YELLOW)
+
             # ── Signal Logic ──────────────────────────────────────────────────
             dynamic_thresh = THRESHOLD * (1.0 + max(0.0, mean_vol))
             
@@ -216,16 +381,18 @@ def run_pilot():
                 if not is_in_long:
                     log(f"📈 LONG signal (+${est_swing:.2f}) @ {cert_norm*100:.1f}%", C_GREEN)
                     log(f"🛡️  DYNAMIC ARMOR: SL {dyn_sl:.2f}% | TP {dyn_tp:.2f}%")
-                    client.place_order(SYMBOL, SIZE, "buy", sl_pct=dyn_sl, tp_pct=dyn_tp)
+                    client.place_order(SYMBOL, dynamic_size, "buy", sl_pct=dyn_sl, tp_pct=dyn_tp)
                     last_trade_time = time.time()
+                    daily_trades.append(last_trade_time)
                 else: log(f"✅ Already LONG", C_GREEN)
 
             elif mean_price < -dynamic_thresh:
                 if not is_in_short:
                     log(f"📉 SHORT signal (-${est_swing:.2f}) @ {cert_norm*100:.1f}%", C_RED)
                     log(f"🛡️  DYNAMIC ARMOR: SL {dyn_sl:.2f}% | TP {dyn_tp:.2f}%")
-                    client.place_order(SYMBOL, SIZE, "sell", sl_pct=dyn_sl, tp_pct=dyn_tp)
+                    client.place_order(SYMBOL, dynamic_size, "sell", sl_pct=dyn_sl, tp_pct=dyn_tp)
                     last_trade_time = time.time()
+                    daily_trades.append(last_trade_time)
                 else: log(f"✅ Already SHORT", C_RED)
             else:
                 log(f"💤 No signal (Neutral Zone) — Waiting.", C_RESET)

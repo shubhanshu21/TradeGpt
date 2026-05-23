@@ -1,5 +1,6 @@
-# ⚓ Iron Oracle V12.0 — Sovereign Kraken Intelligence
+# ⚓ Iron Oracle V12.1 — Sovereign Kraken Intelligence
 > **Institutional-Grade Autonomous Neural Trading Station | BTC/USDT 15m | 256-Expert MoE Architecture | Fee-Aware Simulation Engine**
+
 
 <p align="center">
   <img src="src/api/static/img/logo.png" width="180px" alt="Iron Oracle Logo">
@@ -247,6 +248,15 @@ FORECAST_STEPS     = 15      # Steps to predict ahead
 
 The **Deadzone Filter** (0.1% minimum predicted move) eliminates noise-driven trades that would be eaten by fees. This is the primary selectivity mechanism.
 
+### 🛡️ Server-Side Bracket Sync (Sovereign Risk Sync)
+To protect active trade profits and guarantee absolute operational safety from script or network failures:
+* **Direct Server Enforcement**: The system dynamically synchronizes all stop-loss and take-profit brackets directly with **Delta Exchange India servers** so they display on the exchange UI and trigger even if the local Python server crashes.
+* **Query-Preserve-Delete-Recreate Lifecycle**: Delta Exchange throws a `bracket_order_exists` (400) error if you try to overwrite an active bracket. The exchange client resolves this by querying active exchange orders, extracting and preserving your original Take Profit targets, cancelling the old brackets using correct query-less DELETE signatures, and posting the updated Trailing SL and original TP.
+* **Risk Triggers**:
+  * **Breakeven Lock (`BREAKEVEN_TRIGGER_PCT = 0.8%`)**: Moves Stop Loss directly to your entry price on the exchange UI to lock in a zero-risk trade.
+  * **Trailing Stop Loss (`TRAILING_STOP_PCT = 0.5%`)**: Continually trails your stop loss `0.5%` behind the highest peak price reached (updates rate-limited to movements of $\ge \$50$ USD to protect against API blocks).
+
+
 ---
 
 ## 🔧 Known Architecture Decisions
@@ -266,7 +276,9 @@ The **Deadzone Filter** (0.1% minimum predicted move) eliminates noise-driven tr
 
 | Version | Key Changes |
 |---|---|
+| **V12.1** | Delta Exchange Server-Side Bracket Sync (DELETE query-less signature resolution, query-preserve-delete-recreate lifecycle, real-time UI SL/TP locking) |
 | **V12.0** | Deterministic strategist names, fee-aware P&L, 3D branding, localised CDN, dashboard fixes |
+
 | **V11.7** | Strategist identity system, expert dialogue engine |
 | **V11.2** | Neural de-scaling patch, compounding wallet logic, Sharpe/Profit Factor metrics |
 | **V11.0** | MissionControl callback, real-time dashboard updates every 50 batches |
@@ -284,4 +296,4 @@ The **Deadzone Filter** (0.1% minimum predicted move) eliminates noise-driven tr
 
 ---
 
-⚓ **Iron Oracle V12.0 — Sovereign Intelligence, Institutional Performance.**
+⚓ **Iron Oracle V12.1 — Sovereign Intelligence, Institutional Performance.**

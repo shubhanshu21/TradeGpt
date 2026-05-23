@@ -67,6 +67,28 @@ class DeltaClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _delete(self, path: str, params: dict = None, auth: bool = True) -> dict:
+        import urllib.parse
+        query = ""
+        if params:
+            query = "?" + urllib.parse.urlencode(params)
+        url = self.base_url + path + query
+        
+        # DELETE requests must be signed WITHOUT query parameters in the HMAC payload
+        headers = self._generate_signature("DELETE", path, query="") if auth else {}
+        headers["Content-Type"] = "application/json"
+        
+        resp = self.session.delete(url, headers=headers, timeout=10)
+        if resp.status_code >= 400:
+            try:
+                err_data = resp.json()
+                print(f"   ❌ Delta API Error: {err_data}")
+            except:
+                print(f"   ❌ HTTP {resp.status_code}: {resp.text}")
+        resp.raise_for_status()
+        return resp.json()
+
+
     def get_candles(self, symbol: str, resolution: str = "1m", limit: int = 1000) -> pd.DataFrame:
         """Fetch historical candles with integer-based resolutions (Delta India legacy support)."""
         # Reverting to the confirmed '1m' string format
@@ -208,6 +230,79 @@ class DeltaClient:
             "leverage": str(leverage)
         }
         return self._post(f"/v2/products/{product_id}/orders/leverage", payload)
+
+    def update_bracket_order(self, symbol: str, sl_price: float = None, tp_price: float = None) -> dict:
+        """
+        Unified bracket orchestrator:
+        1. Query open orders.
+        2. Identify existing bracket orders and preserve active TP/SL if not overridden.
+        3. Cancel all pending bracket orders to avoid 'bracket_order_exists'.
+        4. Recreate the bracket with updated SL/TP values.
+        """
+        product_id = self._resolve_product_id(symbol)
+        
+        # 1. Fetch open orders
+        try:
+            open_orders = self._get("/v2/orders", params={"symbol": symbol}, auth=True).get("result", [])
+        except Exception as e:
+            print(f"   ⚠️ Could not fetch open orders to update bracket: {e}")
+            open_orders = []
+            
+        # 2. Filter for pending bracket orders and preserve active targets
+        bracket_orders = [o for o in open_orders if o.get("bracket_order") == True and o.get("state") == "pending"]
+        
+        existing_sl = None
+        existing_tp = None
+        for o in bracket_orders:
+            s_type = o.get("stop_order_type")
+            s_price = o.get("stop_price")
+            if s_type == "stop_loss_order" and s_price:
+                existing_sl = float(s_price)
+            elif s_type == "take_profit_order" and s_price:
+                existing_tp = float(s_price)
+                
+        # Override with explicit values if passed, else preserve existing ones
+        final_sl = sl_price if sl_price is not None else existing_sl
+        final_tp = tp_price if tp_price is not None else existing_tp
+        
+        # 3. Cancel existing pending bracket orders
+        for o in bracket_orders:
+            try:
+                order_id = o["id"]
+                self._delete("/v2/orders", params={"id": str(order_id), "product_id": str(product_id)}, auth=True)
+                print(f"   [API] Cancelled existing exchange bracket: {o.get('stop_order_type')} (ID: {order_id})")
+            except Exception as del_err:
+                print(f"   ⚠️ [API] Failed to delete existing bracket {o['id']}: {del_err}")
+                
+        # 4. POST the updated bracket configuration
+        if final_sl or final_tp:
+            bracket_payload = {
+                "product_id": product_id,
+                "stop_loss_order": {
+                    "order_type": "market_order",
+                    "stop_price": str(round(final_sl, 1))
+                } if final_sl else None,
+                "take_profit_order": {
+                    "order_type": "market_order",
+                    "stop_price": str(round(final_tp, 1))
+                } if final_tp else None,
+                "bracket_stop_trigger_method": "mark_price"
+            }
+            # Clean up None orders to avoid API validation errors
+            if not bracket_payload["stop_loss_order"]: del bracket_payload["stop_loss_order"]
+            if not bracket_payload["take_profit_order"]: del bracket_payload["take_profit_order"]
+            
+            try:
+                resp = self._post("/v2/orders/bracket", bracket_payload)
+                print(f"   🛡️ [API] Server-Side SL/TP Sync Succeeded! (SL: {final_sl}, TP: {final_tp})")
+                return resp
+            except Exception as post_err:
+                print(f"   ❌ [API] Failed to place updated bracket order: {post_err}")
+                raise post_err
+        else:
+            print("   ℹ️ [API] No active bracket prices to set.")
+            return {"success": True, "message": "No bracket prices to set"}
+
 
     def _resolve_product_id(self, symbol: str) -> int:
         """Dynamic resolution of product_id for a symbol."""

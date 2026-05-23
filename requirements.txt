@@ -180,6 +180,7 @@ ruamel.yaml.clib @ file:///home/task_176253010569408/conda-bld/ruamel.yaml.clib_
 schedule==1.2.2
 scikit-learn==1.8.0
 scipy==1.17.1
+seaborn==0.13.2
 SecretStorage @ file:///home/task_175793143908496/conda-bld/secretstorage_1757931469021/work
 semver @ file:///home/task_176190310214627/conda-bld/semver_1761903114403/work
 setuptools==80.9.0
