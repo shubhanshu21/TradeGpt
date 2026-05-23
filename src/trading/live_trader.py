@@ -253,6 +253,8 @@ def run_pilot():
                     # Trailing Stop Enforcement
                     if profit_pct >= 0.5:
                         target_ts_price = round(peak_price * (1 - TRAILING_STOP_PCT/100) if is_long else peak_price * (1 + TRAILING_STOP_PCT/100), 1)
+                        # Institutional Trailing Take Profit: Keeps moving target 2.8% ahead of the peak to let profits run
+                        target_tp_price = round(peak_price * (1 + 2.8/100) if is_long else peak_price * (1 - 2.8/100), 1)
                         
                         # Python Fallback: If price pulls back below target stop, close immediately!
                         if (is_long and mark_p <= target_ts_price) or (not is_long and mark_p >= target_ts_price):
@@ -272,12 +274,13 @@ def run_pilot():
                             
                         if should_update_exchange:
                             try:
-                                log(f"📈 TRAILING STOP UPDATING: Trailing stop price ${target_ts_price} has moved in favor of current exchange SL ${exchange_sl_price} by >= $50. Updating on Delta Exchange.", C_CYAN)
-                                client.update_bracket_order(SYMBOL, sl_price=target_ts_price)
+                                log(f"📈 TRAILING BRACKET UPDATING: Trailing SL to ${target_ts_price} and Trailing TP to ${target_tp_price} on Delta Exchange.", C_CYAN)
+                                client.update_bracket_order(SYMBOL, sl_price=target_ts_price, tp_price=target_tp_price)
                                 exchange_sl_price = target_ts_price
-                                log(f"📈 DELTA EXCHANGE SERVER SL DYNAMICALLY TRAILED: Adjusted Stop Loss to ${target_ts_price} on Exchange UI!", C_GREEN)
+                                original_tp_price = target_tp_price
+                                log(f"📈 DELTA EXCHANGE SERVER BRACKET DYNAMICALLY TRAILED: Adjusted Stop Loss to ${target_ts_price} and Take Profit to ${target_tp_price} on Exchange UI!", C_GREEN)
                             except Exception as api_err:
-                                log(f"⚠️ Failed to update trailing SL on Delta Server: {api_err}", C_YELLOW)
+                                log(f"⚠️ Failed to update trailing bracket on Delta Server: {api_err}", C_YELLOW)
                         
                     # Status Log
                     side_str = "LONG" if is_long else "SHORT"
