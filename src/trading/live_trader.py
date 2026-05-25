@@ -233,22 +233,8 @@ def run_pilot():
                         else:
                             breakeven_activated = True
                         
-                    # Breakeven Floor Enforcement (Python Fallback)
-                    if breakeven_activated:
-                        if is_long and mark_p <= entry_p:
-                            log(f"🚨 BREAKEVEN FLOOR HIT: Price ${mark_p:.2f} returned to entry ${entry_p:.2f}. Closing position to protect capital.", C_YELLOW)
-                            client.place_order(SYMBOL, abs(size), "sell" if is_long else "buy")
-                            peak_price = 0.0
-                            breakeven_activated = False
-                            exchange_sl_price = 0.0
-                            time.sleep(10); continue
-                        elif not is_long and mark_p >= entry_p:
-                            log(f"🚨 BREAKEVEN FLOOR HIT: Price ${mark_p:.2f} returned to entry ${entry_p:.2f}. Closing position to protect capital.", C_YELLOW)
-                            client.place_order(SYMBOL, abs(size), "sell" if is_long else "buy")
-                            peak_price = 0.0
-                            breakeven_activated = False
-                            exchange_sl_price = 0.0
-                            time.sleep(10); continue
+                    # Breakeven Floor Enforcement (Python Fallback removed to avoid race conditions with Exchange-side SL)
+                    # The Stop Loss is locked directly on the Exchange server at entry_p, so the exchange handles execution.
                             
                     # Trailing Stop Enforcement
                     if profit_pct >= 0.5:
@@ -256,14 +242,7 @@ def run_pilot():
                         # Institutional Trailing Take Profit: Keeps moving target 2.8% ahead of the peak to let profits run
                         target_tp_price = round(peak_price * (1 + 2.8/100) if is_long else peak_price * (1 - 2.8/100), 1)
                         
-                        # Python Fallback: If price pulls back below target stop, close immediately!
-                        if (is_long and mark_p <= target_ts_price) or (not is_long and mark_p >= target_ts_price):
-                            log(f"🚨 TRAILING STOP TRIGGERED: Profit pulled back below target ${target_ts_price} (Current: ${mark_p:.2f}). Locking in profits!", C_GREEN)
-                            client.place_order(SYMBOL, abs(size), "sell" if is_long else "buy")
-                            peak_price = 0.0
-                            breakeven_activated = False
-                            exchange_sl_price = 0.0
-                            time.sleep(10); continue
+                        # Python Fallback close removed to avoid race conditions. Exchange-side trailing stop handles execution.
                             
                         # Exchange-Side Trailing Update: If target stop has moved up significantly (>= $50), update exchange!
                         should_update_exchange = False
