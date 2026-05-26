@@ -196,6 +196,89 @@
       z-index: 0;
     }
 
+    /* ── Premium Tab Container & Buttons ── */
+    .tab-bar-container {
+      display: flex;
+      justify-content: flex-start;
+      gap: 1rem;
+      padding: 0.6rem 2rem;
+      background: rgba(13, 17, 23, 0.5);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      z-index: 8;
+      backdrop-filter: blur(8px);
+    }
+    
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--muted);
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 800;
+      cursor: pointer;
+      padding: 0.5rem 1.2rem;
+      border-radius: 6px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .tab-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.03);
+    }
+    
+    .tab-btn.active-live {
+      color: var(--cyan);
+      background: rgba(0, 240, 255, 0.06);
+      border: 1px solid rgba(0, 240, 255, 0.2) !important;
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.1);
+    }
+    
+    .tab-btn.active-live::after {
+      content: '';
+      position: absolute;
+      bottom: -0.75rem;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan);
+      border-radius: 2px;
+    }
+    
+    .tab-btn.active-training {
+      color: var(--purple);
+      background: rgba(187, 77, 255, 0.06);
+      border: 1px solid rgba(187, 77, 255, 0.2) !important;
+      box-shadow: 0 0 15px rgba(187, 77, 255, 0.1);
+    }
+    
+    .tab-btn.active-training::after {
+      content: '';
+      position: absolute;
+      bottom: -0.75rem;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--purple);
+      box-shadow: 0 0 10px var(--purple);
+      border-radius: 2px;
+    }
+
+    .tab-pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+    }
+
     /* ── Header ── */
     header {
       position: relative;
@@ -1081,9 +1164,21 @@
     </div>
   </header>
 
+  <!-- ── TABS BAR ── -->
+  <div class="tab-bar-container">
+    <button class="tab-btn active-live" id="tabBtnLive" onclick="switchDashboardTab('live')">
+      <span class="tab-pulse-dot"></span>
+      📡 Live Trading Terminal
+    </button>
+    <button class="tab-btn" id="tabBtnTraining" onclick="switchDashboardTab('training')">
+      <span class="tab-pulse-dot" style="display:none;" id="trainingTabPulse"></span>
+      🧠 Neural Training Lab
+    </button>
+  </div>
+
   <main>
     <!-- Live Ticker & Progress (V12.2) -->
-    <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1rem; position: relative; z-index: 5;">
+    <div id="trainingProgressRow" style="grid-column: 1 / -1; display: none; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1rem; position: relative; z-index: 5;">
       <div class="mission-progress-container">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div>
@@ -1134,7 +1229,7 @@
 
 
     <!-- ── ROW 1: KPI Cards ── -->
-    <div class="stats-row kpi-cards-row" style="grid-column: 1 / -1; display:grid; grid-template-columns:repeat(4,1fr); gap:1rem;">
+    <div id="trainingKpiRow" class="stats-row kpi-cards-row" style="grid-column: 1 / -1; display: none; grid-template-columns:repeat(4,1fr); gap:1rem;">
 
       <div class="kpi-card kpi-gold">
         <div class="kpi-label">AI Brain Growth</div>
@@ -1184,7 +1279,7 @@
               <div id="orderTape" class="tape-fill" style="height:50%"></div>
             </div>
           </div>
-          <span class="card-badge badge-cyan">LIVE REPLAY</span>
+          <span class="card-badge badge-cyan" id="strikeBadge">EXCHANGE FILLS</span>
         </div>
         <div id="strikeFeedContainer" class="card-body scrollable-table" style="padding:0; height:420px;">
           <table class="trade-log">
@@ -1207,7 +1302,7 @@
       </div>
 
       <!-- Expert Dialogue (Center) -->
-      <div class="card" style="flex: 1;">
+      <div class="card" style="flex: 1; display: none;" id="trainingExpertCouncilCard">
         <div class="card-header">
           <span class="card-title">🧠 Expert Council</span>
           <div style="display:flex;align-items:center;gap:.5rem;">
@@ -1240,7 +1335,11 @@
             <span class="pulse-dot"></span>
             💰 Net Profit
           </span>
-          <div style="display:flex; align-items:center; gap:0.5rem;">
+          <div style="display:flex; align-items:center; gap:0.3rem;">
+            <button
+              style="background:var(--cyan);border:none;color:#000;font-size:.6rem;padding:.2rem .6rem;border-radius:4px;cursor:pointer;font-weight:800;transition:transform .2s;"
+              onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"
+              onclick="promoteBrain()">PROMOTE BRAIN 🧠</button>
             <button
               style="background:var(--purple);border:none;color:white;font-size:.6rem;padding:.2rem .6rem;border-radius:4px;cursor:pointer;font-weight:700;transition:transform .2s;"
               onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"
@@ -1249,8 +1348,8 @@
           </div>
         </div>
         <div class="card-body"
-          style="padding-top:0.5rem; height:420px; display:flex; flex-direction:column; justify-content:space-between;">
-          <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap: 1rem; margin-top: 1rem;">
+          style="padding:0.6rem 1rem; height:420px; display:flex; flex-direction:column; justify-content:space-between; overflow-y:auto;">
+          <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap: 0.6rem; margin-top: 0.2rem;">
             <div style="border-right: 1px solid var(--border); padding-right: 1rem;">
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">STARTING CAPITAL</div>
               <div id="initialCapital"
@@ -1263,7 +1362,7 @@
             </div>
           </div>
 
-          <div style="margin: 1.5rem 0;">
+          <div style="margin: 0.6rem 0;">
             <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:0.4rem">
               <span style="color:var(--muted)">NET PROFIT (AFTER FEES)</span>
               <span id="highConfProfit"
@@ -1275,7 +1374,7 @@
             </div>
           </div>
 
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 1rem;">
             <div>
               <div style="color:var(--muted); font-size:0.65rem; margin-bottom:0.2rem">TOTAL STRIKES</div>
               <div id="totalStrikes" style="font-family:'Outfit'; font-weight:600; font-size:1rem; color:var(--cyan)">--
@@ -1309,11 +1408,57 @@
             </div>
           </div>
           <div style="border-top:1px solid var(--border);padding-top:0.6rem;margin-top:0.2rem">
-            <div style="font-size:0.68rem;color:var(--muted);margin-bottom:0.3rem">MARKET STRATEGY</div>
-            <div id="deployStatus" style="font-size:0.8rem;font-weight:600;color:var(--gold)">📡 SCANNING MARKET...</div>
+            <div id="livePilotStatusWidget" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+              <span style="font-size:0.68rem;color:var(--muted)">PILOT STATUS</span>
+              <span id="pilotHealthBadge" class="card-badge badge-green" style="font-size:0.58rem; padding:0.05rem 0.35rem;">HEALTHY</span>
+            </div>
+            
+            <!-- Live Active Position Widget -->
+            <div id="livePositionWidget" style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:6px; padding:0.5rem; margin-bottom:0.4rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span id="posSideBadge" class="card-badge badge-cyan" style="font-size:0.6rem;">NO ACTIVE POSITION</span>
+                <span id="posUnrealizedPnL" style="font-family:'JetBrains Mono'; font-weight:800; font-size:0.75rem; color:var(--muted)">$0.00</span>
+              </div>
+              <div id="posDetailsRow" style="display:none; grid-template-columns: 1fr 1fr; gap:0.4rem; margin-top:0.4rem; font-size:0.6rem; border-top:1px solid rgba(255,255,255,0.05); padding-top:0.4rem;">
+                <div>Size: <span id="posSizeLabel" style="color:var(--text); font-weight:700">0.0</span></div>
+                <div>Entry: <span id="posEntryLabel" style="color:var(--text); font-weight:700">$0.00</span></div>
+                <div>Ex-SL: <span id="posSLLabel" style="color:var(--red); font-weight:700">$0.00</span></div>
+                <div>Ex-TP: <span id="posTPLabel" style="color:var(--green); font-weight:700">$0.00</span></div>
+              </div>
+            </div>
+
+            <!-- Dynamic Parameters Tuning Slider Panel (V12.4 Quant Extension) -->
+            <div id="liveParamTuningWidget" style="background:rgba(255,255,255,0.01); border:1px solid var(--border); border-radius:6px; padding:0.5rem; margin-bottom:0.4rem; font-size:0.6rem;">
+              <div style="font-weight:700; color:var(--text); margin-bottom:0.3rem; display:flex; justify-content:space-between;">
+                <span>⚙️ SOVEREIGN PARAMETER TUNING</span>
+                <span id="saveParamsBtn" style="color:var(--cyan); cursor:pointer; font-weight:800;" onclick="saveLiveParams()">[SAVE RULES]</span>
+              </div>
+              
+              <!-- Swing Gate slider -->
+              <div style="margin-bottom:0.3rem;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:0.1rem;">
+                  <span style="color:var(--muted)">Min Price Swing Gate:</span>
+                  <span style="color:var(--gold); font-weight:700;">$<span id="minSwingSliderVal">100</span></span>
+                </div>
+                <input type="range" id="minSwingSlider" min="50" max="200" step="5" value="100" style="width:100%; accent-color:var(--gold); cursor:pointer;" oninput="document.getElementById('minSwingSliderVal').textContent=this.value">
+              </div>
+
+              <!-- Certainty Gate slider -->
+              <div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:0.1rem;">
+                  <span style="color:var(--muted)">Conviction Certainty Gate:</span>
+                  <span style="color:var(--cyan); font-weight:700;"><span id="certSliderVal">85</span>%</span>
+                </div>
+                <input type="range" id="certSlider" min="50" max="95" step="1" value="85" style="width:100%; accent-color:var(--cyan); cursor:pointer;" oninput="document.getElementById('certSliderVal').textContent=this.value">
+              </div>
+            </div>
+
+            <!-- Active Trading Rules -->
+            <div id="liveRulesWidget" style="display:flex; justify-content:space-between; align-items:center; font-size:0.62rem; color:var(--muted);">
+              <span>Rules: <strong style="color:var(--cyan)" id="rulesLabel">Scanning...</strong></span>
+              <span id="lastUpdated" style="font-family:'JetBrains Mono',monospace">Last updated: --</span>
+            </div>
           </div>
-          <div style="font-size:0.68rem;color:var(--muted);margin-top:0.4rem;font-family:'JetBrains Mono',monospace"
-            id="lastUpdated">Last updated: --</div>
         </div>
       </div>
     </div>
@@ -1338,7 +1483,7 @@
       </div>
 
       <!-- Strategist Hall of Fame (Right) -->
-      <div class="card" style="flex: 1;">
+      <div class="card" style="flex: 1; display: none;" id="trainingHallOfFameCard">
         <div class="card-header">
           <span class="card-title">🏆 Hall of Fame</span>
           <span class="card-badge badge-gold">TOP PERFORMERS</span>
@@ -1354,7 +1499,7 @@
     </div>
 
     <!-- Epoch Log Table -->
-    <div class="card" style="grid-column: 1 / -1;">
+    <div class="card" id="trainingEpochsCard" style="grid-column: 1 / -1; display: none;">
       <div class="card-header">
         <span class="card-title">📋 AI Memory History</span>
         <span class="card-badge badge-gold">STEP BY STEP</span>
@@ -1380,10 +1525,33 @@
       </div>
     </div>
 
+    <!-- Live System Logs Console (V12.3 Premium Extension) -->
+    <div class="card" style="grid-column: 1 / -1; margin-top: 1.5rem;">
+      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+        <span class="card-title" style="display:flex; align-items:center; gap:0.5rem;">
+          <span class="pulse-dot"></span>
+          🖥️ Live System Logs Console
+        </span>
+        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          <button class="ctrl-btn paused" id="logTypeTrading" onclick="changeLogType('trading')">🤖 Trading Logs</button>
+          <button class="ctrl-btn" id="logTypeTraining" onclick="changeLogType('training')">🧠 Training Logs</button>
+          <button class="ctrl-btn" id="logTypeAPI" onclick="changeLogType('api')">🔌 API Logs</button>
+          
+          <span style="color:var(--muted); font-size:0.65rem; margin-left:0.5rem;">Show:</span>
+          <select id="logLinesSelect" onchange="refreshLogs()" style="background:#111720; border:1px solid var(--border); color:var(--text); font-size:0.65rem; border-radius:4px; padding:0.1rem 0.3rem; height: 22px;">
+            <option value="50">50 lines</option>
+            <option value="100" selected>100 lines</option>
+            <option value="250">250 lines</option>
+          </select>
 
-
-
-
+          <button class="ctrl-btn" id="pauseLogs" onclick="toggleLogsPause()">⏸ Pause</button>
+          <span class="card-badge badge-green" id="logStatusBadge">AUTO-SYNCING</span>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div id="logConsole" style="background:#080b10; color:#4ade80; font-family:'JetBrains Mono', monospace; font-size:0.75rem; padding:1.2rem; height:320px; overflow-y:auto; line-height:1.6; white-space:pre-wrap; border-bottom-left-radius:12px; border-bottom-right-radius:12px; border-top:1px solid var(--border);">Awaiting stream synchronization...</div>
+      </div>
+    </div>
 
   </main>
 
@@ -1448,10 +1616,83 @@
       }
     });
 
+    // ── Tab Management (Sovereign Dual-Terminal Interface) ──
+    window.activeTab = 'live'; // 'live' or 'training'
+    
+    function switchDashboardTab(tab) {
+      window.activeTab = tab;
+      
+      const btnLive = document.getElementById('tabBtnLive');
+      const btnTraining = document.getElementById('tabBtnTraining');
+      
+      if (tab === 'live') {
+        btnLive.className = 'tab-btn active-live';
+        btnTraining.className = 'tab-btn';
+      } else {
+        btnLive.className = 'tab-btn';
+        btnTraining.className = 'tab-btn active-training';
+      }
+      
+      // Update UI title and badges immediately
+      const strikeBadge = document.getElementById('strikeBadge');
+      if (strikeBadge) {
+        strikeBadge.textContent = tab === 'live' ? 'EXCHANGE FILLS' : 'LIVE REPLAY';
+        strikeBadge.className = tab === 'live' ? 'card-badge badge-cyan' : 'card-badge badge-purple';
+      }
+
+      // Show/Hide Training Telemetry & Live Widgets
+      const trainingKpi = document.getElementById('trainingKpiRow');
+      const trainingProgress = document.getElementById('trainingProgressRow');
+      const trainingCouncil = document.getElementById('trainingExpertCouncilCard');
+      const trainingHallOfFame = document.getElementById('trainingHallOfFameCard');
+      const trainingEpochs = document.getElementById('trainingEpochsCard');
+      
+      const livePosition = document.getElementById('livePositionWidget');
+      const liveParamTuning = document.getElementById('liveParamTuningWidget');
+      const liveRules = document.getElementById('liveRulesWidget');
+      const livePilotStatus = document.getElementById('livePilotStatusWidget');
+      
+      if (tab === 'live') {
+        // Show Live Widgets
+        if (livePosition) livePosition.style.display = 'block';
+        if (liveParamTuning) liveParamTuning.style.display = 'block';
+        if (liveRules) liveRules.style.display = 'flex';
+        if (livePilotStatus) livePilotStatus.style.display = 'flex';
+        
+        // Hide Training Widgets
+        if (trainingKpi) trainingKpi.style.display = 'none';
+        if (trainingProgress) trainingProgress.style.display = 'none';
+        if (trainingCouncil) trainingCouncil.style.display = 'none';
+        if (trainingHallOfFame) trainingHallOfFame.style.display = 'none';
+        if (trainingEpochs) trainingEpochs.style.display = 'none';
+      } else {
+        // Hide Live Widgets
+        if (livePosition) livePosition.style.display = 'none';
+        if (liveParamTuning) liveParamTuning.style.display = 'none';
+        if (liveRules) liveRules.style.display = 'none';
+        if (livePilotStatus) livePilotStatus.style.display = 'none';
+        
+        // Show Training Widgets
+        if (trainingKpi) trainingKpi.style.display = 'grid';
+        if (trainingProgress) trainingProgress.style.display = 'grid';
+        if (trainingCouncil) trainingCouncil.style.display = 'block';
+        if (trainingHallOfFame) trainingHallOfFame.style.display = 'block';
+        if (trainingEpochs) trainingEpochs.style.display = 'block';
+      }
+      
+      // Immediately run refresh to pull new feed
+      refresh();
+    }
+
     // ── Parse log file via /api/stats ──────────────────────────────
     async function refresh() {
       try {
-        const r = await fetch('/api/stats'); const d = await r.json();
+        const r = await fetch(`/api/stats?mode=${window.activeTab}`); const d = await r.json();
+
+        // Enforce initial wallet fallback for config
+        if (!d.config) d.config = {};
+        d.config.initial_wallet = 200.0;
+
         const totalEp = d.total_epochs || 300;
 
         // ── Live KPIs (Always updated) ──
@@ -1545,7 +1786,11 @@
             equityChart.data.datasets[0].backgroundColor = finalW >= initialW ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
 
             // Update Equity Title
-            document.getElementById('equityTitle').textContent = `📈 Equity Growth — Simulated $${initialW} Account`;
+            if (window.activeTab === 'live') {
+              document.getElementById('equityTitle').textContent = `📈 Equity Growth — Live $200.00 Exchange Account`;
+            } else {
+              document.getElementById('equityTitle').textContent = `📈 Equity Growth — Simulated $${initialW} Account`;
+            }
 
             // Dynamic Strike Markers
             equityChart.data.datasets[0].pointRadius = 4;
@@ -1607,6 +1852,19 @@
                 </td>
               </tr>
             `;
+            // Render baseline starting capital on Equity Chart when 0 trades exist
+            const initialW = d.config ? (d.config.initial_wallet || 200.0) : 200.0;
+            equityChart.data.labels = ["Start", "Syncing"];
+            equityChart.data.datasets[0].data = [initialW, initialW];
+            equityChart.data.datasets[0].borderColor = '#10b981';
+            equityChart.data.datasets[0].backgroundColor = 'rgba(16, 185, 129, 0.1)';
+            equityChart.data.datasets[0].pointRadius = 0;
+            if (window.activeTab === 'live') {
+              document.getElementById('equityTitle').textContent = `📈 Equity Growth — Live $200.00 Exchange Account`;
+            } else {
+              document.getElementById('equityTitle').textContent = `📈 Equity Growth — Simulated $${initialW} Account`;
+            }
+            equityChart.update();
           }
         }
 
@@ -1638,41 +1896,131 @@
 
         // ── ELITE AUGMENTATIONS ──
 
-        // 1. Fee Burn Meter — use fee_rate from API config (synced with sovereign_config.py)
+        // 1. Highly Accurate Fee Burn Meter
         if (document.getElementById('totalFeesPaid')) {
-          const feeRate = (d.config && d.config.fee_rate) ? d.config.fee_rate : 0.0012;
-          const posSize = (d.config && d.config.initial_wallet) ? d.config.initial_wallet : 200;
-          const nTrades = d.trades ? d.trades.length : 0;
-          const totalFees = nTrades * (posSize * feeRate);
-          document.getElementById('totalFeesPaid').textContent = `-$${totalFees.toFixed(2)}`;
+          if (window.activeTab === 'live' && d.live && d.live.total_fees !== undefined) {
+            document.getElementById('totalFeesPaid').textContent = `-$${d.live.total_fees.toFixed(4)}`;
+          } else {
+            const feeRate = (d.config && d.config.fee_rate) ? d.config.fee_rate : 0.0012;
+            const initialWallet = (d.config && d.config.initial_wallet) ? d.config.initial_wallet : 200;
+            const posSizePct = (d.config && d.config.position_size_pct) ? d.config.position_size_pct : 0.25;
+            const leverage = (d.config && d.config.leverage) ? d.config.leverage : 10;
+            const notional = initialWallet * posSizePct * leverage;
+            const nTrades = d.trades ? d.trades.length : 0;
+            const totalFees = nTrades * (notional * feeRate);
+            document.getElementById('totalFeesPaid').textContent = `-$${totalFees.toFixed(2)}`;
+          }
         }
 
+        // 2. Pilot Trader Process Health
+        const pBadge = document.getElementById('pilotHealthBadge');
+        if (pBadge) {
+          if (d.live_trader_running) {
+            pBadge.textContent = "HEALTHY";
+            pBadge.className = "card-badge badge-green";
+            pBadge.style.background = "";
+            pBadge.style.borderColor = "";
+            pBadge.style.color = "";
+          } else {
+            pBadge.textContent = "OFFLINE";
+            pBadge.className = "card-badge";
+            pBadge.style.background = "rgba(239, 68, 68, .15)";
+            pBadge.style.borderColor = "rgba(239, 68, 68, .3)";
+            pBadge.style.color = "var(--red)";
+          }
+        }
+
+        // 3. Active Position Widget
+        const posSide = document.getElementById('posSideBadge');
+        const posPnl = document.getElementById('posUnrealizedPnL');
+        const posDetails = document.getElementById('posDetailsRow');
+        if (posSide && posPnl && posDetails && d.active_position) {
+          const ap = d.active_position;
+          if (ap.has_position) {
+            posSide.textContent = ap.side;
+            posSide.className = ap.side === "LONG" ? "card-badge badge-cyan" : "card-badge badge-gold";
+            posSide.style.background = "";
+            posSide.style.borderColor = "";
+            posSide.style.color = "";
+            
+            const pnlVal = ap.unrealized_pnl || 0.0;
+            posPnl.textContent = `${pnlVal >= 0 ? '+' : ''}$${pnlVal.toFixed(2)}`;
+            posPnl.style.color = pnlVal >= 0 ? 'var(--green)' : 'var(--red)';
+            
+            posDetails.style.display = "grid";
+            if (document.getElementById('posSizeLabel')) document.getElementById('posSizeLabel').textContent = ap.size.toFixed(4) + " BTC";
+            if (document.getElementById('posEntryLabel')) document.getElementById('posEntryLabel').textContent = `$${ap.entry_price.toLocaleString(undefined, {minimumFractionDigits:2})}`;
+            if (document.getElementById('posSLLabel')) document.getElementById('posSLLabel').textContent = ap.active_sl > 0 ? `$${ap.active_sl.toLocaleString()}` : "NONE";
+            if (document.getElementById('posTPLabel')) document.getElementById('posTPLabel').textContent = ap.active_tp > 0 ? `$${ap.active_tp.toLocaleString()}` : "NONE";
+          } else {
+            posSide.textContent = "NO ACTIVE POSITION";
+            posSide.className = "card-badge";
+            posSide.style.background = "rgba(255,255,255,0.05)";
+            posSide.style.borderColor = "var(--border)";
+            posSide.style.color = "var(--muted)";
+            
+            posPnl.textContent = "$0.00";
+            posPnl.style.color = "var(--muted)";
+            posDetails.style.display = "none";
+          }
+        }
+
+        // 4. Rules Display
+        const rulesEl = document.getElementById('rulesLabel');
+        if (rulesEl && d.config_rules) {
+          const cr = d.config_rules;
+          rulesEl.textContent = `${cr.leverage}x Lev | ${(cr.position_size_pct * 100).toFixed(0)}% Pos | Tr: ${cr.trailing_stop_pct}%`;
+        }
+
+
         // 2. Strategist Hall of Fame
-        if (document.getElementById('hallOfFameList') && d.trades) {
-          const experts = {};
-          d.trades.forEach(t => {
-            if (!experts[t.expert]) experts[t.expert] = { name: t.expert, pnl: 0, win: 0, count: 0, avatar: t.avatar };
-            experts[t.expert].pnl += (t.net_pct || 0);
-            if (t.net_pct > 0) experts[t.expert].win++;
-            experts[t.expert].count++;
-          });
-          const top3 = Object.values(experts).sort((a, b) => b.pnl - a.pnl).slice(0, 3);
-          const hofHtml = top3.map((e, i) => {
-            const fallbackAvatar = e.name.includes('System') ? '🧠' : '🤖';
-            const avatar = e.avatar || fallbackAvatar;
-            return `
-            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.03); padding:0.6rem; border-radius:6px; border-left: 3px solid ${i == 0 ? 'var(--gold)' : 'var(--border)'}">
-                <div style="display:flex; align-items:center; gap:0.6rem;">
-                    <span style="font-size:1.2rem">${avatar}</span>
-                    <div>
-                        <div style="font-size:0.75rem; font-weight:700; color:var(--text)">${e.name}</div>
-                        <div style="font-size:0.6rem; color:var(--muted)">${e.count} STRIKES | ${(e.win / e.count * 100).toFixed(0)}% WIN</div>
-                    </div>
-                </div>
-                <div style="font-family:'JetBrains Mono'; font-weight:800; font-size:0.8rem; color:${e.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${e.pnl >= 0 ? '+' : ''}${e.pnl.toFixed(2)}%</div>
-            </div>
-          `;}).join('');
-          if (hofHtml) document.getElementById('hallOfFameList').innerHTML = hofHtml;
+        if (document.getElementById('hallOfFameList')) {
+          if (d.trades && d.trades.length > 0) {
+            const experts = {};
+            d.trades.forEach(t => {
+              if (!experts[t.expert]) experts[t.expert] = { name: t.expert, pnl: 0, win: 0, count: 0, avatar: t.avatar };
+              experts[t.expert].pnl += (t.net_pct || 0);
+              if (t.net_pct > 0) experts[t.expert].win++;
+              experts[t.expert].count++;
+            });
+            const top3 = Object.values(experts).sort((a, b) => b.pnl - a.pnl).slice(0, 3);
+            const hofHtml = top3.map((e, i) => {
+              const fallbackAvatar = e.name.includes('System') ? '🧠' : '🤖';
+              const avatar = e.avatar || fallbackAvatar;
+              return `
+              <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.03); padding:0.6rem; border-radius:6px; border-left: 3px solid ${i == 0 ? 'var(--gold)' : 'var(--border)'}">
+                  <div style="display:flex; align-items:center; gap:0.6rem;">
+                      <span style="font-size:1.2rem">${avatar}</span>
+                      <div>
+                          <div style="font-size:0.75rem; font-weight:700; color:var(--text)">${e.name}</div>
+                          <div style="font-size:0.6rem; color:var(--muted)">${e.count} STRIKES | ${(e.win / e.count * 100).toFixed(0)}% WIN</div>
+                      </div>
+                  </div>
+                  <div style="font-family:'JetBrains Mono'; font-weight:800; font-size:0.8rem; color:${e.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${e.pnl >= 0 ? '+' : ''}${e.pnl.toFixed(2)}%</div>
+              </div>
+            `;}).join('');
+            if (hofHtml) document.getElementById('hallOfFameList').innerHTML = hofHtml;
+          } else {
+            // Render Fallback active council list when there are no trades yet!
+            const fallbackExperts = [
+              { name: "Order-Flow Specialist", role: "detecting Liquidity Clusters", avatar: "🔑" },
+              { name: "Momentum Striker", role: "analyzing Velocity-Resonance", avatar: "⚡" },
+              { name: "Volatility Arbiter", role: "measuring Mean Reversion", avatar: "⚖️" }
+            ];
+            const hofHtml = fallbackExperts.map((e, i) => `
+              <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.03); padding:0.6rem; border-radius:6px; border-left: 3px solid var(--border)">
+                  <div style="display:flex; align-items:center; gap:0.6rem;">
+                      <span style="font-size:1.2rem">${e.avatar}</span>
+                      <div>
+                          <div style="font-size:0.75rem; font-weight:700; color:var(--text)">${e.name}</div>
+                          <div style="font-size:0.6rem; color:var(--muted)">${e.role}</div>
+                      </div>
+                  </div>
+                  <div style="font-size:0.6rem; font-weight:bold; color:var(--green)">ONLINE</div>
+              </div>
+            `).join('');
+            document.getElementById('hallOfFameList').innerHTML = hofHtml;
+          }
         }
 
         // 3. Ticker Jitter (Simulated Market Context)
@@ -1870,7 +2218,7 @@
       }
     }
 
-    // ── Health check (training alive) ────────────────────────────────
+    // ── Health check (training/pilot alive) ───────────────────────────
     async function checkHealth() {
       try {
         const r = await fetch('/api/health');
@@ -1879,20 +2227,43 @@
         const dot = document.getElementById('trainingDot');
         const lbl = document.getElementById('trainingLabel');
         if (pill && dot && lbl) {
-          if (h.training) {
-            pill.className = 'status-pill training';
-            dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite;';
-            lbl.textContent = 'TRAINING ACTIVE';
-            if (document.getElementById('deployStatus')) {
-               const cs = d.current_step || 0;
-               document.getElementById('deployStatus').textContent = cs > 0 ? '🧠 NEURAL SYNAPTIC TRAINING' : '📡 SCANNING MARKET...';
-               document.getElementById('deployStatus').style.color = cs > 0 ? 'var(--cyan)' : 'var(--gold)';
+          if (window.activeTab === 'live') {
+            if (h.live_trader_running) {
+              pill.className = 'status-pill training'; // Pulsing green styling
+              dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--cyan);animation:pulse-dot 2s infinite;box-shadow:0 0 8px var(--cyan);';
+              lbl.textContent = 'PILOT ACTIVE';
+              if (document.getElementById('deployStatus')) {
+                 document.getElementById('deployStatus').textContent = '📡 LIVE MARKET INFUSION';
+                 document.getElementById('deployStatus').style.color = 'var(--cyan)';
+              }
+            } else {
+              pill.className = 'status-pill idle';
+              dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--red);';
+              lbl.textContent = 'PILOT OFFLINE';
+              if (document.getElementById('deployStatus')) {
+                 document.getElementById('deployStatus').textContent = '🛑 PILOT STOPPED';
+                 document.getElementById('deployStatus').style.color = 'var(--red)';
+              }
             }
           } else {
-            pill.className = 'status-pill idle';
-            dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--red);';
-            lbl.textContent = 'TRAINING STOPPED';
-            if (document.getElementById('deployStatus')) document.getElementById('deployStatus').textContent = '🛑 MISSION HALTED';
+            // Training mode check
+            if (h.training) {
+              pill.className = 'status-pill training';
+              dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse-dot 2s infinite;';
+              lbl.textContent = 'TRAINING ACTIVE';
+              if (document.getElementById('deployStatus')) {
+                 document.getElementById('deployStatus').textContent = '🧠 NEURAL SYNAPTIC TRAINING';
+                 document.getElementById('deployStatus').style.color = 'var(--cyan)';
+              }
+            } else {
+              pill.className = 'status-pill idle';
+              dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:var(--red);';
+              lbl.textContent = 'TRAINING STOPPED';
+              if (document.getElementById('deployStatus')) {
+                 document.getElementById('deployStatus').textContent = '🛑 MISSION HALTED';
+                 document.getElementById('deployStatus').style.color = 'var(--red)';
+              }
+            }
           }
         }
       } catch (e) { /* silent */ }
@@ -1947,10 +2318,72 @@
       t.classList.add('show');
       setTimeout(() => t.classList.remove('show'), 3000);
     }
+    // ── Brain Promotion System ───────────────────────────────────────
+    async function promoteBrain() {
+      if (!confirm("⚠️ Are you sure you want to promote the latest background staging weights (hydra_best.keras) to the production trading sandbox?")) {
+        return;
+      }
+      try {
+        const r = await fetch('/api/promote_weights', { method: 'POST' });
+        const d = await r.json();
+        if (d.status === 'success') {
+          showToast('🧠 Brain promoted successfully! Upgrade complete.');
+          refresh();
+        } else {
+          showToast('❌ Promotion failed: ' + d.message, 'var(--red)');
+        }
+      } catch (e) {
+        showToast('❌ API Error: ' + e.message, 'var(--red)');
+      }
+    }
+
+    // ── Live Parameters Tuning System ────────────────────────────────
+    async function loadLiveParams() {
+      try {
+        const r = await fetch('/api/config_params');
+        const d = await r.json();
+        if (d.min_swing !== undefined) {
+          document.getElementById('minSwingSlider').value = d.min_swing;
+          document.getElementById('minSwingSliderVal').textContent = d.min_swing;
+        }
+        if (d.cert_threshold !== undefined) {
+          const certPct = Math.round(d.cert_threshold * 100);
+          document.getElementById('certSlider').value = certPct;
+          document.getElementById('certSliderVal').textContent = certPct;
+        }
+      } catch (e) {
+        console.warn("Failed to load live params", e);
+      }
+    }
+
+    async function saveLiveParams() {
+      const min_swing = parseFloat(document.getElementById('minSwingSlider').value);
+      const cert_threshold = parseFloat(document.getElementById('certSlider').value) / 100.0;
+      
+      try {
+        const r = await fetch('/api/config_params', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ min_swing, cert_threshold })
+        });
+        const d = await r.json();
+        if (d.status === 'success') {
+          showToast(`⚙️ Param rules saved successfully!`);
+          refresh();
+        } else {
+          showToast('❌ Save failed: ' + d.message, 'var(--red)');
+        }
+      } catch (e) {
+        showToast('❌ API Error: ' + e.message, 'var(--red)');
+      }
+    }
+
+    // Load dynamic parameters on page startup
+    setTimeout(loadLiveParams, 500);
 
     document.getElementById('confirmRecap').addEventListener('click', async () => {
       document.getElementById('recapModal').classList.remove('open');
-      const r = await fetch('/api/reset_wallet', { method: 'POST' });
+      const r = await fetch('/api/reset_wallet?confirm=SOVEREIGN', { method: 'POST' });
       const d = await r.json();
       if (d.status === 'success') {
         showToast('💰 Station Recapitalized! Fresh mission started.');
@@ -1960,12 +2393,77 @@
       }
     });
 
+    // ── Live Logs Console System ─────────────────────────────────────
+    window.currentLogType = 'trading';
+    window.logsPaused = false;
+
+    function changeLogType(type) {
+      window.currentLogType = type;
+      document.getElementById('logTypeTrading').classList.toggle('paused', type === 'trading');
+      document.getElementById('logTypeTraining').classList.toggle('paused', type === 'training');
+      document.getElementById('logTypeAPI').classList.toggle('paused', type === 'api');
+      refreshLogs();
+    }
+
+    function toggleLogsPause() {
+      window.logsPaused = !window.logsPaused;
+      const btn = document.getElementById('pauseLogs');
+      const badge = document.getElementById('logStatusBadge');
+      if (btn) {
+        btn.textContent = window.logsPaused ? '▶ Resume' : '⏸ Pause';
+        btn.classList.toggle('paused', window.logsPaused);
+      }
+      if (badge) {
+        badge.textContent = window.logsPaused ? 'PAUSED' : 'AUTO-SYNCING';
+        badge.className = window.logsPaused ? 'card-badge badge-gold' : 'card-badge badge-green';
+      }
+      if (!window.logsPaused) {
+        refreshLogs();
+      }
+    }
+
+    async function refreshLogs() {
+      if (window.logsPaused) return;
+      const consoleEl = document.getElementById('logConsole');
+      if (!consoleEl) return;
+      try {
+        const lines = document.getElementById('logLinesSelect').value || 100;
+        const r = await fetch(`/api/logs?type=${window.currentLogType}&lines=${lines}`);
+        const d = await r.json();
+        if (d.log) {
+          let formattedLog = d.log
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          formattedLog = formattedLog
+            .replace(/(🔮 REASONING\s*:)/g, '<span style="color:var(--purple);font-weight:bold">$1</span>')
+            .replace(/(🧠 CERTAINTY\s*:)/g, '<span style="color:var(--gold);font-weight:bold">$1</span>')
+            .replace(/(📉 SWING TOO SMALL)/g, '<span style="color:var(--red);font-weight:bold">$1</span>')
+            .replace(/(🔕 CERTAINTY TOO LOW)/g, '<span style="color:var(--gold)">$1</span>')
+            .replace(/(📈 LONG signal|🏹 SOVEREIGN_LONG)/g, '<span style="color:var(--green);font-weight:bold">$1</span>')
+            .replace(/(📉 SHORT signal|📉 SOVEREIGN_SHORT)/g, '<span style="color:var(--red);font-weight:bold">$1</span>')
+            .replace(/(✓ Injected live L2|✅ Sandbox Brain sync|✅ Hot-reload complete)/g, '<span style="color:var(--green)">$1</span>')
+            .replace(/(🔄 ACTIVE SANDBOX BRAIN UPDATE DETECTED!)/g, '<span style="color:var(--cyan);font-weight:bold;text-shadow: 0 0 5px rgba(6,182,212,0.4)">$1</span>')
+            .replace(/(❌ Error|⚠️ Failed)/g, '<span style="color:var(--red);font-weight:bold">$1</span>')
+            .replace(/(\[\d{2}:\d{2}:\d{2}\])/g, '<span style="color:var(--muted)">$1</span>');
+          consoleEl.innerHTML = formattedLog;
+          consoleEl.scrollTop = consoleEl.scrollHeight;
+        } else {
+          consoleEl.innerHTML = `<span style="color:var(--muted)">No log data returned. Path: ${d.path}</span>`;
+        }
+      } catch (e) {
+        consoleEl.innerHTML = `<span style="color:var(--red)">Failed to sync logs: ${e.message}</span>`;
+      }
+    }
+
     setInterval(refresh, 5000);
     setInterval(checkHealth, 10000);
     setInterval(updateLivePrice, 60000);
-    refresh();
+    setInterval(refreshLogs, 5000);
+    switchDashboardTab('live');
     checkHealth();
     updateLivePrice();
+    refreshLogs();
   </script>
 </body>
 

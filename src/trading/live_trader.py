@@ -8,7 +8,7 @@ SOVEREIGN ALPHA PILOT (V11.0 — IRON ORACLE) ⚓🏛️
 - Filter: Certainty threshold (80%+ = Sovereign Edge)
 """
 
-import os, sys, time
+import os, sys, time, json
 import numpy as np
 import keras
 import pandas as pd
@@ -160,6 +160,19 @@ def run_pilot():
                     last_mtime = curr_mtime
                     log("✅ Hot-reload complete. Active model upgraded in real-time!", C_GREEN)
 
+            # ── Dynamic live configuration parameters loading ────────────────
+            params_p = ROOT / "src" / "config" / "live_params.json"
+            dyn_min_swing = MIN_SWING
+            dyn_cert_threshold = CERT_THRESHOLD
+            if params_p.exists():
+                try:
+                    with open(params_p, "r") as f:
+                        p_data = json.load(f)
+                        dyn_min_swing = float(p_data.get("min_swing", MIN_SWING))
+                        dyn_cert_threshold = float(p_data.get("cert_threshold", CERT_THRESHOLD))
+                except Exception as e:
+                    log(f"⚠️ Failed to parse dynamic live params: {e}", C_YELLOW)
+
             current_time = time.time()
 
             # ── Active Position Monitoring (Trailing Stop & Breakeven) ──────
@@ -295,11 +308,11 @@ def run_pilot():
             cert_norm = cert_raw
 
             log(f"🔮 REASONING     : {LABELS[reasoning]}")
-            log(f"🔮 EXPECTED SWING: ±${est_swing:.2f}  (min: ${MIN_SWING:.0f})")
-            log(f"🧠 CERTAINTY     : {cert_norm*100:.1f}%  (threshold: {CERT_THRESHOLD*100:.0f}%)")
+            log(f"🔮 EXPECTED SWING: ±${est_swing:.2f}  (min: ${dyn_min_swing:.0f})")
+            log(f"🧠 CERTAINTY     : {cert_norm*100:.1f}%  (threshold: {dyn_cert_threshold*100:.0f}%)")
 
             # ── Sniper Gate 1: Certainty ─────────────────────────────────────
-            if cert_norm < CERT_THRESHOLD:
+            if cert_norm < dyn_cert_threshold:
                 log(f"🔕 CERTAINTY TOO LOW ({cert_norm*100:.1f}%) — HOLDING", C_YELLOW)
                 time.sleep(SLEEP_S); continue
 
@@ -309,8 +322,8 @@ def run_pilot():
                 time.sleep(SLEEP_S); continue
 
             # ── Sniper Gate 3: Fee Protection (Swing Size) ────────────────────
-            if est_swing < MIN_SWING:
-                log(f"📉 SWING TOO SMALL (${est_swing:.2f} < ${MIN_SWING:.0f}) — FEES WOULD EAT PROFIT", C_YELLOW)
+            if est_swing < dyn_min_swing:
+                log(f"📉 SWING TOO SMALL (${est_swing:.2f} < ${dyn_min_swing:.0f}) — FEES WOULD EAT PROFIT", C_YELLOW)
                 time.sleep(SLEEP_S); continue
 
             # ── Sniper Gate 3: Cooldown ──────────────────────────────────────
