@@ -7,7 +7,7 @@ ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from core.hydra import build_kraken
-from data.preprocess import KATScaler, build_feature_cols, compute_indicators
+from data.preprocess import KATScaler, build_feature_cols, compute_indicators, apply_dls
 from exchange.fetch_data import fetch_live_kat_data
 
 def run_flash():
@@ -27,8 +27,7 @@ def run_flash():
     df_feat = compute_indicators(df)
     close_idx = features.index("close")
     data = df_feat[features].values.astype("float32")
-    # DLS — match training pipeline (no global scaler)
-    def _scale(window): return (window - window.mean(0)) / (window.std(0) + 1e-8)
+    # DLS — match training pipeline
     scaled = data
     
     preds       = []
@@ -38,7 +37,7 @@ def run_flash():
     ctx = 120
     print(f"🔬 Evaluating {len(data) - ctx - 15} windows...")
     for i in range(ctx, len(data) - 15):
-        X_in = _scale(data[i - ctx : i]).reshape(1, ctx, n_feat)
+        X_in = apply_dls(data[i - ctx : i])[0].reshape(1, ctx, n_feat)
         out = model(X_in, training=False)
         
         # Predicted move at T+15

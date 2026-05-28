@@ -1,4 +1,4 @@
-# ⚓ Iron Oracle V12.1 — Sovereign Kraken Intelligence
+# ⚓ Iron Oracle V12.3 — Sovereign Kraken Intelligence
 > **Institutional-Grade Autonomous Neural Trading Station | BTC/USDT 15m | 256-Expert MoE Architecture | Fee-Aware Simulation Engine**
 
 
@@ -96,6 +96,15 @@ Market Input (120 candles × 45 features)
 | **SovereignLoss** | Volatility-weighted directional loss — penalizes errors on high-vol moves more |
 | **RMSNorm** | Fast root mean square normalization (LLaMA-style) |
 | **SwiGLU** | Gated activation function (Gemma/LLaMA DNA) |
+
+---
+
+## ⚡ V12.3 Patch Notes (Critical Architecture Fixes)
+
+1. **Strict Dynamic Local Scaling (DLS)**: Replaced raw `std + 1e-8` normalization during live trading with a unified `apply_dls()` function synced precisely with the training pipeline. This enforces strict Standard Deviation flooring (`1e-3`) and Z-score bounding (`[-5.0, 5.0]`), permanently killing the "Neural Hallucination" bug that caused random trading during low volatility periods.
+2. **Delta API Exponential Backoff Engine**: The Delta client (`delta_client.py`) is now hardened against `502 Bad Gateway` and timeout errors with intelligent retry backoffs. Background collectors and execution traders no longer crash during API outages.
+3. **Optimized I/O Checkpointing**: `train.py` now saves its 400MB+ `.keras` models every 10 epochs instead of every 1 epoch. This completely eliminates CPU/Disk I/O stalling and accelerates the training pipeline massively.
+4. **Order Book Data Collector**: The L2 Order Book snapshot collector now properly logs output to `logs/ob_collector.log` while perfectly executing its 15-minute sync cycles.
 
 ---
 
@@ -276,6 +285,7 @@ To protect active trade profits and guarantee absolute operational safety from s
 
 | Version | Key Changes |
 |---|---|
+| **V12.2** | Dynamic ATR-based MIN_SWING (clamped at $100 floor for fee protection), exponential backoff on exchange 502s, optimized training checkpoints (save every 10 epochs to fix I/O stall). |
 | **V12.1** | Delta Exchange Server-Side Bracket Sync (DELETE query-less signature resolution, query-preserve-delete-recreate lifecycle, real-time UI SL/TP locking) |
 | **V12.0** | Deterministic strategist names, fee-aware P&L, 3D branding, localised CDN, dashboard fixes |
 
@@ -288,12 +298,12 @@ To protect active trade profits and guarantee absolute operational safety from s
 
 ## ⚠️ Important Notes
 
-1. **Training is slow on CPU** — Each epoch takes ~34 hours at Batch 32. This is normal and by design (precision over speed).
-2. **Do not interrupt training** — The model saves a checkpoint every epoch. If interrupted, use `--resume` to continue.
+1. **Training is slow on CPU** — Each epoch takes ~13.5 hours at Batch 32. This is normal and by design (precision over speed).
+2. **Do not interrupt training** — The model saves a checkpoint every 10 epochs. If interrupted, use `--resume` to continue from the last checkpoint.
 3. **Dashboard port** — The server runs on **port 5000** by default.
 4. **Data cache** — Historical candles are cached in `data/BTCUSD_15m_history_400000.parquet`. Delete this file to force a fresh fetch.
 5. **Simulation vs Live** — All trade metrics shown on the dashboard are **simulated**. Use `auto_run.py` for live trading only after thorough backtesting.
 
 ---
 
-⚓ **Iron Oracle V12.1 — Sovereign Intelligence, Institutional Performance.**
+⚓ **Iron Oracle V12.2 — Sovereign Intelligence, Institutional Performance.**

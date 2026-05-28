@@ -1267,7 +1267,7 @@
     </div>
 
     <!-- ── ROW 2: Side-by-Side Feed (ELEVATED) ── -->
-    <div class="stats-row"
+    <div id="liveStrikesRow" class="stats-row"
       style="grid-column: 1 / -1; display: flex; gap: 1rem; width: 100%; max-width: 100%; margin-top: -0.5rem; align-items: stretch;">
 
       <!-- Latest AI Strikes Feed (Left) -->
@@ -1329,7 +1329,7 @@
       </div>
 
       <!-- Net ROI Tracker (Right) -->
-      <div class="card" style="flex: 1.2;">
+      <div class="card" id="liveNetProfitCard" style="flex: 1.2;">
         <div class="card-header">
           <span class="card-title" style="display:flex; align-items:center; gap:0.5rem;">
             <span class="pulse-dot"></span>
@@ -1465,7 +1465,7 @@
     </div>
 
     <!-- ── ROW 3: Analytics Row (Graphs) ── -->
-    <div class="stats-row"
+    <div id="liveEquityRow" class="stats-row"
       style="display: flex; gap: 1rem; width: 100%; max-width: 100%; margin: 1rem 0; align-items: stretch;">
 
       <!-- Equity Growth (Left) -->
@@ -1526,7 +1526,7 @@
     </div>
 
     <!-- Live System Logs Console (V12.3 Premium Extension) -->
-    <div class="card" style="grid-column: 1 / -1; margin-top: 1.5rem;">
+    <div class="card" id="logConsoleCard" style="grid-column: 1 / -1; margin-top: 1.5rem;">
       <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
         <span class="card-title" style="display:flex; align-items:center; gap:0.5rem;">
           <span class="pulse-dot"></span>
@@ -1625,59 +1625,69 @@
       const btnLive = document.getElementById('tabBtnLive');
       const btnTraining = document.getElementById('tabBtnTraining');
       
-      if (tab === 'live') {
-        btnLive.className = 'tab-btn active-live';
-        btnTraining.className = 'tab-btn';
-      } else {
-        btnLive.className = 'tab-btn';
-        btnTraining.className = 'tab-btn active-training';
-      }
-      
-      // Update UI title and badges immediately
-      const strikeBadge = document.getElementById('strikeBadge');
-      if (strikeBadge) {
-        strikeBadge.textContent = tab === 'live' ? 'EXCHANGE FILLS' : 'LIVE REPLAY';
-        strikeBadge.className = tab === 'live' ? 'card-badge badge-cyan' : 'card-badge badge-purple';
-      }
-
-      // Show/Hide Training Telemetry & Live Widgets
+      // ── Full Tab Separation (V12.5 Sovereign) ──────────────────────────────
+      // Training-only sections
       const trainingKpi = document.getElementById('trainingKpiRow');
       const trainingProgress = document.getElementById('trainingProgressRow');
       const trainingCouncil = document.getElementById('trainingExpertCouncilCard');
-      const trainingHallOfFame = document.getElementById('trainingHallOfFameCard');
       const trainingEpochs = document.getElementById('trainingEpochsCard');
-      
+
+      // Live-only sections
+      const liveStrikesRow = document.getElementById('liveStrikesRow');
+      const liveEquityRow = document.getElementById('liveEquityRow');
+      const liveNetProfitCard = document.getElementById('liveNetProfitCard');
+
+      // Live-only widgets (inside net profit card)
+      const livePilotStatus = document.getElementById('livePilotStatusWidget');
       const livePosition = document.getElementById('livePositionWidget');
       const liveParamTuning = document.getElementById('liveParamTuningWidget');
       const liveRules = document.getElementById('liveRulesWidget');
-      const livePilotStatus = document.getElementById('livePilotStatusWidget');
+
+      // Log console — always visible, but switch default log type per tab
+      const logConsole = document.getElementById('logConsoleCard');
       
       if (tab === 'live') {
-        // Show Live Widgets
+        btnLive.className = 'tab-btn active-live';
+        btnTraining.className = 'tab-btn';
+        
+        // ── SHOW: Live sections ──
+        if (liveStrikesRow) liveStrikesRow.style.display = 'flex';
+        if (liveEquityRow) liveEquityRow.style.display = 'flex';
+        if (liveNetProfitCard) liveNetProfitCard.style.display = 'block';
+        if (livePilotStatus) livePilotStatus.style.display = 'flex';
         if (livePosition) livePosition.style.display = 'block';
         if (liveParamTuning) liveParamTuning.style.display = 'block';
         if (liveRules) liveRules.style.display = 'flex';
-        if (livePilotStatus) livePilotStatus.style.display = 'flex';
         
-        // Hide Training Widgets
+        // ── HIDE: Training sections ──
         if (trainingKpi) trainingKpi.style.display = 'none';
         if (trainingProgress) trainingProgress.style.display = 'none';
         if (trainingCouncil) trainingCouncil.style.display = 'none';
-        if (trainingHallOfFame) trainingHallOfFame.style.display = 'none';
         if (trainingEpochs) trainingEpochs.style.display = 'none';
+
+        // Auto-switch log console to trading logs
+        if (window.currentLogType !== 'trading') changeLogType('trading');
       } else {
-        // Hide Live Widgets
-        if (livePosition) livePosition.style.display = 'none';
-        if (liveParamTuning) liveParamTuning.style.display = 'none';
-        if (liveRules) liveRules.style.display = 'none';
-        if (livePilotStatus) livePilotStatus.style.display = 'none';
+        btnLive.className = 'tab-btn';
+        btnTraining.className = 'tab-btn active-training';
         
-        // Show Training Widgets
+        // ── SHOW: Training sections ──
         if (trainingKpi) trainingKpi.style.display = 'grid';
         if (trainingProgress) trainingProgress.style.display = 'grid';
         if (trainingCouncil) trainingCouncil.style.display = 'block';
-        if (trainingHallOfFame) trainingHallOfFame.style.display = 'block';
         if (trainingEpochs) trainingEpochs.style.display = 'block';
+
+        // ── HIDE: Live sections ──
+        if (liveStrikesRow) liveStrikesRow.style.display = 'none';
+        if (liveEquityRow) liveEquityRow.style.display = 'none';
+        if (liveNetProfitCard) liveNetProfitCard.style.display = 'none';
+        if (livePilotStatus) livePilotStatus.style.display = 'none';
+        if (livePosition) livePosition.style.display = 'none';
+        if (liveParamTuning) liveParamTuning.style.display = 'none';
+        if (liveRules) liveRules.style.display = 'none';
+
+        // Auto-switch log console to training logs
+        if (window.currentLogType !== 'training') changeLogType('training');
       }
       
       // Immediately run refresh to pull new feed

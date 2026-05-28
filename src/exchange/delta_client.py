@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Max retries and starting backoff (seconds) for 502/timeout errors
+_MAX_RETRIES = 4
+_RETRY_BACKOFF = 2
+
 class DeltaClient:
     """
     Simplified REST client for Delta Exchange India.
@@ -45,27 +49,53 @@ class DeltaClient:
         if params:
             query = "?" + urllib.parse.urlencode(params)
         url = self.base_url + path + query
-        headers = self._generate_signature("GET", path, query=query) if auth else {}
-        resp = self.session.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        return resp.json()
+        delay = _RETRY_BACKOFF
+        for attempt in range(_MAX_RETRIES):
+            try:
+                headers = self._generate_signature("GET", path, query=query) if auth else {}
+                resp = self.session.get(url, headers=headers, timeout=10)
+                resp.raise_for_status()
+                return resp.json()
+            except (requests.exceptions.Timeout,
+                    requests.exceptions.ConnectionError) as e:
+                if attempt < _MAX_RETRIES - 1:
+                    print(f"[DeltaClient] GET timeout/conn error (attempt {attempt+1}/{_MAX_RETRIES}): {e}. Retrying in {delay}s...")
+                    time.sleep(delay); delay *= 2; continue
+                raise
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code in (502, 503, 504):
+                    if attempt < _MAX_RETRIES - 1:
+                        print(f"[DeltaClient] GET {e.response.status_code} (attempt {attempt+1}/{_MAX_RETRIES}). Retrying in {delay}s...")
+                        time.sleep(delay); delay *= 2; continue
+                raise
 
     def _post(self, path: str, body: dict) -> dict:
         import json
         url = self.base_url + path
         body_str = json.dumps(body, separators=(',', ':'))
-        headers = self._generate_signature("POST", path, body=body_str)
-        headers["Content-Type"] = "application/json"
-        
-        resp = self.session.post(url, data=body_str, headers=headers, timeout=10)
-        if resp.status_code >= 400:
+        delay = _RETRY_BACKOFF
+        for attempt in range(_MAX_RETRIES):
             try:
-                err_data = resp.json()
-                print(f"   ❌ Delta API Error: {err_data}")
-            except:
-                print(f"   ❌ HTTP {resp.status_code}: {resp.text}")
-        resp.raise_for_status()
-        return resp.json()
+                headers = self._generate_signature("POST", path, body=body_str)
+                headers["Content-Type"] = "application/json"
+                resp = self.session.post(url, data=body_str, headers=headers, timeout=10)
+                if resp.status_code in (502, 503, 504) and attempt < _MAX_RETRIES - 1:
+                    print(f"[DeltaClient] POST {resp.status_code} (attempt {attempt+1}/{_MAX_RETRIES}). Retrying in {delay}s...")
+                    time.sleep(delay); delay *= 2; continue
+                if resp.status_code >= 400:
+                    try:
+                        err_data = resp.json()
+                        print(f"   ❌ Delta API Error: {err_data}")
+                    except:
+                        print(f"   ❌ HTTP {resp.status_code}: {resp.text}")
+                resp.raise_for_status()
+                return resp.json()
+            except (requests.exceptions.Timeout,
+                    requests.exceptions.ConnectionError) as e:
+                if attempt < _MAX_RETRIES - 1:
+                    print(f"[DeltaClient] POST timeout/conn error (attempt {attempt+1}/{_MAX_RETRIES}): {e}. Retrying in {delay}s...")
+                    time.sleep(delay); delay *= 2; continue
+                raise
 
     def _delete(self, path: str, params: dict = None, auth: bool = True) -> dict:
         import urllib.parse
@@ -73,20 +103,30 @@ class DeltaClient:
         if params:
             query = "?" + urllib.parse.urlencode(params)
         url = self.base_url + path + query
-        
-        # DELETE requests must be signed WITHOUT query parameters in the HMAC payload
-        headers = self._generate_signature("DELETE", path, query="") if auth else {}
-        headers["Content-Type"] = "application/json"
-        
-        resp = self.session.delete(url, headers=headers, timeout=10)
-        if resp.status_code >= 400:
+        delay = _RETRY_BACKOFF
+        for attempt in range(_MAX_RETRIES):
             try:
-                err_data = resp.json()
-                print(f"   ❌ Delta API Error: {err_data}")
-            except:
-                print(f"   ❌ HTTP {resp.status_code}: {resp.text}")
-        resp.raise_for_status()
-        return resp.json()
+                # DELETE requests must be signed WITHOUT query parameters in the HMAC payload
+                headers = self._generate_signature("DELETE", path, query="") if auth else {}
+                headers["Content-Type"] = "application/json"
+                resp = self.session.delete(url, headers=headers, timeout=10)
+                if resp.status_code in (502, 503, 504) and attempt < _MAX_RETRIES - 1:
+                    print(f"[DeltaClient] DELETE {resp.status_code} (attempt {attempt+1}/{_MAX_RETRIES}). Retrying in {delay}s...")
+                    time.sleep(delay); delay *= 2; continue
+                if resp.status_code >= 400:
+                    try:
+                        err_data = resp.json()
+                        print(f"   ❌ Delta API Error: {err_data}")
+                    except:
+                        print(f"   ❌ HTTP {resp.status_code}: {resp.text}")
+                resp.raise_for_status()
+                return resp.json()
+            except (requests.exceptions.Timeout,
+                    requests.exceptions.ConnectionError) as e:
+                if attempt < _MAX_RETRIES - 1:
+                    print(f"[DeltaClient] DELETE timeout/conn error (attempt {attempt+1}/{_MAX_RETRIES}): {e}. Retrying in {delay}s...")
+                    time.sleep(delay); delay *= 2; continue
+                raise
 
 
     def get_candles(self, symbol: str, resolution: str = "1m", limit: int = 1000) -> pd.DataFrame:

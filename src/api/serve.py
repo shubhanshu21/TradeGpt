@@ -482,13 +482,29 @@ def fetch_and_calculate_live_metrics():
     except Exception as e:
         print(f"DEBUG: Live fills error: {e}")
 
-    # 3. Reconstruct trades
+    # 3. Reconstruct trades & respect sim_reset
     sorted_fills = sorted(fills, key=lambda x: x.get('created_at', ''))
+    
+    # Check if a recapitalization happened
+    reset_ts = ""
+    reset_file = LOG_DIR / "sim_reset.txt"
+    if reset_file.exists():
+        try:
+            with open(reset_file, "r") as rf:
+                reset_ts = rf.read().strip()
+        except:
+            pass
+
     trades = []
     current_position = None
     total_commission = 0.0
+    accumulated_pnl = 0.0
     
     for f in sorted_fills:
+        created_at = f.get('created_at', '')
+        if reset_ts and created_at < reset_ts:
+            continue
+            
         price = float(f.get('price', 0.0))
         size = float(f.get('size', 0.0))
         side = f.get('side')
@@ -500,6 +516,7 @@ def fetch_and_calculate_live_metrics():
         realized_pnl = float(new_pos.get('realized_pnl', 0.0)) if new_pos else 0.0
         
         if realized_pnl != 0.0:
+            accumulated_pnl += realized_pnl
             trade_side = 'LONG' if side == 'sell' else 'SHORT'
             entry_price = price
             if current_position:
@@ -530,6 +547,10 @@ def fetch_and_calculate_live_metrics():
 
     # Reversing trades for dashboard strikes feed (newest first)
     dashboard_trades = list(reversed(trades))
+
+    # 4. Finalize virtual balance if recapitalized
+    if reset_ts:
+        balance_usd = initial_wallet + accumulated_pnl
 
     # Convert timestamps to IST for UI feed
     for t in dashboard_trades:
@@ -572,7 +593,7 @@ def fetch_and_calculate_live_metrics():
         "trades": dashboard_trades,
         "total_fees": total_commission,
         "risk": risk_metrics,
-        "consensus_pct": live_cert if live_cert > 0 else consensus_pct if 'consensus_pct' in locals() else 0.0,
+        "consensus_pct": live_cert if live_cert > 0 else 0.0,
         "reasoning": live_reas,
         "decision": live_dec,
         "timestamp": live_ts

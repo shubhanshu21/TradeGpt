@@ -24,14 +24,16 @@ from core.hydra import (HydraBlock, GatedMoE, MLALayer,
                         SovereignLoss, CertaintyMetric, SovereignAccuracy)
 from exchange.delta_client import DeltaClient
 from exchange.fetch_data   import fetch_live_kat_data
-from data.preprocess       import build_feature_cols, compute_indicators
+from data.preprocess       import build_feature_cols, compute_indicators, apply_dls
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 from config.sovereign_config import (LEVERAGE, POSITION_SIZE_PCT, MAX_TRADES_PER_DAY,
                                      BREAKEVEN_TRIGGER_PCT, TRAILING_STOP_PCT)
 SYMBOL         = "BTCUSD"
 SIZE           = 1              # Legacy fallback contract size
-MIN_SWING      = 100.0          # Only trade if expected move > $100 (to beat fees)
+MIN_SWING      = 100.0          # Minimum floor (to cover 0.12% fees at $70k BTC)
+MIN_SWING_FLOOR = 100.0         # Absolute minimum — never trade below this (fee protection)
+MIN_SWING_CEIL  = 200.0         # Absolute maximum cap
 THRESHOLD      = 0.08           # Increased base conviction (was 0.05)
 TIMEFRAME      = "15m"          # Match training timeframe (15m)
 CTX_WIN        = 120            # Context window (30 hours)
@@ -66,6 +68,27 @@ def load_model():
     log(f"✅ Sandbox Brain sync complete: sandbox_active.keras (mtime: {mtime})", C_GREEN)
     return model, mtime
 
+def get_dynamic_min_swing(df_feat) -> float:
+    """
+    Compute dynamic MIN_SWING as 2x the 14-candle Average True Range (ATR).
+    ATR measures real market volatility — in low-vol markets the gate lowers,
+    in high-vol markets it rises. Clamped to [MIN_SWING_FLOOR, MIN_SWING_CEIL].
+    """
+    try:
+        high = df_feat['high'].values[-14:]
+        low  = df_feat['low'].values[-14:]
+        close_prev = df_feat['close'].values[-15:-1]
+        tr = np.maximum.reduce([
+            high - low,
+            np.abs(high - close_prev),
+            np.abs(low  - close_prev)
+        ])
+        atr = float(np.mean(tr))
+        dynamic = float(np.clip(atr * 2.0, MIN_SWING_FLOOR, MIN_SWING_CEIL))
+        return dynamic
+    except Exception:
+        return MIN_SWING_FLOOR
+
 def get_neural_signal(model):
     """
     Fetch latest 15m market data, engineer features, run inference.
@@ -84,11 +107,9 @@ def get_neural_signal(model):
         df_feat = compute_indicators(df)
         data    = df_feat[features].values.astype("float32")
 
-        # FIX #1: DLS — scale using the local window stats (same as training)
+        # FIX #1: DLS — scale using the local window stats (strict match to training)
         x_raw  = data[-CTX_WIN:]
-        l_mean = x_raw.mean(axis=0)
-        l_std  = x_raw.std(axis=0) + 1e-8
-        x_scaled = (x_raw - l_mean) / l_std
+        x_scaled, l_mean, l_std = apply_dls(x_raw)
         X_in   = x_scaled[np.newaxis].astype("float32")  # (1, 120, 42)
 
         # Iron Oracle returns [prediction_trajectory, certainty_map, reasoning_head]
@@ -111,7 +132,9 @@ def get_neural_signal(model):
         t_close      = features.index('close')
         close_std    = l_std[t_close]
 
-        return np.mean(p_change), cert_pct, np.mean(v_curve), reasoning, pred_future, close_std
+        dyn_min_swing = get_dynamic_min_swing(df_feat)
+
+        return np.mean(p_change), cert_pct, np.mean(v_curve), reasoning, pred_future, close_std, dyn_min_swing
     except Exception as e:
         import traceback
         log(f"❌ Error in get_neural_signal: {e}", C_RED)
@@ -296,7 +319,7 @@ def run_pilot():
             log(f"📡 Polling {SYMBOL} [{TIMEFRAME}] market stream...")
 
             # ── Inference ────────────────────────────────────────────────────
-            mean_price, cert_raw, mean_vol, reasoning, pred, close_std = get_neural_signal(model)
+            mean_price, cert_raw, mean_vol, reasoning, pred, close_std, dyn_min_swing = get_neural_signal(model)
 
             # Get current price for swing calculation
             df_curr = fetch_live_kat_data(SYMBOL, 1, TIMEFRAME)
@@ -400,7 +423,14 @@ def run_pilot():
             import traceback
             log(f"⚠️  Loop error: {e}", C_RED)
             log(traceback.format_exc(), C_RED)
-            time.sleep(30)
+            # Progressive backoff: 30s → 60s → 120s → 300s max
+            loop_err_delay = getattr(run_pilot, '_err_delay', 30)
+            log(f"⏳ Retrying in {loop_err_delay}s...", C_YELLOW)
+            time.sleep(loop_err_delay)
+            run_pilot._err_delay = min(loop_err_delay * 2, 300)
+        else:
+            # Reset error delay on a clean iteration
+            run_pilot._err_delay = 30
 
 if __name__ == "__main__":
     run_pilot()

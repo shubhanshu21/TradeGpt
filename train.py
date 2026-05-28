@@ -71,7 +71,7 @@ class MissionControl(keras.callbacks.Callback):
         # ── Automated Sovereign Benchmarking (V11.1) ────────────────────────
         try:
             import json
-            from data.preprocess import compute_indicators, build_feature_cols
+            from data.preprocess import compute_indicators, build_feature_cols, apply_dls
             from exchange.fetch_data import fetch_live_kat_data
             
             # Access fee_rate from args if possible, else default
@@ -88,7 +88,11 @@ class MissionControl(keras.callbacks.Callback):
                 ctx = 120; f = 15
                 # Slice indices for a quick backtest
                 indices = range(len(df) - ctx - f - 100, len(df) - ctx - f)
-                X = np.array([(data[i:i+ctx] - data[i:i+ctx].mean(0)) / (data[i:i+ctx].std(0) + 1e-8) for i in indices])
+                X_list = []
+                for i in indices:
+                    x_s, _, _ = apply_dls(data[i:i+ctx])
+                    X_list.append(x_s)
+                X = np.array(X_list)
                 usd_diffs = np.array([raw_prices[i + ctx + f - 1] - raw_prices[i + ctx - 1] for i in indices])
                 
                 # Inference using CURRENT weights
@@ -98,8 +102,8 @@ class MissionControl(keras.callbacks.Callback):
                 
                 # ── V11.2: Neural De-Scaling Patch ──────────────────────────
                 t_close     = features.index('close')
-                close_means = np.array([data[i:i+ctx, t_close].mean() for i in indices])
-                close_stds  = np.array([data[i:i+ctx, t_close].std() + 1e-8 for i in indices])
+                close_means = np.array([apply_dls(data[i:i+ctx])[1][t_close] for i in indices])
+                close_stds  = np.array([apply_dls(data[i:i+ctx])[2][t_close] for i in indices])
                 traj_usd    = (traj_scaled * close_stds) + close_means
                 
                 # Normalize certainty for bench (80-100% range)
@@ -110,18 +114,10 @@ class MissionControl(keras.callbacks.Callback):
                 pos_size = INITIAL_WALLET_USD
                 
                 # ── V11.6: Sovereign Recapitalization Filter ─────────────────
-                reset_file = LOG_DIR / "sim_reset.txt"
-                reset_ts = None
-                if reset_file.exists():
-                    try:
-                        reset_ts = pd.to_datetime(reset_file.read_text().strip()).tz_localize(None)
-                    except: pass
-
+                # NOTE: sim_reset.txt is ONLY used to filter live exchange fills (serve.py).
+                # The training simulation always runs against the full historical dataset.
                 for th in [80, 85, 90]:
                     mask = c_pct >= th
-                    if reset_ts:
-                        t_stamps = pd.to_datetime(df.index[np.array(indices) + ctx - 1]).tz_localize(None)
-                        mask = mask & (t_stamps.values >= reset_ts)
                     n_t  = int(mask.sum())
                     if n_t > 0:
                         e_p = raw_prices[np.array(indices)[mask] + ctx - 1]
@@ -155,9 +151,7 @@ class MissionControl(keras.callbacks.Callback):
                         
                         if side == "HOLD": continue
                         
-                        # Apply Sovereign Reset to Feed
-                        t_stamp = pd.to_datetime(df.index[idx + ctx - 1]).tz_localize(None)
-                        if reset_ts and t_stamp < reset_ts: continue
+                        # NOTE: No reset filter applied to training simulation feed
                         
                         # Bug Fix #1: Invert P&L for SHORT trades
                         raw_ret = price_move_pct if side == "LONG" else -price_move_pct
@@ -212,8 +206,10 @@ class MissionControl(keras.callbacks.Callback):
         cert  = logs.get("val_certainty_certainty", 0.0)
         ts    = datetime.now().strftime("%H:%M:%S")
         
-        # ── V12.2: Live Benchmark First ─────────────────────────────────────
-        net_roi = self._update_dashboard(logs) or 0.0
+        # ── V12.2: Live Benchmark every 5 epochs (not every epoch) ─────────────
+        net_roi = 0.0
+        if (epoch + 1) % 5 == 0 or epoch == 0:
+            net_roi = self._update_dashboard(logs) or 0.0
         
         status = "⚓ LEARNING"
         if v_acc >= 0.54: status = "🏛️ SOVEREIGN"
@@ -337,7 +333,7 @@ def train_kraken(args):
         model.load_weights(str(CKPT_BEST))
 
     # ── 5. Callbacks ──────────────────────────────────────────────────────────
-    epoch_ckpt_freq = 10 * steps_tr   # save every 10 epochs
+    epoch_ckpt_freq = 10 * steps_tr   # save every 10 epochs (not every epoch — avoids I/O stall)
     mc = MissionControl()
     mc.fee_rate = args.fee_rate
     callbacks = [
@@ -346,9 +342,9 @@ def train_kraken(args):
             save_best_only=True, verbose=1),
         keras.callbacks.ModelCheckpoint(
             str(CKPT_DIR / "hydra_checkpoint_E{epoch:03d}.keras"),
-            save_freq="epoch", verbose=0),  # Save every epoch for resume support
+            save_freq=epoch_ckpt_freq, verbose=0),  # Save every 10 epochs — avoids I/O stall
         keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=20,  # 20 epochs * ~34h = ~28 days — safe for CPU
+            monitor="val_loss", patience=20,  # User requested 20
             restore_best_weights=True, verbose=1),
         CheckpointPruner(ckpt_dir=CKPT_DIR, keep_n=3),
         mc,

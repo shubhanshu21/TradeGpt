@@ -16,8 +16,10 @@ def collect():
     data_dir.mkdir(parents=True, exist_ok=True)
     
     symbol = "BTCUSD"
-    print(f"🚀 Starting L2 Collector for {symbol}...")
+    from datetime import datetime
+    print(f"[{datetime.now().isoformat()}] 🚀 Starting L2 Collector for {symbol}...")
     
+    retry_delay = 10
     while True:
         try:
             ob = client.get_orderbook(symbol)
@@ -39,13 +41,19 @@ def collect():
                             old_file.unlink()
                     except: pass
             
+            # Reset retry delay on successful run
+            retry_delay = 10
+            
             # Sleep until the next 15-minute mark + 10s buffer
             ts_now = time.time()
             sleep_time = 900 - (ts_now % 900) + 10
             time.sleep(sleep_time)
         except Exception as e:
-            print(f"Error collecting OB: {e}")
-            time.sleep(10)
+            from datetime import datetime
+            print(f"[{datetime.now().isoformat()}] Error collecting OB: {e}")
+            print(f"[{datetime.now().isoformat()}] Retrying in {retry_delay} seconds...")
+            time.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 900)
 
 if __name__ == "__main__":
     collect()

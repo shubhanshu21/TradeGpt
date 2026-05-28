@@ -11,7 +11,7 @@ ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from core.hydra import build_kraken
-from data.preprocess import compute_indicators, build_feature_cols
+from data.preprocess import compute_indicators, build_feature_cols, apply_dls
 from exchange.fetch_data import fetch_live_kat_data
 
 def visualize_performance(model_path: str, timeframe: str = "15m"):
@@ -43,8 +43,7 @@ def visualize_performance(model_path: str, timeframe: str = "15m"):
     # We must scale windows exactly like training (Abyss-Streamer V4.7) 
     def prepare_dls_window(idx):
         x_raw = data[idx : idx + ctx]
-        l_mean = x_raw.mean(axis=0); l_std = x_raw.std(axis=0) + 1e-8
-        return (x_raw - l_mean) / l_std
+        return apply_dls(x_raw)[0]
     
     # 4. Generate Windows and Predict
     num_windows = 150
@@ -63,7 +62,7 @@ def visualize_performance(model_path: str, timeframe: str = "15m"):
     for i in range(num_windows):
         idx = len(data) - num_windows + i - ctx
         x_raw = data[idx : idx + ctx]
-        l_mean = x_raw.mean(axis=0); l_std = x_raw.std(axis=0) + 1e-8
+        _, _, l_std = apply_dls(x_raw)
         
         entry_p = df_feat['close'].iloc[idx + ctx - 1]
         pred_scaled_ret = preds[i, -1, 0] # terminal return

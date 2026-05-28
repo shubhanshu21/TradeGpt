@@ -20,7 +20,7 @@ ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from core.hydra import build_kraken, SovereignLoss
-from data.preprocess import KATScaler, build_feature_cols, compute_indicators
+from data.preprocess import KATScaler, build_feature_cols, compute_indicators, apply_dls
 from exchange.fetch_data  import fetch_live_kat_data
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
@@ -52,8 +52,7 @@ print(f"✅ Brain loaded")
 print(f"\n⚓ SOVEREIGN BACKTEST ENGINE V5.0 — {SYMBOL}")
 print("="*60)
 
-# DLS — no global scaler needed (matches training pipeline)
-def _dls(window): return (window - window.mean(0)) / (window.std(0) + 1e-8)
+# DLS — matches training pipeline
 
 df = fetch_live_kat_data(symbol=SYMBOL, n_candles=N_CANDLES + CTX_WIN + 50, timeframe=TIMEFRAME)
 print(f"   Got {len(df):,} candles")
@@ -66,7 +65,7 @@ results = []
 close_col = features.index("close")
 
 for i in range(CTX_WIN, len(data) - 15):
-    X_in = _dls(data[i - CTX_WIN : i]).reshape(1, CTX_WIN, n_feats).astype("float32")
+    X_in = apply_dls(data[i - CTX_WIN : i])[0].reshape(1, CTX_WIN, n_feats)
     
     # Dual Output: [0] = Prediction (1, 16, 3), [1] = Certainty (1, 120)
     out       = model(X_in, training=False)

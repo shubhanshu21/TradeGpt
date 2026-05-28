@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from core.hydra import build_kraken
 from exchange.fetch_data import fetch_live_kat_data
-from data.preprocess import build_feature_cols, compute_indicators
+from data.preprocess import build_feature_cols, compute_indicators, apply_dls
 
 def run_10day_simulation():
     print("=" * 70)
@@ -80,9 +80,7 @@ def run_10day_simulation():
 
         # Extract features and DLS normalize
         x_raw = data[idx - CTX_WIN + 1 : idx + 1]
-        l_mean = x_raw.mean(axis=0)
-        l_std = x_raw.std(axis=0) + 1e-8
-        x_scaled = (x_raw - l_mean) / l_std
+        x_scaled, _, _ = apply_dls(x_raw)
         X_in = x_scaled[np.newaxis].astype("float32")
 
         # Inference
