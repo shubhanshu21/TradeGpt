@@ -33,7 +33,7 @@ SYMBOL         = "BTCUSD"
 SIZE           = 1              # Legacy fallback contract size
 MIN_SWING      = 100.0          # Minimum floor (to cover 0.12% fees at $70k BTC)
 MIN_SWING_FLOOR = 100.0         # Absolute minimum — never trade below this (fee protection)
-MIN_SWING_CEIL  = 200.0         # Absolute maximum cap
+MIN_SWING_CEIL  = 100.0         # FIX: Lowered from 200→100 (was blocking all early-epoch trades)
 THRESHOLD      = 0.08           # Increased base conviction (was 0.05)
 TIMEFRAME      = "15m"          # Match training timeframe (15m)
 CTX_WIN        = 120            # Context window (30 hours)
@@ -193,8 +193,16 @@ def run_pilot():
                         p_data = json.load(f)
                         dyn_min_swing = float(p_data.get("min_swing", MIN_SWING))
                         dyn_cert_threshold = float(p_data.get("cert_threshold", CERT_THRESHOLD))
+                    # FIX: Preserve JSON values before get_neural_signal overwrites dyn_min_swing
+                    json_min_swing = dyn_min_swing
+                    json_cert_threshold = dyn_cert_threshold
                 except Exception as e:
                     log(f"⚠️ Failed to parse dynamic live params: {e}", C_YELLOW)
+                    json_min_swing = MIN_SWING
+                    json_cert_threshold = CERT_THRESHOLD
+            else:
+                json_min_swing = None  # No JSON override — will use ATR
+                json_cert_threshold = CERT_THRESHOLD
 
             current_time = time.time()
 
@@ -319,7 +327,12 @@ def run_pilot():
             log(f"📡 Polling {SYMBOL} [{TIMEFRAME}] market stream...")
 
             # ── Inference ────────────────────────────────────────────────────
-            mean_price, cert_raw, mean_vol, reasoning, pred, close_std, dyn_min_swing = get_neural_signal(model)
+            mean_price, cert_raw, mean_vol, reasoning, pred, close_std, atr_min_swing = get_neural_signal(model)
+
+            # FIX: JSON live_params.json takes precedence over ATR-based swing gate
+            # If JSON was loaded, use it; if not, fall back to ATR calculation
+            dyn_min_swing = json_min_swing if json_min_swing is not None else atr_min_swing
+            dyn_cert_threshold = json_cert_threshold
 
             # Get current price for swing calculation
             df_curr = fetch_live_kat_data(SYMBOL, 1, TIMEFRAME)

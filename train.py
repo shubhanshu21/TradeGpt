@@ -280,10 +280,11 @@ def train_kraken(args):
     ret_col   = (raw_data["close"].pct_change(15).fillna(0)).values  # 15-candle forecast impact (MTP-15)
     fee_threshold = FEE_RATE  # 0.0012 (0.12%)
     for r in ret_col:
-        if   r >  fee_threshold: label_counts[0] += 1          # Bull (Beats fees)
-        elif r < -fee_threshold: label_counts[1] += 1          # Bear (Beats fees)
-        elif abs(r) < (fee_threshold * 0.5): label_counts[2] += 1  # Sideways (Noise)
-        else: label_counts[3] += 1                             # Trend (Fee Trap)
+        if   r >  fee_threshold: label_counts[0] += 1          # SOVEREIGN_LONG (beats fees)
+        elif r < -fee_threshold: label_counts[1] += 1          # SOVEREIGN_SHORT (beats fees)
+        elif abs(r) > (fee_threshold * 0.5): label_counts[2] += 1  # FIX: FEE_TRAP (0.5×fee < abs < fee)
+        else: label_counts[3] += 1                              # FIX: NOISE (abs <= 0.5×fee)
+    # Label map: {0:SOVEREIGN_LONG, 1:SOVEREIGN_SHORT, 2:FEE_TRAP, 3:NOISE} — matches preprocess.py
     label_counts = np.maximum(label_counts, 1)
     total = label_counts.sum()
     class_weights = {i: total / (4 * label_counts[i]) for i in range(4)}

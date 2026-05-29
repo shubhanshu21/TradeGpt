@@ -117,11 +117,12 @@ def mode_predict(args):
     # ── Phase 2: Dynamic Local Scaling (DLS) ─────────────────────────────────
     if "hydra" in args.model:
         # 1. Calculate local stats for the context window
+        # FIX: Use 1e-3 std floor to match apply_dls() in preprocess.py (was 1e-8)
         local_mean = seed.mean(axis=0)
-        local_std  = seed.std(axis=0) + 1e-8
+        local_std  = np.maximum(seed.std(axis=0), 1e-3)
         
-        # 2. Scale locally
-        seed_scaled = (seed - local_mean) / local_std
+        # 2. Scale locally (clip to [-5, 5] matching training DLS)
+        seed_scaled = np.clip((seed - local_mean) / local_std, -5.0, 5.0)
         inp = seed_scaled[np.newaxis]
         
         # 3. Predict

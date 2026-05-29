@@ -12,6 +12,8 @@ load_dotenv()
 # Max retries and starting backoff (seconds) for 502/timeout errors
 _MAX_RETRIES = 4
 _RETRY_BACKOFF = 2
+# FIX: Cache product IDs to avoid fetching full product list every call
+_product_id_cache: dict = {}
 
 class DeltaClient:
     """
@@ -345,13 +347,18 @@ class DeltaClient:
 
 
     def _resolve_product_id(self, symbol: str) -> int:
-        """Dynamic resolution of product_id for a symbol."""
+        """Dynamic resolution of product_id for a symbol (cached)."""
+        global _product_id_cache
+        if symbol in _product_id_cache:
+            return _product_id_cache[symbol]
         try:
             data = self._get("/v2/products", auth=False)
             for p in data.get("result", []):
                 # Filter for Futures / Perpetuals
                 if p["symbol"] == symbol and p.get("contract_type") == "perpetual_futures":
-                    return int(p["id"])
+                    pid = int(p["id"])
+                    _product_id_cache[symbol] = pid  # Cache for subsequent calls
+                    return pid
         except:
             pass
         # Fallback to Testnet BTCUSD on India (84)

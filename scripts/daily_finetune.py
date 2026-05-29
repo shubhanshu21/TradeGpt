@@ -86,9 +86,16 @@ try:
         for pid in pids:
             if pid != os.getpid():
                 log(f"🛑 RAM SAFEGUARD: Found running base training process (PID {pid}).")
-                log("   Terminating base training temporarily to free RAM and prevent OOM crash...")
-                subprocess.run(["kill", "-9", str(pid)])
-                log("   ✅ Base training terminated successfully. Memory freed.")
+                log("   Sending SIGTERM for clean shutdown (saves checkpoint)...")
+                subprocess.run(["kill", "-15", str(pid)])  # FIX: SIGTERM first (safe)
+                time.sleep(5)  # Give it 5s to finish current batch
+                # SIGKILL only if still alive
+                try:
+                    os.kill(pid, 0)  # Check if still running
+                    subprocess.run(["kill", "-9", str(pid)])
+                    log("   Process did not exit cleanly — SIGKILL sent.")
+                except ProcessLookupError:
+                    log("   ✅ Process exited cleanly after SIGTERM.")
     except Exception:
         # No train.py process running or pgrep failed, safe to proceed
         pass

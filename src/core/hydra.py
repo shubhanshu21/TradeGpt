@@ -332,8 +332,11 @@ class CertaintyMetric(keras.metrics.Metric):
         self.count    = self.add_weight(name="count",    initializer="zeros")
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        self.cert_sum.assign_add(ops.sum(y_pred))
-        self.count.assign_add(ops.cast(ops.shape(y_pred)[0], "float32"))
+        # FIX: use mean (not sum) so result stays in 0-1 range
+        # y_pred shape: (batch, 120) — prev code summed all 120*batch values
+        # and divided only by batch → 120× inflation
+        self.cert_sum.assign_add(ops.mean(y_pred))
+        self.count.assign_add(ops.cast(1, "float32"))  # count batches
 
     def result(self):
         return self.cert_sum / (self.count + 1e-6)
