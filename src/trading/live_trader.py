@@ -28,7 +28,7 @@ from data.preprocess       import build_feature_cols, compute_indicators, apply_
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 from config.sovereign_config import (LEVERAGE, POSITION_SIZE_PCT, MAX_TRADES_PER_DAY,
-                                     BREAKEVEN_TRIGGER_PCT, TRAILING_STOP_PCT)
+                                     BREAKEVEN_TRIGGER_PCT, TRAILING_STOP_PCT, CERT_THRESHOLD)
 SYMBOL         = "BTCUSD"
 SIZE           = 1              # Legacy fallback contract size
 MIN_SWING      = 100.0          # Minimum floor (to cover 0.12% fees at $70k BTC)
@@ -38,7 +38,6 @@ THRESHOLD      = 0.08           # Increased base conviction (was 0.05)
 TIMEFRAME      = "15m"          # Match training timeframe (15m)
 CTX_WIN        = 120            # Context window (30 hours)
 SLEEP_S        = 900            # 15 minute polling
-CERT_THRESHOLD = 0.85           # SNIPER MODE: Only 85%+ certainty
 COOLDOWN_BARS  = 1              # Prevent back-to-back flipping (saves fees)
 
 # ── HUD ───────────────────────────────────────────────────────────────────────

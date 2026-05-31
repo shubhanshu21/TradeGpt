@@ -22,16 +22,21 @@ sys.path.insert(0, str(ROOT / "src"))
 import keras
 from core.hydra import (build_kraken, HydraBlock, GatedMoE, MLALayer,
                                   RMSNorm, TurboQuant, SwiGLU,
-                                  SovereignLoss, CertaintyMetric, SovereignAccuracy)
+                                  SovereignLoss, CertaintyMetric, SovereignAccuracy,
+                                  SovereignReasoningLoss, dummy_certainty_loss,
+                                  init_kraken_hardware)
 from data.preprocess import build_dataset_streaming
 from exchange.fetch_data  import fetch_live_kat_data
+
+# Initialize hardware/thread limits immediately
+init_kraken_hardware()
 
 # ── DEFAULTS ──────────────────────────────────────────────────────────────────
 DAYS         = 2        # Days of recent data to fine-tune on (~2,880 candles)
 EPOCHS       = 5        # Fine-tune epochs — keep small (3–10)
 LR           = 1e-6     # Very low LR — nudge, don't overwrite base knowledge
 CTX_WIN      = 120      # Must match training context window
-BATCH        = 64       # Smaller batch for fine-tune stability
+BATCH        = 8        # Capped for dynamic performance safety
 FREEZE_BELOW = 6        # Freeze foundational blocks (0-5), adapt top blocks (6-7)
 MODEL_FILE   = "sandbox_active.keras"
 SYMBOL       = "BTCUSD"
@@ -156,8 +161,8 @@ try:
         optimizer=keras.optimizers.AdamW(LR, weight_decay=0.01, clipnorm=0.5),
         loss={
             "prediction": SovereignLoss(direction_weight=10.0),
-            "certainty":  None,   # Certainty head is not trained during fine-tune
-            "reasoning":  "sparse_categorical_crossentropy"
+            "certainty":  dummy_certainty_loss,   # Use the dummy certainty loss
+            "reasoning":  SovereignReasoningLoss(label_smoothing=0.1) # Use proper label smoothing
         },
         metrics={
             "prediction": [SovereignAccuracy(name="dir_acc"), "mae"],

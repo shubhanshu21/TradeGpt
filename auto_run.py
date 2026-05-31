@@ -32,6 +32,14 @@ SAVED_MODELS = ROOT / "models"
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(MODEL_DIR))
 
+try:
+    from config.sovereign_config import CERT_THRESHOLD
+except ImportError:
+    try:
+        from src.config.sovereign_config import CERT_THRESHOLD
+    except ImportError:
+        CERT_THRESHOLD = 0.85
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MODES
@@ -49,11 +57,11 @@ def mode_train(args):
         "--timeframe", args.timeframe,
     ]
     print(f"Running: {' '.join(cmd)}")
-    if hasattr(args, "symbol"):
+    if getattr(args, "symbol", None):
         cmd.extend(["--symbol", args.symbol])
-    if hasattr(args, "finetune") and args.finetune:
+    if getattr(args, "finetune", False):
         cmd.append("--finetune")
-    if hasattr(args, "resume") and args.resume:
+    if getattr(args, "resume", False):
         cmd.append("--resume")
     
     subprocess.run(cmd, check=True)
@@ -89,33 +97,37 @@ def mode_predict(args):
 
     print(f"Loading {model_file.name}...")
 
-    custom_objs = {}
-    if "hydra" in args.model:
-        from core.hydra import (HydraBlock, GatedMoE, 
-                                RMSNorm, TurboQuant, SwiGLU,
-                                SovereignLoss, CertaintyMetric, SovereignAccuracy, MLALayer)
-        custom_objs = {
-            "HydraBlock":         HydraBlock,
-            "GatedMoE":           GatedMoE,
-            "MLALayer":           MLALayer,
-            "RMSNorm":            RMSNorm,
-            "TurboQuant":         TurboQuant,
-            "SwiGLU":             SwiGLU,
-            "SovereignLoss":      SovereignLoss,
-            "CertaintyMetric":    CertaintyMetric,
-            "SovereignAccuracy":  SovereignAccuracy,
-        }
-    if "hydra" in args.model:
+    from core.hydra import (HydraBlock, GatedMoE, 
+                            RMSNorm, TurboQuant, SwiGLU,
+                            SovereignLoss, CertaintyMetric, SovereignAccuracy, MLALayer,
+                            SovereignReasoningLoss, dummy_certainty_loss)
+    custom_objs = {
+        "HydraBlock":             HydraBlock,
+        "GatedMoE":               GatedMoE,
+        "MLALayer":               MLALayer,
+        "RMSNorm":                RMSNorm,
+        "TurboQuant":             TurboQuant,
+        "SwiGLU":                 SwiGLU,
+        "SovereignLoss":          SovereignLoss,
+        "CertaintyMetric":        CertaintyMetric,
+        "SovereignAccuracy":      SovereignAccuracy,
+        "SovereignReasoningLoss": SovereignReasoningLoss,
+        "dummy_certainty_loss":   dummy_certainty_loss,
+    }
+    if "hydra" in args.model or "alpha" in args.model or "titan" in args.model:
         from core.hydra import build_kraken
         from data.preprocess import build_feature_cols as _bfc
         _n_feat = len(_bfc())
         model = build_kraken(n_features=_n_feat)
         model.load_weights(str(model_file))
         print(f"✅ Weights loaded from {model_file.name} | Features: {_n_feat}")
+    else:
+        model = keras.models.load_model(str(model_file), custom_objects=custom_objs, safe_mode=False)
+        print(f"✅ Model loaded from {model_file.name}")
 
     # ── Predict ──────────────────────────────────────────────────────────────
     # ── Phase 2: Dynamic Local Scaling (DLS) ─────────────────────────────────
-    if "hydra" in args.model:
+    if "hydra" in args.model or "alpha" in args.model or "titan" in args.model:
         # 1. Calculate local stats for the context window
         # FIX: Use 1e-3 std floor to match apply_dls() in preprocess.py (was 1e-8)
         local_mean = seed.mean(axis=0)
@@ -134,22 +146,26 @@ def mode_predict(args):
         p_future = pred_all[1:, 0]
         
         # Unscaled USD Price for reporting
-        t_close = features.index('close')
+        t_close = list(features).index('close')
         last_known_usd = seed[-1, t_close]
         
-        # Unscaled deltas (USD) = (p_future - p_anchor) * local_std[close]
+        # Unscaled deltas (USD) = (p_future - p_anchor) * local_std[t_close]
         usd_deltas = (p_future - p_anchor) * local_std[t_close]
         
         print(f"\nLast known close: ${last_known_usd:,.2f}")
         print(f"Predicted MTP-15 trajectory ({len(p_future)} steps):")
         
+        # Cache curve assignments above try block to avoid NameError if matplotlib fails
+        p_curve = usd_deltas 
+        v_curve = pred_all[1:, 1]
+        q_curve = pred_all[1:, 2]
+
         try:
             import matplotlib.pyplot as plt
             plot_dir = LOG_DIR / "plots"
             plot_dir.mkdir(parents=True, exist_ok=True)
-            # Manual inverse X[3] for last 30 historical close prices
-            # Manual inverse prices for plotting
-            hist_close = seed[-30:, 3]
+            # Use dynamic close index to extract correct column (avoid hardcoding 3)
+            hist_close = seed[-30:, t_close]
             
             # Forecast visual starts at last known and applies USD deltas
             forecast_visual = [last_known_usd]
@@ -160,7 +176,7 @@ def mode_predict(args):
             
             plt.figure(figsize=(10, 6))
             plt.plot(range(len(hist_close)), hist_close, label="History", color="blue", marker="o", markersize=3)
-            plt.plot(forecast_x, forecast_visual, label="Forecast (Deep-Predator V10.6)", color="green", linestyle="--", marker="x", markersize=4)
+            plt.plot(forecast_x, forecast_visual, label="Forecast (Deep-Predator V10.7)", color="green", linestyle="--", marker="x", markersize=4)
             
             plt.title(f"KAT Prediction: {args.model} {args.symbol} MTP-15")
             plt.xlabel("Minutes")
@@ -171,11 +187,6 @@ def mode_predict(args):
             plt.savefig(plot_file)
             print(f"📈 Visual plot saved to: {plot_file}")
             plt.close()
-            
-            # Update the CLI print-out to show real dollar deltas
-            p_curve = usd_deltas 
-            v_curve = pred_all[1:, 1]
-            q_curve = pred_all[1:, 2]
         except Exception as e:
             print(f"! Could not generate visual plot: {e}")
 
@@ -184,8 +195,7 @@ def mode_predict(args):
             print(f"  +{i:3d}min  Delta ${p:+.2f}  {is_above}  |  Vol: {v_curve[i-1]:.4f}  |  Flow: {q_curve[i-1]:.4f}")
 
     elif "causal" in args.model:
-        if "causal" in args.model: from causal import CausalModel as GeneratorModel
-        else: from hydra import Hydra as GeneratorModel
+        # Load and generate from causal model
         traj = model.generate(seed, steps=args.steps, scaler=scaler)
         last_known = scaler.inverse_y(seed[-1:, 3:4].ravel())[0]
         print(f"\nLast known close: ${last_known:,.2f}")
@@ -257,26 +267,25 @@ def mode_serve(args):
 
 
 def mode_demo(args):
-    """Quick end-to-end demo: train KAT 1.3 for 5 epochs, predict."""
+    """Quick end-to-end demo: train KAT for 5 epochs, predict."""
     import subprocess
 
     print("=" * 60)
     print("  KAT DEMO — Quick end-to-end pipeline test")
     print("=" * 60)
 
-    print("\n[1/2] Training ALPHA (5 epochs, 2,000 candles, LIVE)...")
+    print("\n[1/2] Training ALPHA (5 epochs, 500 candles)...")
     subprocess.run([
         sys.executable, str(ROOT / "train.py"),
         "--model", "alpha",
         "--epochs", "5",
-        "--batch", "128",
-        "--candles", "2000",
-        "--live"
+        "--batch", "8",
+        "--candles", "500"
     ], check=True)
 
     print("\n[2/2] Running prediction...")
-    sys.argv = ["auto_run.py", "predict", "--model", "alpha"]
-    predict_args = argparse.Namespace(model="alpha", steps=1)
+    # Add symbol and timeframe default arguments to Namespace to avoid AttributeError
+    predict_args = argparse.Namespace(model="alpha", steps=1, symbol="BTCUSD", timeframe="15m")
     mode_predict(predict_args)
 
     print("\n✓ Demo complete! Run `python auto_run.py train` for full training.")
@@ -287,6 +296,13 @@ def mode_demo(args):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main():
+    # ── Thread Restrictions & Hardware Setup ──
+    try:
+        from core.hydra import init_kraken_hardware
+        init_kraken_hardware()
+    except Exception as e:
+        print(f"⚠️ Could not initialize hardware/thread limits: {e}")
+
     parser = argparse.ArgumentParser(
         description="KAT Predictive Engine — Master Entry Point",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -300,7 +316,7 @@ def main():
     p_train.add_argument("--model",   default="all",
         choices=["all","alpha","titan","causal_base","causal_lion","causal_tiger","hydra"])
     p_train.add_argument("--epochs",  type=int, default=50)
-    p_train.add_argument("--batch",   type=int, default=128)  # V5.0 calibrated
+    p_train.add_argument("--batch",   type=int, default=8)  # Capped for safe CPU performance
     p_train.add_argument("--candles", type=int, default=120_000)
     p_train.add_argument("--symbol",  default="BTCUSD")
     p_train.add_argument("--timeframe", default="15m", help="Timeframe (15m recommended for Phase 5)")
@@ -330,9 +346,12 @@ def main():
     p_trade.add_argument("--size",   type=int, default=1)
     p_trade.add_argument("--thresh", type=float, default=0.05)
     p_trade.add_argument("--timeframe", default="15m", help="Timeframe (must match training)")
-    p_trade.add_argument("--cert_thresh", type=float, default=0.70,
+    p_trade.add_argument("--cert_thresh", type=float, default=CERT_THRESHOLD,
         help="Certainty threshold (0-1). Only trade signals above this. "
              "Higher = fewer trades but higher accuracy. Recommended: 0.70-0.85")
+
+    # ── demo ──────────────────────────────────────────────────────────────────
+    p_demo = sub.add_parser("demo", help="Quick end-to-end demo")
 
     args = parser.parse_args()
 

@@ -26,7 +26,7 @@ from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetr
 from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
 from exchange.fetch_data import fetch_live_kat_data
 import glob as _glob
-from config.sovereign_config import FEE_RATE, INITIAL_WALLET_USD, POSITION_SIZE_PCT
+from config.sovereign_config import FEE_RATE, INITIAL_WALLET_USD, POSITION_SIZE_PCT, CONTEXT_WINDOW, FORECAST_STEPS
 
 
 class CheckpointPruner(keras.callbacks.Callback):
@@ -35,21 +35,49 @@ class CheckpointPruner(keras.callbacks.Callback):
     Keeps: best val_loss checkpoint + last N epoch checkpoints.
     Prevents disk fill during 300-epoch runs.
     """
-    def __init__(self, ckpt_dir: Path, keep_n: int = 3):
+    def __init__(self, ckpt_dir: Path, model_name: str = "hydra", keep_n: int = 3):
         super().__init__()
-        self.ckpt_dir = ckpt_dir
-        self.keep_n   = keep_n
+        self.ckpt_dir   = ckpt_dir
+        self.model_name = model_name
+        self.keep_n     = keep_n
 
     def on_epoch_end(self, epoch, logs=None):
-        pattern  = str(self.ckpt_dir / "hydra_checkpoint_E*.keras")
+        prefix = "hydra" if self.model_name == "hydra" else self.model_name
+        pattern  = str(self.ckpt_dir / f"{prefix}_checkpoint_E*.keras")
         all_ckpt = sorted(_glob.glob(pattern))
         # Keep only the last keep_n; delete the rest
         to_delete = all_ckpt[: max(0, len(all_ckpt) - self.keep_n)]
         for f in to_delete:
+            # Defensive check to protect 'best' checkpoints if patterns or names overlap
+            if "best" not in os.path.basename(f):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+
+
+class EpochCheckpointSaver(keras.callbacks.Callback):
+    """
+    Saves periodic epoch checkpoints cleanly, independent of static batch step counts
+    to avoid I/O stalls and dynamic dataset mismatch bugs.
+    """
+    def __init__(self, ckpt_dir: Path, model_name: str = "hydra", freq: int = 10):
+        super().__init__()
+        self.ckpt_dir   = ckpt_dir
+        self.model_name = model_name
+        self.freq       = freq
+
+    def on_epoch_end(self, epoch, logs=None):
+        actual_epoch = epoch + 1
+        if actual_epoch % self.freq == 0:
+            prefix = "hydra" if self.model_name == "hydra" else self.model_name
+            ckpt_path = self.ckpt_dir / f"{prefix}_checkpoint_E{actual_epoch:03d}.keras"
             try:
-                os.remove(f)
-            except OSError:
-                pass
+                self.model.save(str(ckpt_path))
+                print(f"\n💾 Saved epoch checkpoint to {ckpt_path.name}")
+            except Exception as e:
+                print(f"\n⚠️ Warning: Failed to save epoch checkpoint: {e}")
+
 
 class MissionControl(keras.callbacks.Callback):
     """
@@ -88,11 +116,21 @@ class MissionControl(keras.callbacks.Callback):
                 ctx = 120; f = 15
                 # Slice indices for a quick backtest
                 indices = range(len(df) - ctx - f - 100, len(df) - ctx - f)
+                t_close = features.index('close')
+
+                # Cache DLS results to eliminate redundant duplicate calculations
                 X_list = []
+                means_list = []
+                stds_list = []
                 for i in indices:
-                    x_s, _, _ = apply_dls(data[i:i+ctx])
+                    x_s, local_mean, local_std = apply_dls(data[i:i+ctx])
                     X_list.append(x_s)
+                    means_list.append(local_mean[t_close])
+                    stds_list.append(local_std[t_close])
+
                 X = np.array(X_list)
+                close_means = np.array(means_list)
+                close_stds  = np.array(stds_list)
                 usd_diffs = np.array([raw_prices[i + ctx + f - 1] - raw_prices[i + ctx - 1] for i in indices])
                 
                 # Inference using CURRENT weights
@@ -101,9 +139,6 @@ class MissionControl(keras.callbacks.Callback):
                 certs       = np.mean(outputs[1].numpy(), axis=1) # Avg certainty
                 
                 # ── V11.2: Neural De-Scaling Patch ──────────────────────────
-                t_close     = features.index('close')
-                close_means = np.array([apply_dls(data[i:i+ctx])[1][t_close] for i in indices])
-                close_stds  = np.array([apply_dls(data[i:i+ctx])[2][t_close] for i in indices])
                 traj_usd    = (traj_scaled * close_stds) + close_means
                 
                 # Normalize certainty for bench (80-100% range)
@@ -176,17 +211,22 @@ class MissionControl(keras.callbacks.Callback):
                 # ── Expert Fight: Live 256-Node Heatmap (V11.2 Real-Time) ──
                 X_live = X[-1:] 
                 outputs_live = self.model(X_live, training=False)
-                # Channel 1 is the 256-expert certainty distribution
+                # Channel 1 is the sequence certainty distribution (length 120)
                 cert_map = outputs_live[1].numpy()[0]
                 # Normalize 0-1 for the heatmap visualization
                 c_min, c_max = cert_map.min(), cert_map.max()
                 cert_norm = (cert_map - c_min) / (c_max - c_min + 1e-9)
                 
-                roi_data["expert_heatmap"] = cert_norm.tolist()
+                # Interpolate 120 elements to 256 elements to match the expected UI dashboard heatmap structure
+                x_old = np.linspace(0, 1, len(cert_norm))
+                x_new = np.linspace(0, 1, 256)
+                cert_norm_256 = np.interp(x_new, x_old, cert_norm)
+
+                roi_data["expert_heatmap"] = cert_norm_256.tolist()
                 
                 # Also keep the histogram for the risk Sentinel
                 hist_bins = [0, 60, 65, 70, 75, 80, 85, 90, 100.1]
-                counts, _ = np.histogram(cert_norm * 100, bins=hist_bins)
+                counts, _ = np.histogram(cert_norm_256 * 100, bins=hist_bins)
                 roi_data["expert_fight"] = counts.tolist()
 
                 with open(ROOT / "logs" / "latest_roi.json", "w") as f_json:
@@ -233,8 +273,8 @@ def train_kraken(args):
     BATCH_S  = args.batch          # 64 — calibrated for 15m resolution
     EPOCHS   = args.epochs
     CANDLES  = args.candles        # 120000 15m candles = ~3.4 years
-    CTX_WIN  = 120                 # 30-hour context (120 × 15m) — stable macro patterns
-    FORECAST = 15                  # Predict next 3.75 hours (15 × 15m)
+    CTX_WIN  = CONTEXT_WINDOW      # Macro patterns
+    FORECAST = FORECAST_STEPS      # Predict trajectory steps
 
     # ── 1. Fetch / Cache ──────────────────────────────────────────────────────
     DATA_DIR.mkdir(exist_ok=True)
@@ -275,8 +315,15 @@ def train_kraken(args):
     label_counts = np.zeros(4)
     # Mirror the 80% train split used inside build_dataset_streaming
     train_end    = int(len(df) * 0.8)
-    sample_limit = min(train_end, 5000)
-    raw_data  = df.iloc[:sample_limit]
+    
+    # Uniformly/randomly sample 5000 indices across the full training range to avoid oldest-history regime bias
+    if train_end > 5000:
+        np.random.seed(42)
+        sample_indices = sorted(np.random.choice(train_end, size=5000, replace=False))
+        raw_data = df.iloc[sample_indices]
+    else:
+        raw_data = df.iloc[:train_end]
+
     ret_col   = (raw_data["close"].pct_change(15).fillna(0)).values  # 15-candle forecast impact (MTP-15)
     fee_threshold = FEE_RATE  # 0.0012 (0.12%)
     for r in ret_col:
@@ -301,10 +348,13 @@ def train_kraken(args):
     weights_tensor = tf.constant(weights, dtype=tf.float32)
     
     def weighted_reasoning_loss(y_true, y_pred):
-        unweighted = tf.keras.losses.sparse_categorical_crossentropy(y_true, y_pred)
-        y_true_int = tf.cast(y_true, tf.int32)
-        if len(y_true_int.shape) > 1 and y_true_int.shape[-1] == 1:
-            y_true_int = tf.squeeze(y_true_int, axis=-1)
+        # Flatten y_true to 1D to prevent dimension mismatches under dynamic shapes in tf.function compiled runs
+        y_true_int = tf.reshape(tf.cast(y_true, tf.int32), [-1])
+        # Apply label smoothing (0.1) on one-hot reasoning targets
+        y_true_one_hot = tf.one_hot(y_true_int, depth=4)
+        unweighted = tf.keras.losses.categorical_crossentropy(
+            y_true_one_hot, y_pred, label_smoothing=0.1
+        )
         sample_weights = tf.gather(weights_tensor, y_true_int)
         return unweighted * sample_weights
 
@@ -313,7 +363,7 @@ def train_kraken(args):
         optimizer=model.optimizer,
         loss={
             "prediction": SovereignLoss(direction_weight=10.0),
-            "certainty":  None,
+            "certainty":  model.loss["certainty"],
             "reasoning":  weighted_reasoning_loss
         },
         metrics={
@@ -323,31 +373,30 @@ def train_kraken(args):
     )
 
     # ── 4. Load Weights ───────────────────────────────────────────────────────
-    CKPT_BEST = CKPT_DIR / "hydra_best.keras"
-    saved     = sorted(glob.glob(str(CKPT_DIR / "hydra_checkpoint_E*.keras")))
+    ckpt_name = "hydra_best.keras" if args.model == "hydra" else f"{args.model}_best.keras"
+    prefix = "hydra" if args.model == "hydra" else args.model
+    CKPT_BEST = CKPT_DIR / ckpt_name
+    saved     = sorted(glob.glob(str(CKPT_DIR / f"{prefix}_checkpoint_E*.keras")))
 
     if args.resume and saved:
         print(f"📦 Loading weights from {os.path.basename(saved[-1])}")
         model.load_weights(saved[-1])
     elif args.resume and CKPT_BEST.exists():
-        print(f"📦 Loading weights from hydra_best.keras")
+        print(f"📦 Loading weights from {ckpt_name}")
         model.load_weights(str(CKPT_BEST))
 
     # ── 5. Callbacks ──────────────────────────────────────────────────────────
-    epoch_ckpt_freq = 10 * steps_tr   # save every 10 epochs (not every epoch — avoids I/O stall)
     mc = MissionControl()
     mc.fee_rate = args.fee_rate
     callbacks = [
         keras.callbacks.ModelCheckpoint(
             str(CKPT_BEST), monitor="val_loss",
             save_best_only=True, verbose=1),
-        keras.callbacks.ModelCheckpoint(
-            str(CKPT_DIR / "hydra_checkpoint_E{epoch:03d}.keras"),
-            save_freq=epoch_ckpt_freq, verbose=0),  # Save every 10 epochs — avoids I/O stall
+        EpochCheckpointSaver(ckpt_dir=CKPT_DIR, model_name=args.model, freq=10),  # Save periodic epoch checkpoints natively
         keras.callbacks.EarlyStopping(
             monitor="val_loss", patience=20,  # User requested 20
             restore_best_weights=True, verbose=1),
-        CheckpointPruner(ckpt_dir=CKPT_DIR, keep_n=3),
+        CheckpointPruner(ckpt_dir=CKPT_DIR, model_name=args.model, keep_n=3),
         mc,
     ]
 
@@ -382,7 +431,8 @@ def train_kraken(args):
         verbose=1
     )
 
-    model.save(str(CKPT_DIR / "hydra_final.keras"))
+    final_name = "hydra_final.keras" if args.model == "hydra" else f"{args.model}_final.keras"
+    model.save(str(CKPT_DIR / final_name))
     print("\n✅ MISSION COMPLETE — Sovereign Alpha-Brain saved.")
 
 
@@ -392,7 +442,7 @@ if __name__ == "__main__":
     p.add_argument("--timeframe", default="15m")   # 15m: maximum SNR for swing trading
     p.add_argument("--epochs",    type=int, default=300)
     p.add_argument("--model",     default="hydra")
-    p.add_argument("--batch",     type=int, default=64)
+    p.add_argument("--batch",     type=int, default=8)
     p.add_argument("--candles",   type=int, default=120000)
     p.add_argument("--resume",    action="store_true")
     p.add_argument("--fee_rate",  type=float, default=FEE_RATE)

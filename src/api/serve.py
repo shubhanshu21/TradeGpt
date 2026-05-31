@@ -779,7 +779,7 @@ async def get_stats(mode: str = "live"):
         })
 
         certainty_val = latest.get("certainty", 0.0)
-        consensus_pct = (certainty_val / 120.0) * 100 if certainty_val > 0 else 0
+        consensus_pct = certainty_val * 100 if certainty_val > 0 else 0
 
         return {
             "status": "TRAINING" if current_step > 0 else "IDLE",

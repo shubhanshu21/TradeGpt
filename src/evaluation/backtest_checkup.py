@@ -75,9 +75,8 @@ for i in range(CTX_WIN, len(data) - 15):
     mean_move = float(np.mean(pred[1:, 0])) # Future returns
     mean_cert = float(np.mean(cert))        # Expert consensus score
     
-    # V10.3 Strategy: Only trade when consensus > threshold
-    # Note: cert is scaled by 120, so 110+ means high agreement
-    if mean_cert < 110:
+    # Strategy: Only trade when consensus > threshold (85% certainty)
+    if mean_cert < 0.85:
         signal = "HOLD" # Experts are confused
     elif mean_move > THRESHOLD:
         signal = "LONG"
@@ -140,7 +139,7 @@ print("📊 SOVEREIGN BACKTEST REPORT V5.0")
 print("="*60)
 print(f"  Symbol     : {SYMBOL} {TIMEFRAME}")
 print(f"  Model      : {MODEL_PATH.name}")
-print(f"  Window     : {N_CANDLES:,} candles (~{N_CANDLES//1440:.1f} days)")
+print(f"  Window     : {N_CANDLES:,} candles (~{N_CANDLES/96:.1f} days)")
 print(f"  Threshold  : ±{THRESHOLD} (Z-score)")
 print("-"*60)
 print(f"  Signals    : {n_trades:,} trades  |  {hold_pct:.1f}% HOLD")
