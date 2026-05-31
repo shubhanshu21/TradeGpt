@@ -86,9 +86,9 @@ for i in range(CTX_WIN, len(data) - 15):
     else:
         signal = "HOLD"
 
-    # Actual future 1-min close vs current close (in scaled space)
-    actual_now  = float(scaled[i,     close_col])
-    actual_next = float(scaled[i + 1, close_col])
+    # Actual future return direction over the 15-step forecast window (T to T+15)
+    actual_now  = float(data[i,      close_col])
+    actual_next = float(data[i + 15, close_col])
     actual_dir  = np.sign(actual_next - actual_now)
 
     results.append({
@@ -139,7 +139,7 @@ print("\n" + "="*60)
 print("📊 SOVEREIGN BACKTEST REPORT V5.0")
 print("="*60)
 print(f"  Symbol     : {SYMBOL} {TIMEFRAME}")
-print(f"  Model      : {MODEL_FILE}")
+print(f"  Model      : {MODEL_PATH.name}")
 print(f"  Window     : {N_CANDLES:,} candles (~{N_CANDLES//1440:.1f} days)")
 print(f"  Threshold  : ±{THRESHOLD} (Z-score)")
 print("-"*60)

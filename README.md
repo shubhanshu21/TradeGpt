@@ -41,14 +41,15 @@ kat/
 │   │   ├── live_trader.py          ← Live trade executor
 │   │   └── risk.py                 ← Risk management engine
 │   └── evaluation/
-│       ├── flash_backtest.py       ← Quick backtest
-│       └── backtest_checkup.py     ← Full evaluation
+│       ├── flash_backtest.py       ← Quick 100-step backtest evaluation
+│       ├── backtest_checkup.py     ← Full 1,000-candle walk-forward backtest
+│       └── visualize_backtest.py   ← Denormalized close-price zoom graph generator
 ├── scripts/
-│   ├── bench_mastery.py            ← Certainty-filtered accuracy benchmark
-│   ├── test_bench.py               ← Diagnostic strike feed generator
-│   ├── calc_net_roi.py             ← Net ROI calculator (saves to logs/)
-│   ├── audit_trades.py             ← Trade log auditor
-│   └── daily_finetune.py           ← Daily fine-tuning script
+│   ├── certainty_audit.py          ← Real-time certainty distribution timelines
+│   ├── test_10days.py              ← 10-day wallet compounding backtest simulator
+│   ├── test_today.py               ← Performance diagnostic for today's market slice
+│   ├── ob_collector.py             ← Background orderbook L2 snapshot collector
+│   └── daily_finetune.py           ← Daily fine-tuning adapter (cron target)
 ├── models/                         ← Saved checkpoints (.keras)
 ├── logs/
 │   ├── iron_oracle_v11.log         ← Live training log
@@ -206,14 +207,17 @@ nohup sudo /root/miniconda3/bin/python -u train.py \
 After each training run, use these scripts:
 
 ```bash
-# Full certainty-filtered accuracy benchmark (most important)
-sudo /root/miniconda3/bin/python scripts/bench_mastery.py
+# 1. Multi-Certainty Timeline Audit (Today's signal & consensus distribution)
+sudo /root/miniconda3/bin/python scripts/certainty_audit.py
 
-# Generate sim trades and save to logs/recent_sim_trades.json
-sudo /root/miniconda3/bin/python scripts/test_bench.py
+# 2. 10-Day Wallet Compounding Simulator (Dynamic compounding backtest growth simulator)
+sudo /root/miniconda3/bin/python scripts/test_10days.py
 
-# Calculate net ROI by certainty tier, save to logs/latest_roi.json
-sudo /root/miniconda3/bin/python scripts/calc_net_roi.py
+# 3. Walk-Forward Directional Backtest (1,035 evaluations of trend accuracy & Net P&L)
+sudo /root/miniconda3/bin/python src/evaluation/backtest_checkup.py
+
+# 4. Singularity Visualizer (Generates actual vs forecast plot at backtest_honesty.png)
+sudo /root/miniconda3/bin/python src/evaluation/visualize_backtest.py
 ```
 
 > **All scripts automatically use the latest epoch checkpoint** — no manual configuration needed.
