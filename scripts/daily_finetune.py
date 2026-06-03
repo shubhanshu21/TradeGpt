@@ -10,7 +10,7 @@ Or via cron (midnight UTC daily):
     5 0 * * * /root/miniconda3/bin/python /var/www/html/ML/kat/scripts/daily_finetune.py >> /var/www/html/ML/kat/logs/finetune.log 2>&1
 """
 
-import sys, shutil
+import sys, shutil, time
 import numpy as np
 import tensorflow as tf
 from pathlib import Path
@@ -229,7 +229,10 @@ finally:
         log("🚀 SELF-HEALING WATCHDOG: Restarting the base training orchestrator train.py in background...")
         try:
             subprocess.Popen(
-                "nohup /root/miniconda3/bin/python -u /var/www/html/ML/kat/train.py --resume --epochs 300 > /var/www/html/ML/kat/logs/iron_oracle_v11.log 2>&1 &",
+                "nohup /root/miniconda3/bin/python -u /var/www/html/ML/kat/train.py "
+                "--model hydra --epochs 300 --batch 32 --candles 120000 "
+                "--timeframe 15m --symbol BTCUSD --resume "
+                "> /var/www/html/ML/kat/logs/hydra_train_$(date +%Y%m%d_%H%M%S).log 2>&1 &",
                 shell=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL

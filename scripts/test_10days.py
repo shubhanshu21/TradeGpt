@@ -80,7 +80,8 @@ def run_10day_simulation():
 
         # Extract features and DLS normalize
         x_raw = data[idx - CTX_WIN + 1 : idx + 1]
-        x_scaled, _, _ = apply_dls(x_raw)
+        x_scaled, _, l_std = apply_dls(x_raw)
+        close_idx = features.index('close')
         X_in = x_scaled[np.newaxis].astype("float32")
 
         # Inference
@@ -94,7 +95,7 @@ def run_10day_simulation():
         predicted_move = np.mean(p_curve)     # Z-score move
         
         # Convert z-score move to actual expected swing in USD
-        est_swing = float(abs(predicted_move) * df['atr'].iloc[idx])
+        est_swing = float(abs(predicted_move) * l_std[close_idx])
         cert_pct = float(np.mean(certainty_2d))
 
         # Check Gates

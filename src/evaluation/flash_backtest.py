@@ -28,8 +28,8 @@ def run_flash():
     close_idx = features.index("close")
     data = df_feat[features].values.astype("float32")
     # DLS — match training pipeline
-    scaled = data
-    
+    # Actuals are compared from raw close prices (sign of price move)
+    close_idx = features.index("close")
     preds       = []
     actuals     = []
     certainties = []
@@ -40,18 +40,19 @@ def run_flash():
         X_in = apply_dls(data[i - ctx : i])[0].reshape(1, ctx, n_feat)
         out = model(X_in, training=False)
         
-        # Predicted move at T+15
+        # Predicted direction at T+15 relative to anchor (T+0)
         pred_vals = out[0].numpy()[0]
-        p_15 = pred_vals[15, 0]
-        preds.append(np.sign(p_15))
+        p_anchor = pred_vals[0, 0]   # z-score at anchor step
+        p_15     = pred_vals[15, 0]  # z-score at step 15
+        preds.append(np.sign(p_15 - p_anchor))  # direction of change
         
         # Certainty (Channel 1)
         cert_val = np.mean(out[1].numpy())
         certainties.append(cert_val)
         
-        # Actual move at T+15
-        v_now = scaled[i, close_idx]
-        v_15  = scaled[i+15, close_idx]
+        # Actual direction at T+15 from raw (unscaled) close prices
+        v_now = data[i,      close_idx]
+        v_15  = data[i + 15, close_idx]
         actuals.append(np.sign(v_15 - v_now))
         
         if len(preds) % 20 == 0:
