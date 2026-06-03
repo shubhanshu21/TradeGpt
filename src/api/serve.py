@@ -164,7 +164,7 @@ discourse_engine = SovereignDiscourse()
 def find_latest_log():
     """Finds the most recently modified training log file in logs/"""
     if not LOG_DIR.exists(): return None
-    log_files = list(LOG_DIR.glob("iron_oracle*.log"))
+    log_files = list(LOG_DIR.glob("iron_oracle*.log")) + list(LOG_DIR.glob("hydra_train*.log"))
     if not log_files: return None
     return max(log_files, key=os.path.getmtime)
 
