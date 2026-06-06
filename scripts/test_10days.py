@@ -89,10 +89,11 @@ def run_10day_simulation():
         pred = outputs[0].numpy()[0]          # (16, 3)
         certainty_2d = outputs[1].numpy()[0]  # (120,)
         
-        # Predicted price trajectory
+        # Predicted price trajectory — delta relative to anchor (matches live_trader logic)
+        p_anchor = pred[0, 0]
         pred_future = pred[1:]
         p_curve = pred_future[:, 0]
-        predicted_move = np.mean(p_curve)     # Z-score move
+        predicted_move = np.mean(p_curve - p_anchor)  # Z-score change from entry
         
         # Convert z-score move to actual expected swing in USD
         est_swing = float(abs(predicted_move) * l_std[close_idx])

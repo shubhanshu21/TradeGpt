@@ -98,10 +98,11 @@ def evaluate_today():
         pred = outputs[0].numpy()[0]          # (16, 3)
         certainty_2d = outputs[1].numpy()[0]  # (120,)
         
-        # Predicted price trajectory trajectory
+        # Predicted price trajectory relative to anchor (matches live_trader/test_10days logic)
+        p_anchor = pred[0, 0]
         pred_future = pred[1:]                 # (15, 3)
         p_curve = pred_future[:, 0]
-        predicted_move = np.mean(p_curve)     # Z-score mean move
+        predicted_move = np.mean(p_curve - p_anchor)     # Z-score mean move
 
         # Actual realization check
         actual_curr_p = closes[idx]

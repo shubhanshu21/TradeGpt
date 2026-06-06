@@ -72,7 +72,8 @@ for i in range(CTX_WIN, len(data) - 15):
     pred      = out[0].numpy()[0]   # Predictions
     cert      = out[1].numpy()[0]   # Certainty mean
     
-    mean_move = float(np.mean(pred[1:, 0])) # Future returns
+    p_anchor = pred[0, 0]
+    mean_move = float(np.mean(pred[1:, 0] - p_anchor)) # Future returns relative to anchor
     mean_cert = float(np.mean(cert))        # Expert consensus score
     
     # Strategy: Only trade when consensus > threshold (85% certainty)
@@ -86,9 +87,10 @@ for i in range(CTX_WIN, len(data) - 15):
         signal = "HOLD"
 
     # Actual future return direction over the 15-step forecast window (T to T+15)
-    actual_now  = float(data[i,      close_col])
-    actual_next = float(data[i + 15, close_col])
-    actual_dir  = np.sign(actual_next - actual_now)
+    actual_now  = float(data[i - 1, close_col])
+    actual_next_15 = data[i : i + 15, close_col]
+    actual_mean_future = float(np.mean(actual_next_15))
+    actual_dir  = np.sign(actual_mean_future - actual_now)
 
     results.append({
         "i":          i,

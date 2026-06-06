@@ -573,7 +573,7 @@ def fetch_and_calculate_live_metrics():
         if len(pnls) > 1:
             std = np.std(pnls)
             # Live trades are spaced hours or days apart, so daily annualization (np.sqrt(365)) is mathematically appropriate
-            risk_metrics["sharpe"] = (np.mean(pnls) / std * np.sqrt(365)) if std > 0 else 0.0
+            risk_metrics["sharpe"] = (np.mean(pnls) / std * np.sqrt(365 * 4)) if std > 0 else 0.0
             
         # Drawdown
         equity = [initial_wallet]

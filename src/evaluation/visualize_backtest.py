@@ -62,14 +62,14 @@ def visualize_performance(model_path: str, timeframe: str = "15m"):
     for i in range(num_windows):
         idx = len(data) - num_windows + i - ctx
         x_raw = data[idx : idx + ctx]
-        _, _, l_std = apply_dls(x_raw)
+        _, l_mean, l_std = apply_dls(x_raw)
         
         entry_p = df_feat['close'].iloc[idx + ctx - 1]
         pred_scaled_ret = preds[i, -1, 0] # terminal return
         
-        # Denormalize: scaled = (raw - mean) / std -> raw = scaled * std + mean
-        # But our target is 'close' return.
-        y_pred_usd.append(entry_p + (pred_scaled_ret * l_std[features.index('close')]))
+        # Denormalize correctly: raw = (scaled * std) + mean
+        close_idx = features.index('close')
+        y_pred_usd.append((pred_scaled_ret * l_std[close_idx]) + l_mean[close_idx])
     
     y_pred_usd = np.array(y_pred_usd)
     

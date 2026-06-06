@@ -33,12 +33,12 @@ SYMBOL         = "BTCUSD"
 SIZE           = 1              # Legacy fallback contract size
 MIN_SWING      = 100.0          # Minimum floor (to cover 0.12% fees at $70k BTC)
 MIN_SWING_FLOOR = 100.0         # Absolute minimum — never trade below this (fee protection)
-MIN_SWING_CEIL  = 100.0         # FIX: Lowered from 200→100 (was blocking all early-epoch trades)
+MIN_SWING_CEIL  = 500.0         # ATR dynamic ceiling — widens gate in volatile markets
 THRESHOLD      = 0.08           # Increased base conviction (was 0.05)
 TIMEFRAME      = "15m"          # Match training timeframe (15m)
 CTX_WIN        = 120            # Context window (30 hours)
 SLEEP_S        = 900            # 15 minute polling
-COOLDOWN_BARS  = 1              # Prevent back-to-back flipping (saves fees)
+COOLDOWN_BARS  = 15             # Match forecast horizon (15 bars = 3.75h) — prevents overlapping trades
 
 # ── HUD ───────────────────────────────────────────────────────────────────────
 C_RESET  = "\033[0m"
@@ -48,9 +48,17 @@ C_RED    = "\033[31m"
 C_CYAN   = "\033[36m"
 C_YELLOW = "\033[33m"
 
+_LOG_FILE = ROOT / "logs" / "live_pilot.log"
+
 def log(msg, color=C_RESET):
     stamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{C_CYAN}{stamp}{C_RESET}] {color}{msg}{C_RESET}", flush=True)
+    try:
+        _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_LOG_FILE, "a", encoding="utf-8") as _f:
+            _f.write(f"[{stamp}] {msg}\n")
+    except Exception:
+        pass
 
 def load_model():
     """Load the trained Iron Oracle brain from the isolated sandbox copy."""
@@ -96,7 +104,7 @@ def get_neural_signal(model):
     """
     try:
         features = build_feature_cols()
-        n_feats  = len(features)  # 42
+        n_feats  = len(features)  # 45
 
         # Fetch CTX_WIN + buffer for indicator warm-up
         df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CTX_WIN + 150, timeframe=TIMEFRAME)
@@ -109,7 +117,7 @@ def get_neural_signal(model):
         # FIX #1: DLS — scale using the local window stats (strict match to training)
         x_raw  = data[-CTX_WIN:]
         x_scaled, l_mean, l_std = apply_dls(x_raw)
-        X_in   = x_scaled[np.newaxis].astype("float32")  # (1, 120, 42)
+        X_in   = x_scaled[np.newaxis].astype("float32")  # (1, 120, 45)
 
         # Iron Oracle returns [prediction_trajectory, certainty_map, reasoning_head]
         outputs      = model(X_in, training=False)
@@ -328,15 +336,10 @@ def run_pilot():
             # ── Inference ────────────────────────────────────────────────────
             mean_price, cert_raw, mean_vol, reasoning, pred, close_std, atr_min_swing = get_neural_signal(model)
 
-            # FIX: JSON live_params.json takes precedence over ATR-based swing gate
-            # If JSON was loaded, use it; if not, fall back to ATR calculation
+            # JSON live_params.json takes precedence over ATR-based swing gate
             dyn_min_swing = json_min_swing if json_min_swing is not None else atr_min_swing
             dyn_cert_threshold = json_cert_threshold
 
-            # Get current price for swing calculation
-            df_curr = fetch_live_kat_data(SYMBOL, 1, TIMEFRAME)
-            curr_price = df_curr['close'].iloc[-1]
-            
             # Predict actual dollar move (using actual local standard deviation)
             est_swing = abs(mean_price) * close_std
 
@@ -361,22 +364,33 @@ def run_pilot():
                 log(f"📉 SWING TOO SMALL (${est_swing:.2f} < ${dyn_min_swing:.0f}) — FEES WOULD EAT PROFIT", C_YELLOW)
                 time.sleep(SLEEP_S); continue
 
-            # ── Sniper Gate 3: Cooldown ──────────────────────────────────────
+            # ── Sniper Gate 4: Cooldown ──────────────────────────────────────
             if (current_time - last_trade_time) < (COOLDOWN_BARS * SLEEP_S):
                 log(f"⏳ COOLDOWN ACTIVE — Saving fees.", C_YELLOW)
                 time.sleep(SLEEP_S); continue
 
-            # ── Dynamic Armor (Mastery Enhancement) ──────────────────────────
-            # Armor widens during high volatility to prevent "Stop Loss Hunting"
-            # and narrows during low volatility to lock in profits.
+            # ── Sniper Gate 5: ADX Regime Filter ─────────────────────────────
+            # ADX < 20 = choppy/ranging market — signals have low follow-through
+            try:
+                features = build_feature_cols()
+                df_adx = fetch_live_kat_data(symbol=SYMBOL, n_candles=CTX_WIN + 20, timeframe=TIMEFRAME)
+                df_adx = compute_indicators(df_adx)
+                adx_now = float(df_adx["adx"].iloc[-1])
+                log(f"📊 ADX REGIME     : {adx_now:.1f}  (min: 20 for trending market)")
+                if adx_now < 20.0:
+                    log(f"🌀 ADX TOO LOW ({adx_now:.1f}) — CHOPPY MARKET, HOLDING", C_YELLOW)
+                    time.sleep(SLEEP_S); continue
+            except Exception as adx_err:
+                log(f"⚠️ ADX check failed ({adx_err}) — skipping regime filter", C_YELLOW)
+
+            # ── Dynamic Armor ─────────────────────────────────────────────────
             base_sl = 1.2
             base_tp = 2.8
-            vol_multiplier = 1.0 + min(0.5, abs(mean_vol)) # Max +50% widening
-            
+            vol_multiplier = 1.0 + min(0.5, abs(mean_vol))
             dyn_sl = base_sl * vol_multiplier
             dyn_tp = base_tp * vol_multiplier
 
-            # ── Dynamic Sizing Strategy ───────────────────────────────────────
+            # ── Dynamic Sizing: wallet-based + certainty-scaled ───────────────
             dynamic_size = SIZE
             try:
                 balances = client._get('/v2/wallet/balances', auth=True).get('result', [])
@@ -384,19 +398,21 @@ def run_pilot():
                 if usd_bal:
                     available_usd = float(usd_bal[0].get('available_balance', 0.0))
                     allowed_margin = available_usd * POSITION_SIZE_PCT
+                    # Scale position size by how far certainty is above threshold (max 2x)
+                    cert_multiplier = min(2.0, cert_norm / dyn_cert_threshold)
+                    allowed_margin  = allowed_margin * cert_multiplier
                     allowed_notional_usd = allowed_margin * LEVERAGE
-                    
-                    # 1 contract value = 0.001 * current BTCUSD price
+
                     ob = client.get_orderbook(SYMBOL)
                     best_bid = float(ob['buy'][0]['price'])
                     best_ask = float(ob['sell'][0]['price'])
-                    mid_p   = (best_bid + best_ask) / 2
+                    mid_p    = (best_bid + best_ask) / 2
                     contract_val_usd = 0.001 * mid_p
-                    
+
                     dynamic_size = max(1, int(allowed_notional_usd / contract_val_usd))
-                    log(f"💰 POSITION SIZING: Available USD: ${available_usd:.2f} | Target Margin: ${allowed_margin:.2f} | Dynamic Size: {dynamic_size} contracts", C_CYAN)
+                    log(f"💰 POSITION SIZING: Balance: ${available_usd:.2f} | Cert mult: {cert_multiplier:.2f}x | Size: {dynamic_size} contracts", C_CYAN)
             except Exception as size_err:
-                log(f"⚠️ Sizing calculation error: {size_err}. Falling back to default SIZE: {SIZE}", C_YELLOW)
+                log(f"⚠️ Sizing error: {size_err}. Falling back to SIZE={SIZE}", C_YELLOW)
 
             # ── Signal Logic ──────────────────────────────────────────────────
             dynamic_thresh = THRESHOLD * (1.0 + max(0.0, mean_vol))

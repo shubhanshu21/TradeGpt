@@ -15,7 +15,7 @@ POSITION_SIZE_PCT  = 0.25    # Fraction of available wallet USD to use as margin
 LEVERAGE           = 10     # Dynamic order leverage (10 = 10x)
 MAX_TRADES_PER_DAY = 4      # Rolling 24h circuit breaker (max allowed entries to limit daily drawdown)
 PROFIT_GOAL_PCT    = 0.1    # 10% profit target for UI progress bars
-RISK_MULTIPLIER    = 100.0  # Max Drawdown penalty for Station Health   # 1.0 = 100% (Full-Port) | 0.1 = 10%
+RISK_MULTIPLIER    = 100.0  # UI display divisor for station health bar (100 = scale PnL% into 0-100 display range)
 SOVEREIGN_MULTIPLIER = 1.0  # Strategic Scaling Constant
 
 # Neural Architecture

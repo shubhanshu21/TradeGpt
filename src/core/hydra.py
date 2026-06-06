@@ -389,9 +389,20 @@ class SovereignReasoningLoss(keras.losses.Loss):
 
 
 @keras.saving.register_keras_serializable(package="KAT")
+def certainty_loss(y_true, y_pred):
+    """
+    Train certainty head to predict profitable (1.0) vs unprofitable (0.0) setups.
+    y_pred: (B, T) per-timestep consensus from HydraBlocks
+    y_true: (B, 1) binary target — 1.0 if LONG/SHORT, 0.0 if FEE_TRAP/NOISE
+    """
+    pred_mean = ops.mean(y_pred, axis=-1, keepdims=True)  # (B, 1)
+    return keras.losses.binary_crossentropy(y_true, pred_mean)
+
+
+@keras.saving.register_keras_serializable(package="KAT")
 def dummy_certainty_loss(y_true, y_pred):
-    """Dummy Loss to register Certainty head in Keras without impacting gradients."""
-    return 0.0 * ops.mean(y_pred)
+    """Kept for backward-compat loading of old checkpoints. Delegates to certainty_loss."""
+    return certainty_loss(y_true, y_pred)
 
 
 @keras.saving.register_keras_serializable(package="KAT")
@@ -502,7 +513,7 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
         ),
         loss={
             "prediction": SovereignLoss(direction_weight=10.0),
-            "certainty":  dummy_certainty_loss,
+            "certainty":  certainty_loss,
             "reasoning":  SovereignReasoningLoss(label_smoothing=0.1)
         },
         metrics={

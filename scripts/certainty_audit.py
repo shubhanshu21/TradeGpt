@@ -14,6 +14,10 @@ sys.path.append(str(ROOT / "src"))
 from core.hydra import build_kraken, CertaintyMetric, SovereignAccuracy, SovereignLoss
 from data.preprocess import compute_indicators, build_feature_cols
 from exchange.fetch_data import fetch_live_kat_data
+try:
+    from config.sovereign_config import CERT_THRESHOLD
+except ImportError:
+    CERT_THRESHOLD = 0.85
 
 def run_certainty_distribution():
     print("\n" + "="*60)
@@ -64,14 +68,14 @@ def run_certainty_distribution():
         inp = np.expand_dims(xs, axis=0)
         
         out = model(inp, training=False)
-        # Scaled certainty (Mean * 120)
-        cert_score = np.mean(out[1].numpy()[0]) * 120.0
+        # Scaled certainty to 0-100% (Mean of 120 sequence steps)
+        cert_pct = float(np.mean(out[1].numpy()[0])) * 100.0
         reas_idx = int(np.argmax(out[2].numpy()[0]))
         
         bias_map = {0: "LONG 🏹", 1: "SHORT 📉", 2: "FEE_TRAP ⚠️", 3: "NOISE 😴"}
         bias_str = bias_map.get(reas_idx, "UNKNOWN")
         
-        status = "🟢 TRADE" if (reas_idx in [0, 1] and cert_score >= 115.0) else "⚪ SCAN"
+        status = "🟢 TRADE" if (reas_idx in [0, 1] and cert_pct >= (CERT_THRESHOLD * 100)) else "⚪ SCAN"
         # Color the noise and fee traps
         if reas_idx == 2: status = "🟡 TRAP"
         if reas_idx == 3: status = "🔵 NOISE"
@@ -79,7 +83,7 @@ def run_certainty_distribution():
         ts_str = timestamps[i-1].strftime("%H:%M")
         price_str = f"${df['close'].iloc[i-1]:,.0f}"
         
-        print(f"{ts_str:<12} | {price_str:<10} | {cert_score:<10.2f} | {bias_str:<18} | {status}")
+        print(f"{ts_str:<12} | {price_str:<10} | {cert_pct:<10.2f}% | {bias_str:<18} | {status}")
 
     print("="*60 + "\n")
 

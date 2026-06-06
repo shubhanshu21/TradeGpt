@@ -65,10 +65,11 @@ class DeltaClient:
                     time.sleep(delay); delay *= 2; continue
                 raise
             except requests.exceptions.HTTPError as e:
-                if e.response is not None and e.response.status_code in (502, 503, 504):
+                if e.response is not None and e.response.status_code in (429, 502, 503, 504):
                     if attempt < _MAX_RETRIES - 1:
-                        print(f"[DeltaClient] GET {e.response.status_code} (attempt {attempt+1}/{_MAX_RETRIES}). Retrying in {delay}s...")
-                        time.sleep(delay); delay *= 2; continue
+                        wait = int(e.response.headers.get("Retry-After", delay)) if e.response.status_code == 429 else delay
+                        print(f"[DeltaClient] GET {e.response.status_code} (attempt {attempt+1}/{_MAX_RETRIES}). Retrying in {wait}s...")
+                        time.sleep(wait); delay *= 2; continue
                 raise
 
     def _post(self, path: str, body: dict) -> dict:
@@ -81,9 +82,10 @@ class DeltaClient:
                 headers = self._generate_signature("POST", path, body=body_str)
                 headers["Content-Type"] = "application/json"
                 resp = self.session.post(url, data=body_str, headers=headers, timeout=10)
-                if resp.status_code in (502, 503, 504) and attempt < _MAX_RETRIES - 1:
-                    print(f"[DeltaClient] POST {resp.status_code} (attempt {attempt+1}/{_MAX_RETRIES}). Retrying in {delay}s...")
-                    time.sleep(delay); delay *= 2; continue
+                if resp.status_code in (429, 502, 503, 504) and attempt < _MAX_RETRIES - 1:
+                    wait = int(resp.headers.get("Retry-After", delay)) if resp.status_code == 429 else delay
+                    print(f"[DeltaClient] POST {resp.status_code} (attempt {attempt+1}/{_MAX_RETRIES}). Retrying in {wait}s...")
+                    time.sleep(wait); delay *= 2; continue
                 if resp.status_code >= 400:
                     try:
                         err_data = resp.json()
@@ -112,9 +114,10 @@ class DeltaClient:
                 headers = self._generate_signature("DELETE", path, query="") if auth else {}
                 headers["Content-Type"] = "application/json"
                 resp = self.session.delete(url, headers=headers, timeout=10)
-                if resp.status_code in (502, 503, 504) and attempt < _MAX_RETRIES - 1:
-                    print(f"[DeltaClient] DELETE {resp.status_code} (attempt {attempt+1}/{_MAX_RETRIES}). Retrying in {delay}s...")
-                    time.sleep(delay); delay *= 2; continue
+                if resp.status_code in (429, 502, 503, 504) and attempt < _MAX_RETRIES - 1:
+                    wait = int(resp.headers.get("Retry-After", delay)) if resp.status_code == 429 else delay
+                    print(f"[DeltaClient] DELETE {resp.status_code} (attempt {attempt+1}/{_MAX_RETRIES}). Retrying in {wait}s...")
+                    time.sleep(wait); delay *= 2; continue
                 if resp.status_code >= 400:
                     try:
                         err_data = resp.json()

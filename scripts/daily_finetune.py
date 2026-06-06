@@ -23,7 +23,7 @@ import keras
 from core.hydra import (build_kraken, HydraBlock, GatedMoE, MLALayer,
                                   RMSNorm, TurboQuant, SwiGLU,
                                   SovereignLoss, CertaintyMetric, SovereignAccuracy,
-                                  SovereignReasoningLoss, dummy_certainty_loss,
+                                  SovereignReasoningLoss, certainty_loss,
                                   init_kraken_hardware)
 from data.preprocess import build_dataset_streaming
 from exchange.fetch_data  import fetch_live_kat_data
@@ -129,6 +129,13 @@ try:
     steps_va = ds_info["steps_va"]
     log(f"   ✅ {steps_tr} train steps | {steps_va} val steps")
 
+    # Compute class weights from the fine-tune window's actual label distribution
+    label_counts = np.maximum(ds_info["label_counts"], 1)
+    ft_total = label_counts.sum()
+    ft_class_weights = {i: ft_total / (4 * label_counts[i]) for i in range(4)}
+    log(f"   ⚖️  Fine-tune class weights: Bull={ft_class_weights[0]:.2f} Bear={ft_class_weights[1]:.2f} "
+        f"FeeTrap={ft_class_weights[2]:.2f} Noise={ft_class_weights[3]:.2f}")
+
     # V10.6 Phase 3: Re-build from scratch to avoid deserialization issues
     log("🏗️  Re-building Phase 3 architecture and loading weights...")
     from data.preprocess import build_feature_cols
@@ -144,10 +151,12 @@ try:
         log("   Starting from scratch for this fine-tune session.")
 
     # ── 7. Freeze bottom blocks ───────────────────────────────────────────────────
+    # HydraBlocks are named "hydra_0" through "hydra_7" (from build_kraken name=f"hydra_{i}")
     frozen = 0
     for layer in model.layers:
-        if "hydra_block" in layer.name:
-            idx = int(layer.name.split("_")[-1]) if layer.name[-1].isdigit() else 0
+        parts = layer.name.split("_")
+        if parts[0] == "hydra" and len(parts) == 2 and parts[1].isdigit():
+            idx = int(parts[1])
             if idx < FREEZE_BELOW:
                 layer.trainable = False
                 frozen += 1
@@ -157,12 +166,21 @@ try:
     log(f"🔒 Frozen {frozen} blocks → {trainable:,} / {total:,} params active")
 
     # ── 8. Recompile at low LR ────────────────────────────────────────────────────
+    ft_weights_tensor = tf.constant([ft_class_weights[i] for i in range(4)], dtype=tf.float32)
+
+    def ft_weighted_reasoning_loss(y_true, y_pred):
+        y_true_int    = tf.reshape(tf.cast(y_true, tf.int32), [-1])
+        y_true_oh     = tf.one_hot(y_true_int, depth=4)
+        unweighted    = tf.keras.losses.categorical_crossentropy(y_true_oh, y_pred, label_smoothing=0.1)
+        sample_weights = tf.gather(ft_weights_tensor, y_true_int)
+        return unweighted * sample_weights
+
     model.compile(
         optimizer=keras.optimizers.AdamW(LR, weight_decay=0.01, clipnorm=0.5),
         loss={
             "prediction": SovereignLoss(direction_weight=10.0),
-            "certainty":  dummy_certainty_loss,   # Use the dummy certainty loss
-            "reasoning":  SovereignReasoningLoss(label_smoothing=0.1) # Use proper label smoothing
+            "certainty":  certainty_loss,
+            "reasoning":  ft_weighted_reasoning_loss
         },
         metrics={
             "prediction": [SovereignAccuracy(name="dir_acc"), "mae"],

@@ -1,10 +1,11 @@
 """
-SOVEREIGN KRAKEN TRAINING ORCHESTRATOR (V10.6 — Predator) ⚓🚀⚡
+SOVEREIGN KRAKEN TRAINING ORCHESTRATOR (V10.7 — Predator) ⚓🚀⚡
 ===========================================================================
-- Model: HYDRA V10.6 (128-wide, 8-block, 256-Expert MoE + SwiGLU + TurboQuant)
-- RAM Strategy: TF Generator streaming — NO materialization, no OOM
+- Model: HYDRA V10.7 (128-wide, 8-block, 256-Expert MoE + SwiGLU + TurboQuant)
+- RAM Strategy: One-time precomputed numpy arrays (~2.6GB) → from_tensor_slices
+  Eliminates 30x epoch speed oscillation caused by from_generator recomputation.
 - Context: 120 candles (2 hours) — proven stable on this hardware
-- Batch: 128 — calibrated for 21GB RAM host
+- Batch: 32 — calibrated for 24GB RAM host
 """
 
 import os, argparse, gc, glob, time
@@ -22,7 +23,7 @@ LOG_DIR  = ROOT / "logs"
 
 import sys
 sys.path.insert(0, str(ROOT / "src"))
-from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetric, SovereignAccuracy, SovereignLoss
+from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetric, SovereignAccuracy, SovereignLoss, certainty_loss
 from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
 from exchange.fetch_data import fetch_live_kat_data
 import glob as _glob
@@ -309,34 +310,14 @@ def train_kraken(args):
     print(f"   ✅ {steps_tr} train steps/epoch | {steps_va} val steps")
 
     # ── 2b. Compute Reasoning Class Weights (Anti-Imbalance) ─────────────────
-    # Sideways candles dominate 1m BTC data (~70%). Without class weights,
-    # the model learns to predict "Sideways" for everything.
-    print("   📊 Computing reasoning class weights (anti-imbalance)...")
-    label_counts = np.zeros(4)
-    # Mirror the 80% train split used inside build_dataset_streaming
-    train_end    = int(len(df) * 0.8)
-    
-    # Uniformly/randomly sample 5000 indices across the full training range to avoid oldest-history regime bias
-    if train_end > 5000:
-        np.random.seed(42)
-        sample_indices = sorted(np.random.choice(train_end, size=5000, replace=False))
-        raw_data = df.iloc[sample_indices]
-    else:
-        raw_data = df.iloc[:train_end]
-
-    ret_col   = (raw_data["close"].pct_change(15).fillna(0)).values  # 15-candle forecast impact (MTP-15)
-    fee_threshold = FEE_RATE  # 0.0012 (0.12%)
-    for r in ret_col:
-        if   r >  fee_threshold: label_counts[0] += 1          # SOVEREIGN_LONG (beats fees)
-        elif r < -fee_threshold: label_counts[1] += 1          # SOVEREIGN_SHORT (beats fees)
-        elif abs(r) > (fee_threshold * 0.5): label_counts[2] += 1  # FIX: FEE_TRAP (0.5×fee < abs < fee)
-        else: label_counts[3] += 1                              # FIX: NOISE (abs <= 0.5×fee)
-    # Label map: {0:SOVEREIGN_LONG, 1:SOVEREIGN_SHORT, 2:FEE_TRAP, 3:NOISE} — matches preprocess.py
-    label_counts = np.maximum(label_counts, 1)
+    # Use exact label counts from preprocess.py (same Z-score + dynamic fee_gate logic
+    # used during dataset construction — previously used pct_change which mismatched).
+    print("   📊 Computing reasoning class weights from precomputed label distribution...")
+    label_counts = np.maximum(ds_info["label_counts"], 1)
     total = label_counts.sum()
     class_weights = {i: total / (4 * label_counts[i]) for i in range(4)}
     print(f"   ⚖️  Class weights: Bull={class_weights[0]:.2f} Bear={class_weights[1]:.2f} "
-          f"Sideways={class_weights[2]:.2f} Trend={class_weights[3]:.2f}")
+          f"FeeTrap={class_weights[2]:.2f} Noise={class_weights[3]:.2f}")
 
     # ── 3. Build Model ────────────────────────────────────────────────────────
     # For 1,152 experts, we use a slower, higher-quality learning profile.
@@ -363,7 +344,7 @@ def train_kraken(args):
         optimizer=model.optimizer,
         loss={
             "prediction": SovereignLoss(direction_weight=10.0),
-            "certainty":  model.loss["certainty"],
+            "certainty":  certainty_loss,
             "reasoning":  weighted_reasoning_loss
         },
         metrics={
