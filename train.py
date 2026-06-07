@@ -167,17 +167,19 @@ class MissionControl(keras.callbacks.Callback):
                 recent_trades = []
                 mask80 = c_pct >= 80
                 if mask80.any():
-                    t_indices = np.array(indices)[mask80]
-                    t_traj_usd = traj_usd[mask80]
-                    t_usd = usd_diffs[mask80]
+                    t_indices     = np.array(indices)[mask80]
+                    t_traj_usd    = traj_usd[mask80]
+                    t_usd         = usd_diffs[mask80]
+                    t_close_means = close_means[mask80]
+                    t_close_stds  = close_stds[mask80]
+                    t_traj_scaled = traj_scaled[mask80]
                     for i in range(max(0, len(t_indices)-500), len(t_indices)):
                         idx = t_indices[i]
                         entry_p = raw_prices[idx + ctx - 1]
                         price_move_pct = (t_usd[i] / entry_p)
                         # V11.5: Tactical Deadzone Calibration
-                        # Eliminate 'Noise-Driven Shorts' during Epoch 1
-                        last_scaled = (entry_p - close_means[i]) / close_stds[i]
-                        prediction_delta = traj_scaled[i] - last_scaled
+                        last_scaled = (entry_p - t_close_means[i]) / t_close_stds[i]
+                        prediction_delta = t_traj_scaled[i] - last_scaled
                         
                         # Only strike if the predicted move is greater than 0.1% volatility
                         if abs(prediction_delta) < 0.001: 
@@ -339,9 +341,21 @@ def train_kraken(args):
         sample_weights = tf.gather(weights_tensor, y_true_int)
         return unweighted * sample_weights
 
+    # Rebuild LR schedule so cosine decay spans the full training run instead of
+    # hitting its floor at epoch ~4 (decay_steps=10000 << 300*2996 total steps)
+    full_lr_schedule = keras.optimizers.schedules.CosineDecay(
+        initial_learning_rate=5e-6,
+        decay_steps=EPOCHS * steps_tr,
+        alpha=0.1   # floor = 5e-7
+    )
+
     print("   ⚖️  Recompiling model with custom weighted sparse categorical crossentropy...")
     model.compile(
-        optimizer=model.optimizer,
+        optimizer=keras.optimizers.AdamW(
+            learning_rate=full_lr_schedule,
+            weight_decay=0.01,
+            clipnorm=0.5
+        ),
         loss={
             "prediction": SovereignLoss(direction_weight=3.0),
             "certainty":  certainty_loss,
