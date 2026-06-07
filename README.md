@@ -1,4 +1,4 @@
-# ⚓ Iron Oracle V12.3 — Sovereign Kraken Intelligence
+# ⚓ Iron Oracle V12.4 — Sovereign Kraken Intelligence
 > **Institutional-Grade Autonomous Neural Trading Station | BTC/USDT 15m | 256-Expert MoE Architecture | Fee-Aware Simulation Engine**
 
 
@@ -46,7 +46,7 @@ kat/
 │       └── visualize_backtest.py   ← Denormalized close-price zoom graph generator
 ├── scripts/
 │   ├── certainty_audit.py          ← Real-time certainty distribution timelines
-│   ├── test_10days.py              ← 10-day wallet compounding backtest simulator
+│   ├── wfa_backtest.py             ← Walk-forward fine-tuning simulator
 │   ├── test_today.py               ← Performance diagnostic for today's market slice
 │   ├── ob_collector.py             ← Background orderbook L2 snapshot collector
 │   └── daily_finetune.py           ← Daily fine-tuning adapter (cron target)
@@ -97,6 +97,18 @@ Market Input (120 candles × 45 features)
 | **SovereignLoss** | Volatility-weighted directional loss — penalizes errors on high-vol moves more |
 | **RMSNorm** | Fast root mean square normalization (LLaMA-style) |
 | **SwiGLU** | Gated activation function (Gemma/LLaMA DNA) |
+
+---
+
+## ⚡ V12.4 Patch Notes (Diagnostic & Logic Fixes)
+
+1. **L5 Order Book Imbalance (OBI) Fix**: Resolved a `KeyError: 'obi_l5'` in `preprocess.py` by calculating the Level 5 Order Book Imbalance dynamically from Level 1-5 bid/ask volumes, restoring correct calculation of `squeeze_pressure`.
+2. **Evaluation/Audit Certainty Alignment**: Updated `certainty_audit.py` to use a standard 0-100% scale and dynamic `CERT_THRESHOLD` check matching the live pilot.
+3. **Logic Corrections in Diagnostics**: Fixed price trend delta calculations in `test_today.py` and `backtest_checkup.py` by subtracting anchor entry price `p_anchor`.
+4. **Trajectory Mean Evaluation Alignment**: Corrected `backtest_checkup.py` to evaluate realized move using the mean of the 15-candle future trajectory rather than a single point-price change.
+5. **Denormalization Fix in Visualizer**: Fixed the price denormalization formula in `visualize_backtest.py` to use `(pred_scaled_ret * std) + mean` instead of `entry_p + (pred_scaled_ret * std)`.
+6. **Compounding Visualizer Bug Fix**: Corrected `forecast_visual` in `auto_run.py` to prevent cumulative compounding of `usd_deltas` on the plot.
+7. **Walk-Forward Simulator**: Added `wfa_backtest.py` to iteratively test and fine-tune the model on daily chunks of unseen data, accurately simulating a live production environment. Deprecated `test_10days.py`.
 
 ---
 
@@ -210,8 +222,8 @@ After each training run, use these scripts:
 # 1. Multi-Certainty Timeline Audit (Today's signal & consensus distribution)
 sudo /root/miniconda3/bin/python scripts/certainty_audit.py
 
-# 2. 10-Day Wallet Compounding Simulator (Dynamic compounding backtest growth simulator)
-sudo /root/miniconda3/bin/python scripts/test_10days.py
+# 2. Walk-Forward Fine-Tuning Simulator (Live simulation with daily fine-tuning)
+sudo /root/miniconda3/bin/python scripts/wfa_backtest.py
 
 # 3. Walk-Forward Directional Backtest (1,035 evaluations of trend accuracy & Net P&L)
 sudo /root/miniconda3/bin/python src/evaluation/backtest_checkup.py
@@ -287,8 +299,8 @@ To protect active trade profits and guarantee absolute operational safety from s
 
 ## 📋 Changelog
 
-| Version | Key Changes |
-|---|---|
+| **V12.4** | Preprocessor KeyError: 'obi_l5' fix, certainty audit alignment, test_today.py/backtest_checkup.py delta logic correction, visualization denormalization and price compounding fixes. |
+| **V12.3** | Strict Dynamic Local Scaling (DLS) synchronization, Delta API exponential backoff, checkpoint IO optimization, L2 Order Book collection logging. |
 | **V12.2** | Dynamic ATR-based MIN_SWING (clamped at $100 floor for fee protection), exponential backoff on exchange 502s, optimized training checkpoints (save every 10 epochs to fix I/O stall). |
 | **V12.1** | Delta Exchange Server-Side Bracket Sync (DELETE query-less signature resolution, query-preserve-delete-recreate lifecycle, real-time UI SL/TP locking) |
 | **V12.0** | Deterministic strategist names, fee-aware P&L, 3D branding, localised CDN, dashboard fixes |
@@ -310,4 +322,4 @@ To protect active trade profits and guarantee absolute operational safety from s
 
 ---
 
-⚓ **Iron Oracle V12.2 — Sovereign Intelligence, Institutional Performance.**
+⚓ **Iron Oracle V12.4 — Sovereign Intelligence, Institutional Performance.**

@@ -167,10 +167,8 @@ def mode_predict(args):
             # Use dynamic close index to extract correct column (avoid hardcoding 3)
             hist_close = seed[-30:, t_close]
             
-            # Forecast visual starts at last known and applies USD deltas
-            forecast_visual = [last_known_usd]
-            for d in usd_deltas:
-                forecast_visual.append(forecast_visual[-1] + d)
+            # Forecast visual starts at last known and applies USD deltas relative to it
+            forecast_visual = [last_known_usd] + list(last_known_usd + usd_deltas)
             
             forecast_x = range(len(hist_close) - 1, len(hist_close) + len(usd_deltas))
             

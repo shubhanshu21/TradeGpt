@@ -315,7 +315,7 @@ def train_kraken(args):
     print("   📊 Computing reasoning class weights from precomputed label distribution...")
     label_counts = np.maximum(ds_info["label_counts"], 1)
     total = label_counts.sum()
-    class_weights = {i: total / (4 * label_counts[i]) for i in range(4)}
+    class_weights = {i: min(total / (4 * label_counts[i]), 5.0) for i in range(4)}
     print(f"   ⚖️  Class weights: Bull={class_weights[0]:.2f} Bear={class_weights[1]:.2f} "
           f"FeeTrap={class_weights[2]:.2f} Noise={class_weights[3]:.2f}")
 
@@ -343,10 +343,11 @@ def train_kraken(args):
     model.compile(
         optimizer=model.optimizer,
         loss={
-            "prediction": SovereignLoss(direction_weight=10.0),
+            "prediction": SovereignLoss(direction_weight=3.0),
             "certainty":  certainty_loss,
             "reasoning":  weighted_reasoning_loss
         },
+        loss_weights={"prediction": 1.0, "certainty": 10.0, "reasoning": 5.0},
         metrics={
             "prediction": [SovereignAccuracy()],
             "certainty":  [CertaintyMetric()]

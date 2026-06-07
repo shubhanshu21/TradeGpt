@@ -481,8 +481,15 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
                           dropout_rate=dropout_rate, name=f"hydra_{i}")(x)
         all_consensus.append(c)
 
-    # Consensus aggregation
-    avg_consensus = layers.Average(name="certainty")(all_consensus)
+    # Consensus aggregation — stack all 8 block signals then calibrate with a
+    # trainable Dense so certainty actually spans [0,1] instead of sitting at ~0.99
+    cert_stacked = layers.Concatenate(axis=-1)([
+        layers.Reshape((context_window, 1))(c) for c in all_consensus
+    ])  # (B, T, 8)
+    cert_calibrated = layers.Dense(
+        1, activation='sigmoid', name='certainty_calibrate')(cert_stacked)  # (B, T, 1)
+    avg_consensus = layers.Reshape(
+        (context_window,), name='certainty')(cert_calibrated)  # (B, T)
 
     # Output heads - preserve dynamic temporal sequence ordering using last-token extraction
     last_step = layers.Lambda(lambda t: t[:, -1, :])(RMSNorm()(x))
@@ -512,10 +519,11 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
             clipnorm=0.5       # Tightened clipping for MoE stability
         ),
         loss={
-            "prediction": SovereignLoss(direction_weight=10.0),
+            "prediction": SovereignLoss(direction_weight=3.0),
             "certainty":  certainty_loss,
             "reasoning":  SovereignReasoningLoss(label_smoothing=0.1)
         },
+        loss_weights={"prediction": 1.0, "certainty": 10.0, "reasoning": 5.0},
         metrics={
             "prediction": [SovereignAccuracy()],
             "certainty":  [CertaintyMetric()]
