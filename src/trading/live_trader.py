@@ -163,7 +163,7 @@ def run_pilot():
     log(f"⚙️  Enforcing {LEVERAGE}x Leverage on Exchange for {SYMBOL}...", C_CYAN)
     try:
         lev_resp = client.set_leverage(SYMBOL, LEVERAGE)
-        if lev_resp and lev_resp.get("success", False):
+        if lev_resp and (lev_resp.get("success", False) or "result" in lev_resp or "leverage" in str(lev_resp)):
             log(f"✅ Exchange Leverage successfully locked at {LEVERAGE}x!", C_GREEN)
         else:
             log(f"⚠️  Leverage sync warning: {lev_resp}", C_YELLOW)

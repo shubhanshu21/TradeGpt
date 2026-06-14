@@ -80,6 +80,10 @@ for old in all_backups[:-KEEP_BACKUPS]:
     old.unlink()
     log(f"🗑️  Pruned: {old.name}")
 
+# Variables to hold active command line and stdout redirection to preserve training parameters
+active_train_cmd = None
+active_train_log = None
+
 # ── 3. High-level Safeguard Training Pipeline ──────────────────────────────────
 try:
     # ── RAM OOM Safeguard: Terminate base training process temporarily ─────────
@@ -90,6 +94,27 @@ try:
         pids = [int(p) for p in pids_raw if p.isdigit()]
         for pid in pids:
             if pid != os.getpid():
+                # Read command line arguments from /proc/<PID>/cmdline
+                try:
+                    with open(f"/proc/{pid}/cmdline", "rb") as f_cmd:
+                        cmd_bytes = f_cmd.read()
+                        cmd_args = [arg.decode('utf-8', errors='ignore') for arg in cmd_bytes.split(b"\x00") if arg]
+                        if cmd_args:
+                            if any("train.py" in arg for arg in cmd_args):
+                                active_train_cmd = cmd_args
+                                log(f"🔎 Extracted active train command: {' '.join(active_train_cmd)}")
+                except Exception as proc_err:
+                    log(f"⚠️ Could not read /proc/{pid}/cmdline: {proc_err}")
+                
+                # Read stdout redirection
+                try:
+                    fd1_path = os.readlink(f"/proc/{pid}/fd/1")
+                    if fd1_path:
+                        active_train_log = fd1_path
+                        log(f"🔎 Extracted active train log file: {active_train_log}")
+                except Exception as fd_err:
+                    log(f"⚠️ Could not resolve stdout link /proc/{pid}/fd/1: {fd_err}")
+                
                 log(f"🛑 RAM SAFEGUARD: Found running base training process (PID {pid}).")
                 log("   Sending SIGTERM for clean shutdown (saves checkpoint)...")
                 subprocess.run(["kill", "-15", str(pid)])  # FIX: SIGTERM first (safe)
@@ -246,11 +271,35 @@ finally:
     if not is_running:
         log("🚀 SELF-HEALING WATCHDOG: Restarting the base training orchestrator train.py in background...")
         try:
+            if active_train_cmd:
+                launch_args = list(active_train_cmd)
+                train_idx = next((idx for idx, arg in enumerate(launch_args) if "train.py" in arg), None)
+                if train_idx is not None:
+                    train_script = launch_args[train_idx]
+                    script_args = launch_args[train_idx + 1:]
+                else:
+                    train_script = "/var/www/html/ML/kat/train.py"
+                    script_args = ["--model", "hydra", "--epochs", "300", "--batch", "32", "--candles", "120000", "--timeframe", "15m", "--symbol", "BTCUSD", "--resume"]
+            else:
+                train_script = "/var/www/html/ML/kat/train.py"
+                script_args = ["--model", "hydra", "--epochs", "300", "--batch", "32", "--candles", "120000", "--timeframe", "15m", "--symbol", "BTCUSD", "--resume"]
+
+            if active_train_log:
+                log_path = active_train_log
+            else:
+                log_path = f"/var/www/html/ML/kat/logs/hydra_train_{time.strftime('%Y%m%d_%H%M%S')}.log"
+
+            args_str = " ".join(script_args)
+            if "--resume" not in args_str:
+                args_str += " --resume"
+
+            launch_cmd = (
+                f"nohup /root/miniconda3/bin/python -u {train_script} {args_str} "
+                f"> {log_path} 2>&1 &"
+            )
+            log(f"   Executing: {launch_cmd}")
             subprocess.Popen(
-                "nohup /root/miniconda3/bin/python -u /var/www/html/ML/kat/train.py "
-                "--model hydra --epochs 300 --batch 32 --candles 120000 "
-                "--timeframe 15m --symbol BTCUSD --resume "
-                "> /var/www/html/ML/kat/logs/hydra_train_$(date +%Y%m%d_%H%M%S).log 2>&1 &",
+                launch_cmd,
                 shell=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL

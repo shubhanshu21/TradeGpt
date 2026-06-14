@@ -47,31 +47,31 @@ def visualize_performance(model_path: str, timeframe: str = "15m"):
     
     # 4. Generate Windows and Predict
     num_windows = 150
-    Xs = np.array([prepare_dls_window(i) for i in range(len(data) - ctx)])
+    valid_range = len(data) - ctx - 15
+    Xs = np.array([prepare_dls_window(i) for i in range(valid_range)])
     Xs = Xs[-num_windows:]
     
     print(f"🔬 Generating {len(Xs)} predictions...")
     out = model.predict(Xs, verbose=0, batch_size=16)
     preds = out[0] # (N, 16, 3)
     
-    # 5. Extract Targets (Terminal 15-step)
-    y_true_usd = df_feat["close"].values[-(num_windows):]
-    
-    # Prediction logic: entry + (scaled_return * entry_std)
+    # 5. Extract Targets (Terminal 15-step) aligned with prediction timesteps
     y_pred_usd = []
+    y_true_usd = []
     for i in range(num_windows):
-        idx = len(data) - num_windows + i - ctx
+        idx = valid_range - num_windows + i
         x_raw = data[idx : idx + ctx]
         _, l_mean, l_std = apply_dls(x_raw)
         
-        entry_p = df_feat['close'].iloc[idx + ctx - 1]
         pred_scaled_ret = preds[i, -1, 0] # terminal return
         
         # Denormalize correctly: raw = (scaled * std) + mean
         close_idx = features.index('close')
         y_pred_usd.append((pred_scaled_ret * l_std[close_idx]) + l_mean[close_idx])
+        y_true_usd.append(df_feat['close'].iloc[idx + ctx + 14])
     
     y_pred_usd = np.array(y_pred_usd)
+    y_true_usd = np.array(y_true_usd)
     
     print(f"📊 Crafting HIGH-RESOLUTION ZOOM (Last 150 Cycles)...")
     plt.figure(figsize=(16, 8))

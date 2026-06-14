@@ -142,8 +142,8 @@ class MissionControl(keras.callbacks.Callback):
                 # ── V11.2: Neural De-Scaling Patch ──────────────────────────
                 traj_usd    = (traj_scaled * close_stds) + close_means
                 
-                # Normalize certainty for bench (80-100% range)
-                c_pct = (certs - certs.min()) / (certs.max() - certs.min() + 1e-9) * 100
+                # Use raw certainty percentage (no min-max relative scaling) to match live/backtest logic
+                c_pct = certs * 100
                 
                 from config.sovereign_config import INITIAL_WALLET_USD
                 roi_data = {"tiers": {}, "last_update": ts, "note": f"FEE GATE: {fee_rate*100:.2f}%"}

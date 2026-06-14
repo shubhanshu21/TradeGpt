@@ -20,8 +20,10 @@ from exchange.fetch_data import fetch_live_kat_data
 from data.preprocess import build_feature_cols, compute_indicators, apply_dls
 
 def evaluate_today():
+    today_dt = datetime.now(timezone.utc)
+    today_str = today_dt.strftime("%B %d, %Y").upper()
     print("=" * 60)
-    print("🔮 EVALUATING ACTIVE BRAIN ON TODAY'S LIVE DATA (MAY 19, 2026)")
+    print(f"🔮 EVALUATING ACTIVE BRAIN ON TODAY'S LIVE DATA ({today_str})")
     print("=" * 60)
 
     # 1. Load the absolute latest trained epoch checkpoint
@@ -49,7 +51,7 @@ def evaluate_today():
 
     # 2. Fetch candles covering today
     # 24 hours * 4 candles = 96 candles + CTX_WIN + FORECAST = ~250 candles
-    print("\n📡 Fetching live market stream for May 19 session...")
+    print(f"\n📡 Fetching live market stream for {today_dt.strftime('%B %d')} session...")
     df = fetch_live_kat_data(symbol="BTCUSD", n_candles=250, timeframe="15m")
     if df is None or len(df) == 0:
         print("❌ Failed to fetch candles.")
@@ -60,9 +62,9 @@ def evaluate_today():
     data = df[features].values.astype("float32")
     closes = df['close'].values
 
-    # Determine index where today starts (2026-05-19 00:00:00 UTC)
+    # Determine index where today starts (Midnight UTC)
     df['timestamp'] = pd.to_datetime(df['timestamp'])
-    today_start = datetime(2026, 5, 19, 0, 0, 0, tzinfo=timezone.utc)
+    today_start = today_dt.replace(hour=0, minute=0, second=0, microsecond=0)
     
     # Find indices that fall inside today
     today_indices = df[df['timestamp'] >= today_start].index.tolist()

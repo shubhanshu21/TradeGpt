@@ -40,20 +40,22 @@ def run_flash():
         X_in = apply_dls(data[i - ctx : i])[0].reshape(1, ctx, n_feat)
         out = model(X_in, training=False)
         
-        # Predicted direction at T+15 relative to anchor (T+0)
+        # Predicted direction: mean trajectory move relative to anchor (matches training logic)
         pred_vals = out[0].numpy()[0]
-        p_anchor = pred_vals[0, 0]   # z-score at anchor step
-        p_15     = pred_vals[15, 0]  # z-score at step 15
-        preds.append(np.sign(p_15 - p_anchor))  # direction of change
+        p_anchor = pred_vals[0, 0]
+        p_future = pred_vals[1:, 0]
+        predicted_move = np.mean(p_future - p_anchor)
+        preds.append(1 if predicted_move > 0 else -1)
         
-        # Certainty (Channel 1)
-        cert_val = np.mean(out[1].numpy())
+        # Absolute Certainty (scaled 0-100%)
+        cert_val = np.mean(out[1].numpy()) * 100.0
         certainties.append(cert_val)
         
-        # Actual direction at T+15 from raw (unscaled) close prices
-        v_now = data[i,      close_idx]
-        v_15  = data[i + 15, close_idx]
-        actuals.append(np.sign(v_15 - v_now))
+        # Actual direction: mean of next 15 candles relative to entry close (trajectory mean alignment)
+        actual_now = data[i - 1, close_idx]
+        actual_next_15 = data[i : i + 15, close_idx]
+        actual_mean_future = np.mean(actual_next_15)
+        actuals.append(1 if actual_mean_future > actual_now else -1)
         
         if len(preds) % 20 == 0:
             print(f"   Step {len(preds):3d}...")
@@ -62,15 +64,11 @@ def run_flash():
     actuals     = np.array(actuals)
     certainties = np.array(certainties)
     
-    # Normalize certainty 0-100
-    c_min, c_max = certainties.min(), certainties.max()
-    c_pct = (certainties - c_min) / (c_max - c_min + 1e-9) * 100
-    
     print(f"\n======================================")
     print(f"📊 FLASH RESULTS (Filtered by Certainty)")
     print(f"--------------------------------------")
     for th in [0, 50, 80, 90]:
-        mask = c_pct >= th
+        mask = certainties >= th
         hits = (preds[mask] == actuals[mask])
         acc  = np.mean(hits) * 100 if len(hits) > 0 else 0
         print(f"🎯 Threshold {th}% | Acc: {acc:6.2f}% | Trades: {len(hits)}")
