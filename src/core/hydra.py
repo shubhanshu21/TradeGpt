@@ -1,16 +1,24 @@
 """
-HYDRA SOVEREIGN KRAKEN (V10.7) - DEEP PREDATOR PHASE 3 ⚓🚀⚡
+HYDRA SOVEREIGN KRAKEN (V11.0) - DEEP PREDATOR PHASE 3 ⚓🚀⚡
 =================================================================
-Architecture: MLA + RoPE + MoE-256 (top-4) + DLS + SwiGLU + Dropout
-Upgrades over V10.6:
-  1. RoPE Positional Encoding  — time-aware attention (no more temporal blindness)
-  2. Dropout(0.1) in HydraBlock — eliminates memorization, forces robust patterns
-  3. Volatility-Weighted Loss   — penalizes errors on high-certainty setups more
-  4. Label Smoothing(0.1)       — prevents overconfidence in reasoning head
-  5. Gradient Clipping(1.0)     — stabilizes MoE training spikes
-  6. Input Noise Augmentation   — simulates real-world microstructure noise
-  7. top_k=4 experts            — richer gradient flow vs top_k=2
-  8. Cosine LR Decay 5e-6→5e-7 — prevents the expert fragmentation seen in Epoch 9+
+Architecture: causal softmax attention (QK-Norm + RoPE, latent KV bottleneck)
++ MoE-256 (top-4 routed + shared expert) + DLS + expanded SwiGLU + Dropout.
+V11.0 changes over V10.7:
+  1. Real causal softmax attention — replaces the earlier ELU+1 linear-attention
+     approximation. Softmax is what GPT/DeepSeek actually use; linear attention
+     trades sharpness for O(T) cost, which isn't needed at this 120-step window.
+  2. QK-Norm on Q/K before RoPE — current (2024-2025) attention stability practice.
+  3. SwiGLU now expands to 2x d_model before gating/projecting down, instead of
+     staying at d_model — real LLaMA/Gemma SwiGLU blocks expand ~2.7-4x; this
+     was previously a capacity bottleneck relative to the architecture it's modeled on.
+  4. Shared-expert path in GatedMoE (DeepSeekMoE-style) — always-active capacity
+     alongside the top-4 routed experts, so routed experts don't relearn common
+     patterns from scratch.
+  5. Linear LR warmup before cosine decay — cheap insurance against early MoE
+     routing instability (this model already uses Pre-Norm, which reduces but
+     doesn't eliminate the need for this).
+  Prior V10.7 upgrades retained: RoPE, Dropout(0.1), Volatility-Weighted Loss,
+  Label Smoothing(0.1), Gradient Clipping, Input Noise Augmentation, top-4 routing.
 """
 
 import os
@@ -53,26 +61,74 @@ def init_kraken_hardware():
 
 
 
+@keras.saving.register_keras_serializable(package="KAT")
+class WarmupCosineDecay(keras.optimizers.schedules.LearningRateSchedule):
+    """
+    Linear LR warmup for `warmup_steps`, then hands off to cosine decay.
+    Standard practice in GPT/DeepSeek-style training recipes as cheap insurance
+    against early-training instability (MoE routing in particular tends to be
+    unstable in the first steps). This model already uses Pre-Norm (RMSNorm
+    before attention/MoE), which reduces — but doesn't eliminate — the need
+    for this, so it's kept short rather than a large fraction of training.
+    """
+    def __init__(self, initial_learning_rate, decay_steps, warmup_steps, alpha=0.1, **kwargs):
+        super().__init__(**kwargs)
+        self.initial_learning_rate = initial_learning_rate
+        self.decay_steps = decay_steps
+        self.warmup_steps = max(1, warmup_steps)
+        self.alpha = alpha
+        self.cosine = keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=initial_learning_rate,
+            decay_steps=max(1, decay_steps - warmup_steps),
+            alpha=alpha)
+
+    def __call__(self, step):
+        step = tf.cast(step, tf.float32)
+        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
+        warmup_lr = self.initial_learning_rate * (step / warmup_steps)
+        decayed_lr = self.cosine(step - warmup_steps)
+        return tf.where(step < warmup_steps, warmup_lr, decayed_lr)
+
+    def get_config(self):
+        return {
+            "initial_learning_rate": self.initial_learning_rate,
+            "decay_steps": self.decay_steps,
+            "warmup_steps": self.warmup_steps,
+            "alpha": self.alpha,
+        }
+
+
 # ── Building Blocks ───────────────────────────────────────────────────────────
 
 @keras.saving.register_keras_serializable(package="KAT")
 class SwiGLU(layers.Layer):
-    """SwiGLU Activation (Gemma/Llama DNA). Gated feed-forward."""
-    def __init__(self, **kwargs):
+    """
+    SwiGLU Activation (Gemma/Llama DNA). Gated feed-forward.
+    Expands to `expansion * d_model` before gating then projects back down —
+    real LLaMA/Gemma SwiGLU blocks expand ~2.7-4x; without expansion the FFN
+    sublayer has much less capacity than the architecture it's modeled on.
+    """
+    def __init__(self, expansion=2, **kwargs):
         super().__init__(**kwargs)
+        self.expansion = expansion
 
     def build(self, input_shape):
         self.d_model = input_shape[-1]
-        self.w1 = layers.Dense(self.d_model)
-        self.w2 = layers.Dense(self.d_model)
+        hidden = int(self.d_model * self.expansion)
+        self.w1 = layers.Dense(hidden)
+        self.w2 = layers.Dense(hidden)
+        self.w3 = layers.Dense(self.d_model)
 
     def call(self, x):
-        # SwiGLU: w1(x) * sigmoid(w1(x)) * w2(x) - both gates from same projection input
+        # SwiGLU: w3(w1(x) * sigmoid(w1(x)) * w2(x)) - gated, then projected back down
         w1_x = self.w1(x)
-        return w1_x * ops.sigmoid(w1_x) * self.w2(x)
+        gated = w1_x * ops.sigmoid(w1_x) * self.w2(x)
+        return self.w3(gated)
 
     def get_config(self):
-        return super().get_config()
+        config = super().get_config()
+        config.update({"expansion": self.expansion})
+        return config
 
 
 @keras.saving.register_keras_serializable(package="KAT")
@@ -132,23 +188,35 @@ class TurboQuant(layers.Layer):
 @keras.saving.register_keras_serializable(package="KAT")
 class MLALayer(layers.Layer):
     """
-    V10.7: Multi-Head Latent Attention with RoPE (DeepSeek-V3 + LLaMA DNA).
-    - Compresses KV into a latent bottleneck (90% memory saving).
+    V11.0: Latent-bottleneck attention with RoPE and real causal softmax attention.
+    - Compresses KV into a latent bottleneck (90% memory saving in the K/V projections).
     - RoPE applied to Q & K for temporal position awareness.
-    - Causal linear attention via prefix cumulative sums (no lookahead data leakage).
+    - Causal SCALED DOT-PRODUCT (softmax) attention with an explicit mask — replaces
+      the earlier ELU+1 linear-attention approximation. Linear attention trades away
+      sharp, selective attention for O(T) cost, which matters for long sequences but
+      not for a 120-step window (softmax here is a cheap O(T^2) = 14,400 ops/head).
+      Softmax attention is also what GPT/DeepSeek actually use, unlike the linear
+      approximation this replaces.
+    - Attention-probability dropout added (previously only present after the MoE).
     """
-    def __init__(self, d_model=128, n_heads=8, kv_lora_rank=32, **kwargs):
+    def __init__(self, d_model=128, n_heads=8, kv_lora_rank=32, dropout_rate=0.1, **kwargs):
         super().__init__(**kwargs)
         self.d_model = d_model
         self.n_heads = n_heads
         self.head_dim = d_model // n_heads
         self.kv_lora_rank = kv_lora_rank
+        self.dropout_rate = dropout_rate
 
     def build(self, input_shape):
         self.q_proj      = layers.Dense(self.d_model)
         self.kv_down_proj = layers.Dense(self.kv_lora_rank)
         self.kv_up_proj  = layers.Dense(self.d_model * 2)
         self.out_proj    = layers.Dense(self.d_model)
+        self.attn_dropout = layers.Dropout(self.dropout_rate)
+        # QK-Norm: normalize Q/K per-head before RoPE — current (2024-2025) stability
+        # practice for softmax attention, keeps attention logits well-scaled.
+        self.q_norm = RMSNorm()
+        self.k_norm = RMSNorm()
 
         # Precompute RoPE cos/sin as non-trainable weights to avoid dynamic tracing
         T = input_shape[1] if input_shape[1] is not None else CONTEXT_WINDOW
@@ -171,13 +239,22 @@ class MLALayer(layers.Layer):
             trainable=False
         )
 
+        # Causal mask (T, T): 1.0 where key position j is in the future of query i
+        idx = np.arange(T)
+        causal_val = (idx[None, :] > idx[:, None]).astype("float32")
+        self.causal_bias = self.add_weight(
+            name="causal_bias", shape=causal_val.shape,
+            initializer=keras.initializers.Constant(causal_val),
+            trainable=False
+        )
+
     def _apply_rope(self, x):
         """Rotary Positional Embedding applied to (B, H, T, D)."""
         x1, x2 = ops.split(x, 2, axis=-1)
         return ops.concatenate(
             [x1 * self.cos_f - x2 * self.sin_f, x1 * self.sin_f + x2 * self.cos_f], axis=-1)
 
-    def call(self, x):
+    def call(self, x, training=None):
         B, T = ops.shape(x)[0], ops.shape(x)[1]
 
         # Queries
@@ -194,26 +271,22 @@ class MLALayer(layers.Layer):
         k = ops.transpose(k, (0, 2, 1, 3))
         v = ops.transpose(v, (0, 2, 1, 3))
 
+        # QK-Norm before RoPE for stable attention-score scale
+        q = self.q_norm(q)
+        k = self.k_norm(k)
+
         # Apply RoPE to Q and K for temporal awareness
         q = self._apply_rope(q)
         k = self._apply_rope(k)
 
-        # Linear attention kernel (ELU + 1 approximation)
-        q = ops.elu(q) + 1.0
-        k = ops.elu(k) + 1.0
+        # Causal scaled dot-product softmax attention
+        scale  = 1.0 / ops.sqrt(ops.cast(self.head_dim, "float32"))
+        scores = ops.matmul(q, ops.transpose(k, (0, 1, 3, 2))) * scale  # (B, H, T, T)
+        scores = scores - self.causal_bias * 1e9
+        attn   = ops.softmax(scores, axis=-1)
+        attn   = self.attn_dropout(attn, training=training)
 
-        # Causal linear attention kernel via prefix sum (no lookahead data leakage)
-        # Compute outer product of k and v for each timestep: (B, H, T, D, D)
-        kv_prod = ops.expand_dims(k, axis=-1) * ops.expand_dims(v, axis=-2)
-        causal_context = ops.cumsum(kv_prod, axis=2)  # Cumulative sum over timesteps T
-        
-        # Multiply q with causal context: (B, H, T, 1, D) @ (B, H, T, D, D) -> (B, H, T, 1, D)
-        out = ops.squeeze(ops.matmul(ops.expand_dims(q, axis=-2), causal_context), axis=-2)  # (B, H, T, D)
-
-        # Normalization with causal key sum
-        k_cumsum = ops.cumsum(k, axis=2)  # (B, H, T, D)
-        z = 1.0 / (ops.sum(q * k_cumsum, axis=-1, keepdims=True) + 1e-6)  # (B, H, T, 1)
-        out = out * z
+        out = ops.matmul(attn, v)  # (B, H, T, D)
 
         out = ops.transpose(out, (0, 2, 1, 3))
         return self.out_proj(ops.reshape(out, (B, T, self.d_model)))
@@ -223,14 +296,21 @@ class MLALayer(layers.Layer):
         config.update({
             "d_model": self.d_model,
             "n_heads": self.n_heads,
-            "kv_lora_rank": self.kv_lora_rank
+            "kv_lora_rank": self.kv_lora_rank,
+            "dropout_rate": self.dropout_rate
         })
         return config
 
 
 @keras.saving.register_keras_serializable(package="KAT")
 class GatedMoE(layers.Layer):
-    """V10.7: 256-Expert Mixture-of-Experts with top-4 routing and memory-efficient dynamic dispatch."""
+    """
+    V11.0: DeepSeekMoE-style Mixture-of-Experts — routed experts (top-4 of 256,
+    per-token specialized) plus a small always-active shared-expert path that
+    captures common patterns every token needs, so the routed experts don't
+    have to keep relearning them. Memory-efficient dynamic dispatch for the
+    routed side (gathers only the active K=4 expert weight matrices per token).
+    """
     def __init__(self, d_model=128, n_experts=256, **kwargs):
         super().__init__(**kwargs)
         self.d_model   = d_model
@@ -242,6 +322,9 @@ class GatedMoE(layers.Layer):
             shape=(self.n_experts, self.d_model, self.d_model),
             initializer="glorot_uniform", name="expert_weights")
         self.swiglu = SwiGLU()
+        # Shared expert: always active for every token, no routing.
+        self.shared_dense  = layers.Dense(self.d_model)
+        self.shared_swiglu = SwiGLU()
 
     def call(self, x, context=None):
         route_input = context if context is not None else x
@@ -264,10 +347,15 @@ class GatedMoE(layers.Layer):
 
         # Weighted average of active expert outputs before SwiGLU
         weighted_inputs = ops.sum(expert_outputs * ops.expand_dims(top_k_weights, axis=-1), axis=2)
-        weighted_avg = self.swiglu(weighted_inputs)
+        routed_out = self.swiglu(weighted_inputs)
 
-        # Convergence Consensus signal
-        diff_sq       = ops.square(expert_outputs - ops.expand_dims(weighted_avg, axis=2))
+        # Shared expert path — always active, adds common-pattern capacity
+        # that doesn't have to compete for routing gradient.
+        shared_out = self.shared_swiglu(self.shared_dense(x))
+        weighted_avg = routed_out + shared_out
+
+        # Convergence Consensus signal (routed experts only — measures routing agreement)
+        diff_sq       = ops.square(expert_outputs - ops.expand_dims(routed_out, axis=2))
         weighted_var  = ops.sum(diff_sq * ops.expand_dims(top_k_weights, axis=-1), axis=2)
         consensus     = ops.exp(-ops.mean(weighted_var, axis=-1))
 
@@ -307,7 +395,7 @@ class HydraBlock(layers.Layer):
 
     def call(self, x, training=None, context=None):
         # Attention path with TurboQuant stabilization
-        attn_out = self.tq(self.attn(self.norm1(x)))
+        attn_out = self.tq(self.attn(self.norm1(x), training=training))
         x = x + self.swiglu(attn_out)
 
         # MoE path with dropout regularization
@@ -505,10 +593,11 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
         inputs, [preds, avg_consensus, reasoning],
         name="sovereign_kraken_v10_7")
 
-    # Cosine Decay LR: 5e-6 → 5e-7 over 10,000 steps
-    lr_schedule = keras.optimizers.schedules.CosineDecay(
+    # Linear warmup (500 steps) into Cosine Decay LR: 5e-6 → 5e-7 over 10,000 steps
+    lr_schedule = WarmupCosineDecay(
         initial_learning_rate=5e-6,
         decay_steps=10000,
+        warmup_steps=500,
         alpha=0.1   # floor = 5e-7
     )
 

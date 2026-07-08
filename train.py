@@ -22,7 +22,7 @@ LOG_DIR  = ROOT / "logs"
 
 import sys
 sys.path.insert(0, str(ROOT / "src"))
-from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetric, SovereignAccuracy, SovereignLoss, certainty_loss
+from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetric, SovereignAccuracy, SovereignLoss, certainty_loss, WarmupCosineDecay
 from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
 from exchange.fetch_data import fetch_live_kat_data
 import glob as _glob
@@ -210,10 +210,13 @@ def train_kraken(args):
         return unweighted * sample_weights
 
     # Rebuild LR schedule so cosine decay spans the full training run instead of
-    # hitting its floor at epoch ~4 (decay_steps=10000 << 300*2996 total steps)
-    full_lr_schedule = keras.optimizers.schedules.CosineDecay(
+    # hitting its floor at epoch ~4 (decay_steps=10000 << 300*2996 total steps).
+    # Linear warmup over the first epoch's worth of steps as cheap insurance
+    # against early MoE routing instability.
+    full_lr_schedule = WarmupCosineDecay(
         initial_learning_rate=5e-6,
         decay_steps=EPOCHS * steps_tr,
+        warmup_steps=steps_tr,
         alpha=0.1   # floor = 5e-7
     )
 
