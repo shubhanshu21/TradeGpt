@@ -359,6 +359,19 @@ def run_pilot():
                 log(f"🛑 REASONING: {LABELS[reasoning]} — Potential fee loss. HOLDING", C_YELLOW)
                 time.sleep(SLEEP_S); continue
 
+            # ── Sniper Gate 2b: Direction Agreement ───────────────────────────
+            # The reasoning head (viability classifier) and the prediction head
+            # (price trajectory) are trained independently and can disagree on
+            # which way to go. Only trade when both heads point the same way —
+            # otherwise the "reasoning" gate above is meaningless.
+            reasoning_dir = 1 if reasoning == 0 else -1  # 0=LONG, 1=SHORT
+            price_dir = 1 if mean_price > 0 else (-1 if mean_price < 0 else 0)
+            if reasoning_dir != price_dir:
+                price_dir_str = "UP" if price_dir > 0 else "DOWN" if price_dir < 0 else "FLAT"
+                log(f"🔀 DIRECTION MISMATCH: reasoning says {LABELS[reasoning]} but price trajectory "
+                    f"points {price_dir_str} — HOLDING", C_YELLOW)
+                time.sleep(SLEEP_S); continue
+
             # ── Sniper Gate 3: Fee Protection (Swing Size) ────────────────────
             if est_swing < dyn_min_swing:
                 log(f"📉 SWING TOO SMALL (${est_swing:.2f} < ${dyn_min_swing:.0f}) — FEES WOULD EAT PROFIT", C_YELLOW)

@@ -9,7 +9,6 @@ SOVEREIGN KRAKEN TRAINING ORCHESTRATOR (V10.7 — Predator) ⚓🚀⚡
 """
 
 import os, argparse, gc, glob, time
-from datetime import datetime
 import numpy as np
 import tensorflow as tf
 import keras
@@ -27,7 +26,7 @@ from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetr
 from data.preprocess import build_dataset_streaming, build_feature_cols, KATScaler
 from exchange.fetch_data import fetch_live_kat_data
 import glob as _glob
-from config.sovereign_config import FEE_RATE, INITIAL_WALLET_USD, POSITION_SIZE_PCT, CONTEXT_WINDOW, FORECAST_STEPS
+from config.sovereign_config import FEE_RATE, POSITION_SIZE_PCT, CONTEXT_WINDOW, FORECAST_STEPS
 
 
 class CheckpointPruner(keras.callbacks.Callback):
@@ -80,186 +79,55 @@ class EpochCheckpointSaver(keras.callbacks.Callback):
                 print(f"\n⚠️ Warning: Failed to save epoch checkpoint: {e}")
 
 
-class MissionControl(keras.callbacks.Callback):
+class EdgeTracker(keras.callbacks.Callback):
     """
-    Early-Warning Diagnostic System (V11.0: Real-time console reports).
+    Statistical significance tracker for directional accuracy.
+
+    A raw val_prediction_dir_acc reading is noisy: with ~12k validation
+    samples, the 95% confidence interval on a ~51% reading is roughly
+    +/-0.9 points, so epoch-to-epoch swings of a point or two (which this
+    model has shown before) can be pure noise, not real learning. This
+    computes a Wilson score interval each epoch so "is there a real edge
+    yet" can be answered with statistics instead of eyeballing a number,
+    and logs it to a clean CSV separate from the raw step-by-step log.
     """
-    def on_train_begin(self, logs=None):
-        print("\n" + "="*50)
-        print(f"{'Time':<10} | {'Epoch':<5} | {'Val_Acc':<8} | {'Certainty':<10} | {'ROI':<10} | {'Status'}")
-        print("-" * 50)
-
-    def _update_dashboard(self, logs=None):
-        logs = logs or {}
-        # Fetch current training metrics if available
-        v_acc = logs.get("prediction_dir_acc", 0.0)
-        cert  = logs.get("certainty_certainty", 0.0)
-        ts    = datetime.now().strftime("%H:%M:%S")
-        
-        net_80 = 0.0
-        # ── Automated Sovereign Benchmarking (V11.1) ────────────────────────
-        try:
-            import json
-            from data.preprocess import compute_indicators, build_feature_cols, apply_dls
-            from exchange.fetch_data import fetch_live_kat_data
-            
-            # Access fee_rate from args if possible, else default
-            fee_rate = getattr(self, 'fee_rate', 0.0012)
-            
-            # 1. Fetch live slice for bench (Last 500 candles)
-            df_raw = fetch_live_kat_data('BTCUSD', 500, '15m')
-            if df_raw is not None:
-                df = compute_indicators(df_raw)
-                features = build_feature_cols()
-                data = df[features].values.astype('float32')
-                raw_prices = df['close'].values
-                
-                ctx = 120; f = 15
-                # Slice indices for a quick backtest
-                indices = range(len(df) - ctx - f - 100, len(df) - ctx - f)
-                t_close = features.index('close')
-
-                # Cache DLS results to eliminate redundant duplicate calculations
-                X_list = []
-                means_list = []
-                stds_list = []
-                for i in indices:
-                    x_s, local_mean, local_std = apply_dls(data[i:i+ctx])
-                    X_list.append(x_s)
-                    means_list.append(local_mean[t_close])
-                    stds_list.append(local_std[t_close])
-
-                X = np.array(X_list)
-                close_means = np.array(means_list)
-                close_stds  = np.array(stds_list)
-                usd_diffs = np.array([raw_prices[i + ctx + f - 1] - raw_prices[i + ctx - 1] for i in indices])
-                
-                # Inference using CURRENT weights
-                outputs = self.model(X, training=False)
-                traj_scaled = outputs[0].numpy()[:, -1, 0] # Scaled price at end
-                certs       = np.mean(outputs[1].numpy(), axis=1) # Avg certainty
-                
-                # ── V11.2: Neural De-Scaling Patch ──────────────────────────
-                traj_usd    = (traj_scaled * close_stds) + close_means
-                
-                # Use raw certainty percentage (no min-max relative scaling) to match live/backtest logic
-                c_pct = certs * 100
-                
-                from config.sovereign_config import INITIAL_WALLET_USD
-                roi_data = {"tiers": {}, "last_update": ts, "note": f"FEE GATE: {fee_rate*100:.2f}%"}
-                pos_size = INITIAL_WALLET_USD
-                
-                # ── V11.6: Sovereign Recapitalization Filter ─────────────────
-                # NOTE: sim_reset.txt is ONLY used to filter live exchange fills (serve.py).
-                # The training simulation always runs against the full historical dataset.
-                for th in [80, 85, 90]:
-                    mask = c_pct >= th
-                    n_t  = int(mask.sum())
-                    if n_t > 0:
-                        e_p = raw_prices[np.array(indices)[mask] + ctx - 1]
-                        directions = np.sign(traj_usd[mask] - e_p)
-                        gross = float((directions * (usd_diffs[mask] / e_p) * pos_size).sum())
-                        fees = float(n_t * (pos_size * fee_rate))
-                        roi_data["tiers"][str(th)] = {"trades": n_t, "net": gross - fees}
-                        if th == 80: net_80 = gross - fees
-                
-                # 3. Save detailed recent trades for dashboard feed
-                recent_trades = []
-                mask80 = c_pct >= 80
-                if mask80.any():
-                    t_indices     = np.array(indices)[mask80]
-                    t_traj_usd    = traj_usd[mask80]
-                    t_usd         = usd_diffs[mask80]
-                    t_close_means = close_means[mask80]
-                    t_close_stds  = close_stds[mask80]
-                    t_traj_scaled = traj_scaled[mask80]
-                    for i in range(max(0, len(t_indices)-500), len(t_indices)):
-                        idx = t_indices[i]
-                        entry_p = raw_prices[idx + ctx - 1]
-                        price_move_pct = (t_usd[i] / entry_p)
-                        # V11.5: Tactical Deadzone Calibration
-                        last_scaled = (entry_p - t_close_means[i]) / t_close_stds[i]
-                        prediction_delta = t_traj_scaled[i] - last_scaled
-                        
-                        # Only strike if the predicted move is greater than 0.1% volatility
-                        if abs(prediction_delta) < 0.001: 
-                            side = "HOLD"
-                        else:
-                            side = "LONG" if prediction_delta > 0 else "SHORT"
-                        
-                        if side == "HOLD": continue
-                        
-                        # NOTE: No reset filter applied to training simulation feed
-                        
-                        # Bug Fix #1: Invert P&L for SHORT trades
-                        raw_ret = price_move_pct if side == "LONG" else -price_move_pct
-                        net_ret = raw_ret - fee_rate
-                        # Bug Fix #2: Deterministic Strategist (seeded by timestamp+entry)
-                        prefixes = ["Neon", "Volt", "Cipher", "Ghost", "Logic", "Vector", "Pulse", "Neural", "Cyber", "Quant", "Delta", "Gamma", "Alpha", "Zenith", "Apex", "Flow"]
-                        suffixes = ["Hunter", "Scout", "Tracker", "Oracle", "Sentinel", "Core", "Node", "Gate", "Shell", "Link", "Edge", "Vortex", "Matrix", "System", "Prime", "Zero"]
-                        import random, hashlib
-                        _seed_str = f"{df.index[idx + ctx - 1].isoformat()}{entry_p}"
-                        _seed = int(hashlib.md5(_seed_str.encode()).hexdigest(), 16)
-                        _rng = random.Random(_seed)
-                        expert = f"{_rng.choice(prefixes)}-{_rng.choice(suffixes)} #{_rng.randint(0, 255):03d}"
-
-                        recent_trades.append({
-                            "timestamp": df.index[idx + ctx - 1].isoformat(),
-                            "side": side,
-                            "entry": float(entry_p),
-                            "net_pct": float(net_ret * 100),
-                            "expert": expert
-                        })
-                
-                # ── Expert Fight: Live 256-Node Heatmap (V11.2 Real-Time) ──
-                X_live = X[-1:] 
-                outputs_live = self.model(X_live, training=False)
-                # Channel 1 is the sequence certainty distribution (length 120)
-                cert_map = outputs_live[1].numpy()[0]
-                # Normalize 0-1 for the heatmap visualization
-                c_min, c_max = cert_map.min(), cert_map.max()
-                cert_norm = (cert_map - c_min) / (c_max - c_min + 1e-9)
-                
-                # Interpolate 120 elements to 256 elements to match the expected UI dashboard heatmap structure
-                x_old = np.linspace(0, 1, len(cert_norm))
-                x_new = np.linspace(0, 1, 256)
-                cert_norm_256 = np.interp(x_new, x_old, cert_norm)
-
-                roi_data["expert_heatmap"] = cert_norm_256.tolist()
-                
-                # Also keep the histogram for the risk Sentinel
-                hist_bins = [0, 60, 65, 70, 75, 80, 85, 90, 100.1]
-                counts, _ = np.histogram(cert_norm_256 * 100, bins=hist_bins)
-                roi_data["expert_fight"] = counts.tolist()
-
-                with open(ROOT / "logs" / "latest_roi.json", "w") as f_json:
-                    json.dump(roi_data, f_json, indent=4)
-                with open(ROOT / "logs" / "recent_sim_trades.json", "w") as f_trades:
-                    json.dump(recent_trades[::-1], f_trades, indent=4)
-                return net_80
-        except Exception as e:
-            return 0.0
-
-    def on_batch_end(self, batch, logs=None):
-        pass # V12.1: Removed batch-end updates to maximize training velocity
+    def __init__(self, log_path: Path, n_val_samples: int):
+        super().__init__()
+        self.log_path = Path(log_path)
+        self.n = max(1, n_val_samples)
+        self.best_acc = 0.5
+        self.best_epoch = 0
+        if not self.log_path.exists():
+            with open(self.log_path, "w") as f:
+                f.write("epoch,val_dir_acc,ci_low_95,ci_high_95,significant_edge,"
+                        "epochs_since_best,val_loss,train_dir_acc\n")
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        v_acc = logs.get("val_prediction_dir_acc", 0.0)
-        cert  = logs.get("val_certainty_certainty", 0.0)
-        ts    = datetime.now().strftime("%H:%M:%S")
-        
-        # ── V12.2: Live Benchmark every 5 epochs (not every epoch) ─────────────
-        net_roi = 0.0
-        if (epoch + 1) % 5 == 0 or epoch == 0:
-            net_roi = self._update_dashboard(logs) or 0.0
-        
-        status = "⚓ LEARNING"
-        if v_acc >= 0.54: status = "🏛️ SOVEREIGN"
-        elif v_acc >= 0.53: status = "⚡ ALPHA FLOW"
-        
-        roi_str = f"+${net_roi:.2f}" if net_roi >= 0 else f"-${abs(net_roi):.2f}"
-        print(f"{ts:<10} | {epoch+1:<5} | {v_acc:<8.4f} | {cert:<10.3f} | {roi_str:<10} | {status}")
+        p = float(logs.get("val_prediction_dir_acc", 0.5))
+
+        # Wilson score interval — more reliable than a normal approximation
+        # when p sits close to the 0.5 boundary we actually care about.
+        z = 1.959964  # 95% two-sided
+        denom  = 1.0 + (z * z) / self.n
+        center = (p + (z * z) / (2 * self.n)) / denom
+        margin = (z * ((p * (1 - p) / self.n + (z * z) / (4 * self.n ** 2)) ** 0.5)) / denom
+        ci_low, ci_high = center - margin, center + margin
+        significant = ci_low > 0.50
+
+        if p > self.best_acc:
+            self.best_acc, self.best_epoch = p, epoch + 1
+        epochs_since_best = (epoch + 1) - self.best_epoch
+
+        with open(self.log_path, "a") as f:
+            f.write(f"{epoch+1},{p:.4f},{ci_low:.4f},{ci_high:.4f},{significant},"
+                    f"{epochs_since_best},{logs.get('val_loss', 0.0):.4f},"
+                    f"{logs.get('prediction_dir_acc', 0.0):.4f}\n")
+
+        verdict = "✅ STATISTICALLY SIGNIFICANT EDGE" if significant else "— not significant yet (could be noise)"
+        print(f"\n📐 EDGE CHECK | val_dir_acc={p*100:.2f}%  95% CI=[{ci_low*100:.2f}%, {ci_high*100:.2f}%]  "
+              f"{verdict}  | best={self.best_acc*100:.2f}% @ epoch {self.best_epoch} "
+              f"({epochs_since_best} epochs since best)")
 
 
 def train_kraken(args):
@@ -361,7 +229,7 @@ def train_kraken(args):
             "certainty":  certainty_loss,
             "reasoning":  weighted_reasoning_loss
         },
-        loss_weights={"prediction": 1.0, "certainty": 10.0, "reasoning": 5.0},
+        loss_weights={"prediction": 3.0, "certainty": 1.0, "reasoning": 1.0},
         metrics={
             "prediction": [SovereignAccuracy()],
             "certainty":  [CertaintyMetric()]
@@ -382,18 +250,21 @@ def train_kraken(args):
         model.load_weights(str(CKPT_BEST))
 
     # ── 5. Callbacks ──────────────────────────────────────────────────────────
-    mc = MissionControl()
-    mc.fee_rate = args.fee_rate
+    # Monitor the direction-accuracy metric directly rather than total val_loss,
+    # since val_loss is dominated by the certainty/reasoning heads and can keep
+    # "improving" while direction accuracy (the metric that matters for trading)
+    # stays flat.
     callbacks = [
         keras.callbacks.ModelCheckpoint(
-            str(CKPT_BEST), monitor="val_loss",
+            str(CKPT_BEST), monitor="val_prediction_dir_acc", mode="max",
             save_best_only=True, verbose=1),
         EpochCheckpointSaver(ckpt_dir=CKPT_DIR, model_name=args.model, freq=10),  # Save periodic epoch checkpoints natively
         keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=20,  # User requested 20
+            monitor="val_prediction_dir_acc", mode="max", patience=20,
             restore_best_weights=True, verbose=1),
         CheckpointPruner(ckpt_dir=CKPT_DIR, model_name=args.model, keep_n=3),
-        mc,
+        EdgeTracker(log_path=LOG_DIR / "edge_tracker.csv",
+                    n_val_samples=steps_va * BATCH_S * FORECAST),
     ]
 
     # ── 6. Ignite ─────────────────────────────────────────────────────────────

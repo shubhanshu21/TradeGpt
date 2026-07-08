@@ -12,7 +12,7 @@
 
 ## 🧠 What Is This?
 
-**Iron Oracle** is a self-contained, autonomous AI trading engine built for **BTC/USDT perpetual futures** on the **15-minute timeframe**. It trains a deep neural network on 11+ years of historical market data (400,000 candles) and uses it to generate high-conviction trade signals, complete with institutional-grade risk metrics and a live monitoring dashboard.
+**Iron Oracle** is a self-contained, autonomous AI trading engine built for **BTC/USDT perpetual futures** on the **15-minute timeframe**. It trains a deep neural network on ~3.4 years of historical market data (120,000 candles) and uses it to generate high-conviction trade signals, complete with institutional-grade risk metrics and a live monitoring dashboard.
 
 The system is designed for a **CPU server (24GB RAM)** and runs fully autonomously — data fetching, training, simulation, and dashboard serving are all handled automatically.
 
@@ -141,7 +141,7 @@ Market Input (120 candles × 45 features)
 
 | Parameter | Value | Reason |
 |---|---|---|
-| **Candles** | 400,000 (≈11 years) | Maximum historical depth for robust pattern learning |
+| **Candles** | 120,000 (≈3.4 years) | Historical depth actually available in the current data cache |
 | **Timeframe** | 15m | Best signal-to-noise ratio for swing trading |
 | **Context Window** | 120 candles | 30-hour lookback — captures full market sessions |
 | **Forecast Steps** | 15 candles | Predicts next 3h 45m of price trajectory |
@@ -165,7 +165,7 @@ Market Input (120 candles × 45 features)
 ### 1. Start Training (Fresh)
 ```bash
 nohup sudo /root/miniconda3/bin/python -u train.py \
-  --candles 400000 \
+  --candles 120000 \
   --batch 32 \
   > logs/iron_oracle_v11.log 2>&1 &
 ```
@@ -189,7 +189,7 @@ http://<your-server-ip>:5000
 ### 5. Resume Training (After Crash/Reboot)
 ```bash
 nohup sudo /root/miniconda3/bin/python -u train.py \
-  --candles 400000 \
+  --candles 120000 \
   --batch 32 \
   --resume \
   > logs/iron_oracle_v11.log 2>&1 &
@@ -317,7 +317,7 @@ To protect active trade profits and guarantee absolute operational safety from s
 1. **Training is slow on CPU** — Each epoch takes ~13.5 hours at Batch 32. This is normal and by design (precision over speed).
 2. **Do not interrupt training** — The model saves a checkpoint every 10 epochs. If interrupted, use `--resume` to continue from the last checkpoint.
 3. **Dashboard port** — The server runs on **port 5000** by default.
-4. **Data cache** — Historical candles are cached in `data/BTCUSD_15m_history_400000.parquet`. Delete this file to force a fresh fetch.
+4. **Data cache** — Historical candles are cached in `data/BTCUSD_15m_history_master.parquet` (currently 120,000 candles, ~3.4 years). Delete this file to force a fresh fetch.
 5. **Simulation vs Live** — All trade metrics shown on the dashboard are **simulated**. Use `auto_run.py` for live trading only after thorough backtesting.
 
 ---
