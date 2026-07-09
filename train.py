@@ -144,8 +144,8 @@ def train_kraken(args):
     BATCH_S  = args.batch          # 64 — calibrated for 15m resolution
     EPOCHS   = args.epochs
     CANDLES  = args.candles        # 120000 15m candles = ~3.4 years
-    CTX_WIN  = CONTEXT_WINDOW      # Macro patterns
-    FORECAST = FORECAST_STEPS      # Predict trajectory steps
+    CTX_WIN  = args.context_window if args.context_window else CONTEXT_WINDOW
+    FORECAST = args.forecast_steps if args.forecast_steps else FORECAST_STEPS
 
     # ── 1. Fetch / Cache ──────────────────────────────────────────────────────
     DATA_DIR.mkdir(exist_ok=True)
@@ -324,6 +324,10 @@ if __name__ == "__main__":
     p.add_argument("--model",     default="hydra")
     p.add_argument("--batch",     type=int, default=8)
     p.add_argument("--candles",   type=int, default=120000)
+    p.add_argument("--context_window", type=int, default=None,
+                    help="Override CONTEXT_WINDOW candle count (e.g. for non-15m timeframes)")
+    p.add_argument("--forecast_steps", type=int, default=None,
+                    help="Override FORECAST_STEPS candle count (e.g. for non-15m timeframes)")
     p.add_argument("--resume",    action="store_true")
     p.add_argument("--fee_rate",  type=float, default=FEE_RATE)
     args = p.parse_args()
