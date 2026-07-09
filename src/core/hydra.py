@@ -1,9 +1,9 @@
 """
-HYDRA SOVEREIGN KRAKEN (V11.0) - DEEP PREDATOR PHASE 3 ⚓🚀⚡
+HYDRA SOVEREIGN KRAKEN (V12.5) - DEEP PREDATOR PHASE 3 ⚓🚀⚡
 =================================================================
 Architecture: causal softmax attention (QK-Norm + RoPE, latent KV bottleneck)
 + MoE-256 (top-4 routed + shared expert) + DLS + expanded SwiGLU + Dropout.
-V11.0 changes over V10.7:
+V12.5 changes over V10.7:
   1. Real causal softmax attention — replaces the earlier ELU+1 linear-attention
      approximation. Softmax is what GPT/DeepSeek actually use; linear attention
      trades sharpness for O(T) cost, which isn't needed at this 120-step window.
@@ -188,7 +188,7 @@ class TurboQuant(layers.Layer):
 @keras.saving.register_keras_serializable(package="KAT")
 class MLALayer(layers.Layer):
     """
-    V11.0: Latent-bottleneck attention with RoPE and real causal softmax attention.
+    V12.5: Latent-bottleneck attention with RoPE and real causal softmax attention.
     - Compresses KV into a latent bottleneck (90% memory saving in the K/V projections).
     - RoPE applied to Q & K for temporal position awareness.
     - Causal SCALED DOT-PRODUCT (softmax) attention with an explicit mask — replaces
@@ -305,7 +305,7 @@ class MLALayer(layers.Layer):
 @keras.saving.register_keras_serializable(package="KAT")
 class GatedMoE(layers.Layer):
     """
-    V11.0: DeepSeekMoE-style Mixture-of-Experts — routed experts (top-4 of 256,
+    V12.5: DeepSeekMoE-style Mixture-of-Experts — routed experts (top-4 of 256,
     per-token specialized) plus a small always-active shared-expert path that
     captures common patterns every token needs, so the routed experts don't
     have to keep relearning them. Memory-efficient dynamic dispatch for the
@@ -544,7 +544,7 @@ class SovereignAccuracy(keras.metrics.Metric):
 def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FORECAST_STEPS,
                  dropout_rate=0.1, noise_stddev=0.02, vocab_size=128):
     """
-    Build Phase 3 Deep-Predator V11.0.
+    Build Phase 3 Deep-Predator V12.5.
 
     Improvements over V10.6:
       - Gaussian Input Noise layer (noise_stddev=0.02) for augmentation

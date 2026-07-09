@@ -1,10 +1,8 @@
-# ⚓ Iron Oracle V12.4 — Sovereign Kraken Intelligence
-> **Institutional-Grade Autonomous Neural Trading Station | BTC/USDT 15m | 256-Expert MoE Architecture | Fee-Aware Simulation Engine**
+# ⚓ Iron Oracle V12.5 — Sovereign Kraken Intelligence
+> **Institutional-Grade Autonomous Neural Trading Station | BTC/USDT 15m/1h | 256-Expert MoE + GPT-Style Next-Token Prediction | Fee-Aware Simulation Engine**
 
 
 <p align="center">
-  <img src="src/api/static/img/logo.png" width="180px" alt="Iron Oracle Logo">
-  <br>
   <strong>SOVEREIGN NEURAL COMMAND CENTER</strong>
 </p>
 
@@ -12,7 +10,7 @@
 
 ## 🧠 What Is This?
 
-**Iron Oracle** is a self-contained, autonomous AI trading engine built for **BTC/USDT perpetual futures** on the **15-minute timeframe**. It trains a deep neural network on ~3.4 years of historical market data (120,000 candles) and uses it to generate high-conviction trade signals, complete with institutional-grade risk metrics and a live monitoring dashboard.
+**Iron Oracle** is a self-contained, autonomous AI trading engine built for **BTC/USDT perpetual futures**, with multi-timeframe support (15-minute and 1-hour, selectable via `--timeframe`). It trains a deep neural network — combining a GPT-style next-candle-token predictor with a fee-aware trade-viability classifier — on real historical market data and uses it to generate high-conviction trade signals, complete with institutional-grade risk metrics and a multi-path prediction dashboard.
 
 The system is designed for a **CPU server (24GB RAM)** and runs fully autonomously — data fetching, training, simulation, and dashboard serving are all handled automatically.
 
@@ -28,75 +26,103 @@ kat/
 │   ├── config/
 │   │   └── sovereign_config.py     ← Central config (fees, wallet, risk)
 │   ├── core/
-│   │   └── hydra.py                ← Neural model architecture (HYDRA V10.7)
+│   │   └── hydra.py                ← Neural model architecture (HYDRA V12.5)
 │   ├── data/
-│   │   └── preprocess.py           ← 45-feature data pipeline + streaming dataset
+│   │   └── preprocess.py           ← 45-feature data pipeline + return-token vocabulary + streaming dataset
 │   ├── api/
-│   │   ├── serve.py                ← FastAPI dashboard server (port 5000)
-│   │   ├── dashboard.html          ← Live monitoring UI
-│   │   └── static/                 ← Local JS/CSS assets (offline-capable)
+│   │   └── prediction_viewer/      ← Flask dashboard (port 5000): multi-path prediction chart w/ real uncertainty
 │   ├── exchange/
-│   │   └── fetch_data.py           ← Market data fetcher (Delta Exchange)
+│   │   ├── fetch_data.py           ← Market data fetcher (Delta Exchange)
+│   │   └── delta_client.py         ← Delta Exchange REST/order API client
 │   ├── trading/
 │   │   ├── live_trader.py          ← Live trade executor
 │   │   └── risk.py                 ← Risk management engine
 │   └── evaluation/
 │       ├── flash_backtest.py       ← Quick 100-step backtest evaluation
 │       ├── backtest_checkup.py     ← Full 1,000-candle walk-forward backtest
+│       ├── backtest_live_logic.py  ← Replays live_trader.py's exact gate logic against history
 │       └── visualize_backtest.py   ← Denormalized close-price zoom graph generator
 ├── scripts/
 │   ├── certainty_audit.py          ← Real-time certainty distribution timelines
 │   ├── wfa_backtest.py             ← Walk-forward fine-tuning simulator
 │   ├── test_today.py               ← Performance diagnostic for today's market slice
 │   ├── ob_collector.py             ← Background orderbook L2 snapshot collector
+│   ├── bridge_history.py           ← Delta+Binance history bridge (see note below — has a known truncation bug)
 │   └── daily_finetune.py           ← Daily fine-tuning adapter (cron target)
-├── models/                         ← Saved checkpoints (.keras)
+├── models/                         ← Created by training; empty until the first run completes an epoch
+│   ├── hydra_best.keras            ← Best checkpoint (by val_prediction_dir_acc), appears after epoch 1
+│   └── return_vocab.pkl            ← Next-candle-token vocabulary (bin edges/centers), needed for inference
 ├── logs/
 │   ├── iron_oracle_v11.log         ← Live training log
-│   ├── recent_sim_trades.json      ← Simulation trade feed (dashboard)
-│   └── latest_roi.json             ← ROI data per certainty tier
+│   └── edge_tracker.csv            ← Per-epoch statistical significance verdict (Wilson 95% CI on dir_acc)
 └── data/
-    └── BTCUSD_15m_history_*.parquet ← Cached historical candles
+    └── BTCUSD_{15m,1h}_history_master.parquet ← Cached historical candles, per timeframe
 ```
 
 ---
 
-## 🏗️ Neural Architecture (HYDRA V10.7)
+## 🏗️ Neural Architecture (HYDRA V12.5)
 
 ```
-Market Input (120 candles × 45 features)
+Market Input (CTX candles × 45 features)  +  Return-Token Input (CTX candle-return buckets)
+        │                                            │
+   [GaussianNoise(0.02)]                    [Embedding(vocab_size, 128)]
+        │                                            │
+   [Dense → 128] ───────────────────── + ────────────┘
         │
-   [GaussianNoise(0.02)]    ← Input augmentation (training only)
+   [RMSNorm]
         │
-   [Dense → RMSNorm]        ← 45 → 128 embedding
+   ┌────┴──── × 8 ──────────────┐
+   │      HydraBlock V12.5       │
+   │  ┌────────────────────┐    │
+   │  │ QK-Norm + RoPE     │    │  ← Stabilized, time-aware attention
+   │  │ Causal Softmax Attn│    │  ← Real GPT/DeepSeek-style attention (not linear approx)
+   │  │ TurboQuant         │    │  ← INT8-sim quantization stabilizer
+   │  │ GatedMoE-256       │    │  ← 256 routed experts (top-4) + shared expert path
+   │  │ SwiGLU (2x expand) │    │  ← Gated FFN, real hidden-dim expansion
+   │  │ Dropout(0.1)       │    │  ← Prevents expert memorization
+   │  └────────────────────┘    │
+   └─────────────────────────────┘
         │
-   ┌────┴──── × 8 ──────────┐
-   │      HydraBlock V10.7   │
-   │  ┌──────────────────┐   │
-   │  │ MLALayer + RoPE  │   │  ← Temporal-Aware Latent Attention
-   │  │ TurboQuant       │   │  ← INT8-sim quantization stabilizer
-   │  │ GatedMoE-256     │   │  ← 256 experts, top-4 routing
-   │  │ Dropout(0.1)     │   │  ← Prevents expert memorization
-   │  └──────────────────┘   │
-   └─────────────────────────┘
+   RMSNorm (full sequence)
         │
-   GlobalAveragePooling1D
-        │
-   ┌────┼────────────────┐
-   │    │                │
-[Prediction]  [Certainty]  [Reasoning]
- (16×3 traj)  (256 scores)  (4 classes)
+   ┌────┼──────────┬──────────────┐
+   │    │          │              │
+[Prediction] [Certainty] [Reasoning] [Next-Token] (every position — true causal LM head)
+ (16×3 traj)  (256 scores) (4 classes)  (CTX × vocab_size softmax)
 ```
+
+Inference also supports genuine autoregressive generation (`generate_future_tokens`/
+`generate_with_confidence` in `hydra.py`): sample a next-candle token, feed it back in,
+predict the next — with temperature/top-k/top-p sampling and multi-path agreement as a
+real confidence signal (not just a separately-trained certainty head).
 
 ### Key Components:
 | Component | Description |
 |---|---|
-| **MLALayer + RoPE** | Multi-Head Latent Attention with Rotary Positional Embeddings — time-aware |
-| **GatedMoE-256** | 256 expert sub-networks, top-4 routing, entropy load balancing |
+| **Causal Softmax Attention + QK-Norm** | Real GPT/DeepSeek-style attention (replaced an earlier linear-attention approximation) |
+| **Return-Token Vocabulary** | 128-bucket quantile-binned candle-to-candle returns — genuine discrete next-token prediction, not just continuous regression |
+| **GatedMoE-256** | 256 routed expert sub-networks (top-4) + an always-active shared-expert path (DeepSeekMoE-style) |
 | **TurboQuant** | INT8 simulation with orthogonal rotation — quantization-aware training |
 | **SovereignLoss** | Volatility-weighted directional loss — penalizes errors on high-vol moves more |
 | **RMSNorm** | Fast root mean square normalization (LLaMA-style) |
-| **SwiGLU** | Gated activation function (Gemma/LLaMA DNA) |
+| **SwiGLU (2x expansion)** | Gated activation with real hidden-dim expansion (Gemma/LLaMA DNA) |
+| **WarmupCosineDecay** | Linear LR warmup before cosine decay — MoE training stability |
+
+---
+
+## ⚡ V12.5 Patch Notes (GPT-Style Rewrite + Multi-Timeframe)
+
+1. **Real causal softmax attention** — replaced the earlier ELU+1 linear-attention approximation with standard scaled dot-product attention (what GPT/DeepSeek actually use); added QK-Norm for stability.
+2. **Genuine next-candle-token prediction** — 128-bucket quantile return vocabulary, token embeddings, and a true per-position causal-LM head (every one of the CTX context positions is its own training example, not just the last one).
+3. **Autoregressive generation** — `generate_future_tokens`/`generate_with_confidence` in `hydra.py`: predict one token, feed it back in, predict the next, with temperature/top-k/top-p sampling. Multi-path sample agreement now gives a real confidence signal instead of relying solely on a disconnected certainty head.
+4. **Shared-expert MoE** (DeepSeekMoE-style) and **2x SwiGLU expansion** — closed two real capacity gaps versus the GPT/DeepSeek lineage this architecture is modeled on.
+5. **Rebalanced loss weights** (`prediction:3, certainty:1, reasoning:1`, was `1:10:5`) and **`WarmupCosineDecay`** LR schedule — direction prediction now actually dominates the training signal instead of being drowned out.
+6. **`EdgeTracker` callback** — per-epoch Wilson 95% confidence interval on `val_prediction_dir_acc`, logged to `logs/edge_tracker.csv`, so "is there a real edge" is answered statistically instead of by eyeballing a noisy number.
+7. **Path-aware trade labeling** — `preprocess.py` now checks that price actually reaches take-profit *before* stop-loss along the realized path, not just whether the final excursion ratio looks favorable in hindsight.
+8. **Multi-timeframe support** — `--timeframe`/`--context_window`/`--forecast_steps` CLI overrides; feature engineering (`trend_1h`, `rsi_1h`, `trend_4h`, funding-rate proxy windows) is now timeframe-aware instead of hardcoding "4 candles = 1 hour," which was only true for 15m data.
+9. **Direction-agreement gate in `live_trader.py`** — trades now only fire when the reasoning head and the price-trajectory head agree on direction.
+10. **Removed unused `serve.py` dashboard**; replaced with `src/api/prediction_viewer/` (Flask, port 5000) — shows real multi-path predictions with sampled-path uncertainty against actual outcomes.
 
 ---
 
@@ -162,7 +188,7 @@ Market Input (120 candles × 45 features)
 
 ## 🚀 Quick Start
 
-### 1. Start Training (Fresh)
+### 1. Start Training (Fresh) — 15-minute (default)
 ```bash
 nohup sudo /root/miniconda3/bin/python -u train.py \
   --candles 120000 \
@@ -170,15 +196,28 @@ nohup sudo /root/miniconda3/bin/python -u train.py \
   > logs/iron_oracle_v11.log 2>&1 &
 ```
 
-### 2. Launch Dashboard
+### 1b. Start Training on a Different Timeframe (e.g. 1-hour)
+Requires a pre-built `data/BTCUSD_1h_history_master.parquet` (resample from the 15m
+cache — see `data/` note below). `--context_window`/`--forecast_steps` let you keep
+the same real-world lookback/forecast time spans across timeframes instead of
+accidentally changing both the timeframe *and* the horizon at once:
 ```bash
-nohup sudo /root/miniconda3/bin/python -u src/api/serve.py \
-  > logs/dashboard.log 2>&1 &
+nohup sudo /root/miniconda3/bin/python -u train.py \
+  --timeframe 1h --candles 30000 \
+  --context_window 30 --forecast_steps 4 \
+  --batch 32 \
+  > logs/iron_oracle_v11.log 2>&1 &
+```
+
+### 2. Launch Prediction Viewer Dashboard
+```bash
+nohup sudo /root/miniconda3/bin/python src/api/prediction_viewer/app.py &
 ```
 
 ### 3. Monitor Training
 ```bash
 tail -f logs/iron_oracle_v11.log
+tail -f logs/edge_tracker.csv   # per-epoch statistical significance verdict
 ```
 
 ### 4. Open Dashboard
@@ -197,20 +236,18 @@ nohup sudo /root/miniconda3/bin/python -u train.py \
 
 ---
 
-## 📡 Dashboard Features
+## 📡 Dashboard Features (Prediction Viewer, `src/api/prediction_viewer/`)
 
-| Panel | Description |
+The old `serve.py` dashboard (equity chart, strikes feed, hall of fame, etc.) has been
+removed — it was unused. The current dashboard is a focused prediction-inspection tool:
+
+| Feature | Description |
 |---|---|
-| **AI Brain Growth** | Current epoch / total epochs with progress bar |
-| **Win Chance** | Validated directional accuracy (%) |
-| **Confusion Level** | Validation loss (lower = better) |
-| **Conviction Strength** | Average MoE expert certainty score |
-| **Equity Chart** | Compounding portfolio growth from simulation trades |
-| **AI Strikes Feed** | Live trade log with strategist identity, side, entry, P&L |
-| **AI Memory History** | Per-epoch validation accuracy, loss, certainty table |
-| **Hall of Fame** | Top 3 performing strategists by cumulative P&L |
-| **Fee Burn Meter** | Total fees paid across all simulation trades |
-| **Expert Dialogue** | Real-time neural council debate in plain English |
+| **Historical Candlestick** | Real Delta Exchange history leading into the prediction point |
+| **Multi-Path Prediction** | Several independently-sampled future paths (temperature/top-p sampling), shown as thin lines, plus a bold mean prediction |
+| **Actual Outcome Overlay** | Real candlesticks for the holdout period, if available, for direct visual comparison |
+| **Confidence Readout** | Majority direction + % agreement across sampled paths — genuine confidence derived from the prediction itself, not a separate disconnected score |
+| **Time Window Slider / Temperature / Top-p / Sample Count** | Adjustable inference parameters, applied live |
 
 ---
 
@@ -299,6 +336,7 @@ To protect active trade profits and guarantee absolute operational safety from s
 
 ## 📋 Changelog
 
+| **V12.5** | Real causal softmax attention (replaced linear-attention approx), QK-Norm, shared-expert MoE, 2x SwiGLU expansion, LR warmup, genuine GPT-style next-candle-token prediction w/ autoregressive generation, EdgeTracker statistical significance monitoring, multi-timeframe support (15m/1h), removed unused serve.py dashboard (replaced with prediction_viewer, port 5000). |
 | **V12.4** | Preprocessor KeyError: 'obi_l5' fix, certainty audit alignment, test_today.py/backtest_checkup.py delta logic correction, visualization denormalization and price compounding fixes. |
 | **V12.3** | Strict Dynamic Local Scaling (DLS) synchronization, Delta API exponential backoff, checkpoint IO optimization, L2 Order Book collection logging. |
 | **V12.2** | Dynamic ATR-based MIN_SWING (clamped at $100 floor for fee protection), exponential backoff on exchange 502s, optimized training checkpoints (save every 10 epochs to fix I/O stall). |
@@ -322,4 +360,4 @@ To protect active trade profits and guarantee absolute operational safety from s
 
 ---
 
-⚓ **Iron Oracle V12.4 — Sovereign Intelligence, Institutional Performance.**
+⚓ **Iron Oracle V12.5 — Sovereign Intelligence, Institutional Performance.**
