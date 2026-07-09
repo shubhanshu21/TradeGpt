@@ -542,9 +542,9 @@ class SovereignAccuracy(keras.metrics.Metric):
 # ── Model Builder ─────────────────────────────────────────────────────────────
 
 def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FORECAST_STEPS,
-                 dropout_rate=0.1, noise_stddev=0.02):
+                 dropout_rate=0.1, noise_stddev=0.02, vocab_size=128):
     """
-    Build Phase 3 Deep-Predator V10.7.
+    Build Phase 3 Deep-Predator V11.0.
 
     Improvements over V10.6:
       - Gaussian Input Noise layer (noise_stddev=0.02) for augmentation
@@ -553,14 +553,21 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
       - SovereignLoss with volatility weighting
       - Label smoothing on reasoning head
       - Cosine LR Decay 5e-6 → 5e-7 with gradient clipping
+      - Genuine GPT-style next-candle-token prediction: a discrete return-bucket
+        vocabulary embedded alongside the continuous features, with a per-position
+        classification head trained the way real language models train — every
+        position predicts its own next token, not just the last one.
     """
     inputs = layers.Input(shape=(context_window, n_features), name="market_input")
+    token_inputs = layers.Input(shape=(context_window,), dtype="int32", name="token_input")
 
     # Input Noise Augmentation (only active during training)
     x = layers.GaussianNoise(noise_stddev)(inputs)
 
-    # Embed to d_model
-    x = RMSNorm()(layers.Dense(128)(x))
+    # Embed to d_model — continuous features + discrete return-token embedding,
+    # summed like GPT sums token and positional embeddings.
+    token_embed = layers.Embedding(vocab_size, 128, name="token_embedding")(token_inputs)
+    x = RMSNorm()(layers.Dense(128)(x) + token_embed)
 
     # 8x HydraBlock with dropout
     all_consensus = []
@@ -580,7 +587,8 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
         (context_window,), name='certainty')(cert_calibrated)  # (B, T)
 
     # Output heads - preserve dynamic temporal sequence ordering using last-token extraction
-    last_step = layers.Lambda(lambda t: t[:, -1, :])(RMSNorm()(x))
+    normed_x  = RMSNorm()(x)
+    last_step = layers.Lambda(lambda t: t[:, -1, :])(normed_x)
 
     preds = layers.Reshape(
         (forecast_steps + 1, 3), name="prediction")(
@@ -589,9 +597,15 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     # Label smoothing(0.1) on reasoning to prevent overconfidence
     reasoning = layers.Dense(4, activation="softmax", name="reasoning")(last_step)
 
+    # Genuine next-token head: applied at EVERY position (not just the last),
+    # so every one of the 120 context positions is its own training example —
+    # this is the actual causal-LM training signal GPT uses, predicting token
+    # t+1 from positions 0..t via the causal attention mask already in place.
+    next_token = layers.Dense(vocab_size, activation="softmax", name="next_token")(normed_x)
+
     model = keras.Model(
-        inputs, [preds, avg_consensus, reasoning],
-        name="sovereign_kraken_v10_7")
+        [inputs, token_inputs], [preds, avg_consensus, reasoning, next_token],
+        name="sovereign_kraken_v11_0")
 
     # Linear warmup (500 steps) into Cosine Decay LR: 5e-6 → 5e-7 over 10,000 steps
     lr_schedule = WarmupCosineDecay(
@@ -610,12 +624,58 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
         loss={
             "prediction": SovereignLoss(direction_weight=3.0),
             "certainty":  certainty_loss,
-            "reasoning":  SovereignReasoningLoss(label_smoothing=0.1)
+            "reasoning":  SovereignReasoningLoss(label_smoothing=0.1),
+            "next_token": keras.losses.SparseCategoricalCrossentropy(),
         },
-        loss_weights={"prediction": 3.0, "certainty": 1.0, "reasoning": 1.0},
+        loss_weights={"prediction": 3.0, "certainty": 1.0, "reasoning": 1.0, "next_token": 2.0},
         metrics={
             "prediction": [SovereignAccuracy()],
-            "certainty":  [CertaintyMetric()]
+            "certainty":  [CertaintyMetric()],
+            "next_token": [keras.metrics.SparseCategoricalAccuracy(name="token_acc")],
         }
     )
     return model
+
+
+def generate_future_tokens(model, x_context, tok_context, n_steps, bin_centers,
+                            local_mean, local_std, t_close_idx):
+    """
+    Genuine autoregressive generation: predict one next-candle token, convert it
+    back into an approximate price, append it to the window, and repeat — the
+    actual GPT generation loop (predict -> append -> predict again), as opposed
+    to the 'prediction' head's one-shot forecast of all future steps at once.
+
+    x_context   : (context_window, n_features) most recent DLS-scaled feature window
+    tok_context : (context_window,) most recent real return-token sequence
+    bin_centers : (vocab_size,) representative raw return per token, from fit_return_vocab
+    local_mean/local_std : the DLS stats used to scale x_context (from apply_dls),
+                            reused to convert generated raw returns back into the
+                            same Z-scored space the model expects as input.
+    Returns: list of dicts with token id, predicted raw return, and predicted raw close.
+    """
+    x   = x_context.copy()
+    tok = tok_context.copy()
+    results = []
+
+    raw_close = float(x[-1, t_close_idx] * local_std[t_close_idx] + local_mean[t_close_idx])
+
+    for _ in range(n_steps):
+        X_in   = x[np.newaxis].astype("float32")
+        Tok_in = tok[np.newaxis].astype("int32")
+        outputs = model([X_in, Tok_in], training=False)
+        next_token_probs = outputs[3].numpy()[0, -1]   # last position's next-token distribution
+        token_id = int(np.argmax(next_token_probs))
+        predicted_return = float(bin_centers[token_id])
+
+        raw_close = raw_close * (1.0 + predicted_return)
+        results.append({"token": token_id, "return": predicted_return, "close": raw_close})
+
+        # Reconstruct the synthetic next candle in the same DLS-scaled space,
+        # carrying forward the other (non-price) features from the last real candle.
+        new_row = x[-1].copy()
+        new_row[t_close_idx] = (raw_close - local_mean[t_close_idx]) / (local_std[t_close_idx] + 1e-9)
+
+        x   = np.concatenate([x[1:], new_row[np.newaxis]], axis=0)
+        tok = np.concatenate([tok[1:], [token_id]], axis=0)
+
+    return results

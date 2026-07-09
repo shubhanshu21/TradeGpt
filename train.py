@@ -191,8 +191,16 @@ def train_kraken(args):
 
     # ── 3. Build Model ────────────────────────────────────────────────────────
     # For 1,152 experts, we use a slower, higher-quality learning profile.
-    model = build_kraken(n_features=n_feat, context_window=CTX_WIN, 
-                        forecast_steps=FORECAST)
+    vocab_size = ds_info["vocab_size"]
+    model = build_kraken(n_features=n_feat, context_window=CTX_WIN,
+                        forecast_steps=FORECAST, vocab_size=vocab_size)
+
+    # Save the return-token vocabulary so inference-side code (live_trader.py,
+    # generate_future_tokens) can reuse the exact same bucket boundaries.
+    import pickle as _pickle
+    with open(CKPT_DIR / "return_vocab.pkl", "wb") as _f:
+        _pickle.dump({"bin_edges": ds_info["bin_edges"], "bin_centers": ds_info["bin_centers"],
+                      "vocab_size": vocab_size}, _f)
     
     # Custom weighted loss for reasoning to circumvent Keras 3 tf_dataset_adapter class_weight bug
     weights = [class_weights[i] for i in range(4)]
@@ -230,12 +238,14 @@ def train_kraken(args):
         loss={
             "prediction": SovereignLoss(direction_weight=3.0),
             "certainty":  certainty_loss,
-            "reasoning":  weighted_reasoning_loss
+            "reasoning":  weighted_reasoning_loss,
+            "next_token": keras.losses.SparseCategoricalCrossentropy(),
         },
-        loss_weights={"prediction": 3.0, "certainty": 1.0, "reasoning": 1.0},
+        loss_weights={"prediction": 3.0, "certainty": 1.0, "reasoning": 1.0, "next_token": 2.0},
         metrics={
             "prediction": [SovereignAccuracy()],
-            "certainty":  [CertaintyMetric()]
+            "certainty":  [CertaintyMetric()],
+            "next_token": [keras.metrics.SparseCategoricalAccuracy(name="token_acc")],
         }
     )
 
