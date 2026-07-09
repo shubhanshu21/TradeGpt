@@ -637,8 +637,45 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     return model
 
 
+def _sample_from_probs(probs, temperature=1.0, top_k=0, top_p=1.0, rng=None):
+    """
+    Temperature + top-k/top-p (nucleus) filtered sampling from a probability
+    vector — ported from Kronos's sample_from_logits/top_k_top_p_filtering.
+    temperature<1 sharpens the distribution (more confident/greedy),
+    temperature>1 flattens it (more exploratory). top_k/top_p restrict
+    sampling to the most plausible tokens instead of the full vocabulary.
+    """
+    rng = rng or np.random.default_rng()
+    probs = np.asarray(probs, dtype="float64")
+
+    if temperature != 1.0:
+        logits = np.log(np.clip(probs, 1e-12, None)) / max(temperature, 1e-6)
+        probs = np.exp(logits - logits.max())
+        probs = probs / probs.sum()
+
+    if top_k and top_k > 0:
+        keep = np.argsort(probs)[::-1][:top_k]
+        mask = np.zeros_like(probs, dtype=bool)
+        mask[keep] = True
+        probs = np.where(mask, probs, 0.0)
+        probs = probs / probs.sum()
+
+    if top_p and top_p < 1.0:
+        order = np.argsort(probs)[::-1]
+        cum = np.cumsum(probs[order])
+        cutoff = np.searchsorted(cum, top_p) + 1
+        keep = order[:cutoff]
+        mask = np.zeros_like(probs, dtype=bool)
+        mask[keep] = True
+        probs = np.where(mask, probs, 0.0)
+        probs = probs / probs.sum()
+
+    return int(rng.choice(len(probs), p=probs))
+
+
 def generate_future_tokens(model, x_context, tok_context, n_steps, bin_centers,
-                            local_mean, local_std, t_close_idx):
+                            local_mean, local_std, t_close_idx,
+                            temperature=0.0, top_k=0, top_p=1.0, rng=None):
     """
     Genuine autoregressive generation: predict one next-candle token, convert it
     back into an approximate price, append it to the window, and repeat — the
@@ -651,6 +688,10 @@ def generate_future_tokens(model, x_context, tok_context, n_steps, bin_centers,
     local_mean/local_std : the DLS stats used to scale x_context (from apply_dls),
                             reused to convert generated raw returns back into the
                             same Z-scored space the model expects as input.
+    temperature : 0.0 (default) = greedy argmax, deterministic single path.
+                  >0.0 = sample from the (optionally top-k/top-p filtered)
+                  distribution instead — use with generate_with_confidence()
+                  to produce multiple diverse plausible futures.
     Returns: list of dicts with token id, predicted raw return, and predicted raw close.
     """
     x   = x_context.copy()
@@ -664,7 +705,12 @@ def generate_future_tokens(model, x_context, tok_context, n_steps, bin_centers,
         Tok_in = tok[np.newaxis].astype("int32")
         outputs = model([X_in, Tok_in], training=False)
         next_token_probs = outputs[3].numpy()[0, -1]   # last position's next-token distribution
-        token_id = int(np.argmax(next_token_probs))
+
+        if temperature and temperature > 0:
+            token_id = _sample_from_probs(next_token_probs, temperature, top_k, top_p, rng)
+        else:
+            token_id = int(np.argmax(next_token_probs))
+
         predicted_return = float(bin_centers[token_id])
 
         raw_close = raw_close * (1.0 + predicted_return)
@@ -679,3 +725,40 @@ def generate_future_tokens(model, x_context, tok_context, n_steps, bin_centers,
         tok = np.concatenate([tok[1:], [token_id]], axis=0)
 
     return results
+
+
+def generate_with_confidence(model, x_context, tok_context, n_steps, bin_centers,
+                              local_mean, local_std, t_close_idx,
+                              n_samples=5, temperature=1.0, top_k=0, top_p=0.9, seed=None):
+    """
+    Generate several independent sampled future paths and measure how much they
+    agree — a genuine, principled confidence signal (Kronos-style multi-sample
+    generation), instead of relying solely on a separately-trained certainty
+    head that isn't directly tied to the prediction itself. High agreement
+    across independently-sampled futures means real confidence; a split vote
+    means honest uncertainty, measured directly from what the model predicts.
+    """
+    rng = np.random.default_rng(seed)
+    paths = [
+        generate_future_tokens(model, x_context, tok_context, n_steps, bin_centers,
+                                local_mean, local_std, t_close_idx,
+                                temperature=temperature, top_k=top_k, top_p=top_p, rng=rng)
+        for _ in range(n_samples)
+    ]
+
+    entry_close  = float(x_context[-1, t_close_idx] * local_std[t_close_idx] + local_mean[t_close_idx])
+    final_closes = np.array([p[-1]["close"] for p in paths])
+    directions   = np.sign(final_closes - entry_close)
+
+    up_frac   = float(np.mean(directions > 0))
+    down_frac = float(np.mean(directions < 0))
+
+    return {
+        "paths": paths,
+        "up_fraction": up_frac,
+        "down_fraction": down_frac,
+        "agreement": max(up_frac, down_frac),   # 1.0 = unanimous, ~0.5 = split/no confidence
+        "majority_direction": "UP" if up_frac >= down_frac else "DOWN",
+        "mean_final_close": float(final_closes.mean()),
+        "std_final_close": float(final_closes.std()),
+    }

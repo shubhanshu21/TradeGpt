@@ -316,7 +316,7 @@ To protect active trade profits and guarantee absolute operational safety from s
 
 1. **Training is slow on CPU** — Each epoch takes ~13.5 hours at Batch 32. This is normal and by design (precision over speed).
 2. **Do not interrupt training** — The model saves a checkpoint every 10 epochs. If interrupted, use `--resume` to continue from the last checkpoint.
-3. **Dashboard port** — The server runs on **port 5000** by default.
+3. **Dashboard port** — `src/api/prediction_viewer/app.py` (multi-path candle prediction with real sampled-path uncertainty) runs on **port 5000**. This replaced the old, unused `serve.py` dashboard, which has been removed. Requires a trained checkpoint at `models/hydra_best.keras` and `models/return_vocab.pkl` to load real predictions.
 4. **Data cache** — Historical candles are cached in `data/BTCUSD_15m_history_master.parquet` (currently 120,000 candles, ~3.4 years). Delete this file to force a fresh fetch.
 5. **Simulation vs Live** — All trade metrics shown on the dashboard are **simulated**. Use `auto_run.py` for live trading only after thorough backtesting.
 
