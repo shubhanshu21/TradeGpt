@@ -33,6 +33,10 @@ from core.hydra import build_kraken, init_kraken_hardware, generate_with_confide
 from data.preprocess import compute_indicators, build_feature_cols, apply_dls, tokenize_returns
 
 app = Flask(__name__)
+# Flask disables Jinja2 template auto-reload whenever debug=False, which means
+# template edits (templates/index.html) silently don't take effect without a
+# server restart. Force it on explicitly so template changes are picked up live.
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 CORS(app)
 
 DATA_DIR = os.path.join(ROOT, "data")
@@ -121,38 +125,44 @@ def prepare_context(df, end_idx, ctx_win=None):
 
 
 def create_chart(hist_df, entry_ts, paths, mean_close_path, actual_df=None, timeframe_minutes=15):
+    """
+    Deliberately simple: one blue line for real recent price (easy to read,
+    no candlestick literacy required), a green/red dashed line for the AI's
+    guess, and (if known) a purple line for what actually happened. No
+    per-sample spaghetti lines — confidence is shown separately as a plain
+    percentage meter instead of asking the viewer to read line spread.
+    """
     fig = go.Figure()
 
-    fig.add_trace(go.Candlestick(
-        x=hist_df["timestamps"], open=hist_df["open"], high=hist_df["high"],
-        low=hist_df["low"], close=hist_df["close"], name="Historical",
-        increasing_line_color="#26A69A", decreasing_line_color="#EF5350"))
+    fig.add_trace(go.Scatter(
+        x=hist_df["timestamps"], y=hist_df["close"], mode="lines",
+        line=dict(color="#3b82f6", width=2), name="Real price (recent)"))
 
     future_ts = pd.date_range(start=entry_ts + pd.Timedelta(minutes=timeframe_minutes),
                                periods=len(mean_close_path), freq=f"{timeframe_minutes}min")
 
-    # Each individually-sampled future path, thin/translucent — shows real spread/uncertainty
-    for i, path in enumerate(paths):
-        closes = [p["close"] for p in path]
-        fig.add_trace(go.Scatter(
-            x=future_ts, y=closes, mode="lines",
-            line=dict(color="rgba(102,187,106,0.25)", width=1),
-            name=f"Sample {i+1}", showlegend=False))
+    is_up = mean_close_path[-1] >= hist_df["close"].iloc[-1]
+    pred_color = "#16a34a" if is_up else "#dc2626"
 
-    # Mean prediction, bold
+    # Connect the historical line directly into the prediction so it reads as
+    # one continuous story, not two disconnected charts.
+    bridge_x = [hist_df["timestamps"].iloc[-1]] + list(future_ts)
+    bridge_y = [hist_df["close"].iloc[-1]] + list(mean_close_path)
     fig.add_trace(go.Scatter(
-        x=future_ts, y=mean_close_path, mode="lines+markers",
-        line=dict(color="#2E7D32", width=3), name="Mean Prediction"))
+        x=bridge_x, y=bridge_y, mode="lines+markers",
+        line=dict(color=pred_color, width=3, dash="dash"), name="AI's guess"))
 
     if actual_df is not None and len(actual_df) > 0:
-        fig.add_trace(go.Candlestick(
-            x=actual_df["timestamps"], open=actual_df["open"], high=actual_df["high"],
-            low=actual_df["low"], close=actual_df["close"], name="Actual",
-            increasing_line_color="#FF9800", decreasing_line_color="#F44336"))
+        bridge_actual_x = [hist_df["timestamps"].iloc[-1]] + list(actual_df["timestamps"])
+        bridge_actual_y = [hist_df["close"].iloc[-1]] + list(actual_df["close"])
+        fig.add_trace(go.Scatter(
+            x=bridge_actual_x, y=bridge_actual_y, mode="lines+markers",
+            line=dict(color="#7c3aed", width=2), name="What really happened"))
 
-    fig.update_layout(title="Iron Oracle — Multi-Path Prediction vs Actual",
-                       xaxis_title="Time", yaxis_title="Price",
-                       template="plotly_white", height=600, showlegend=True)
+    fig.update_layout(title="Recent Price → AI's Guess vs Reality",
+                       xaxis_title="Time", yaxis_title="Price (USD)",
+                       template="plotly_white", height=380, showlegend=True,
+                       legend=dict(orientation="h", yanchor="bottom", y=1.02))
     fig.update_xaxes(rangeslider_visible=False, type="date")
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
@@ -164,11 +174,13 @@ def index():
 
 @app.route("/api/model-status")
 def model_status():
+    if not _state["loaded"]:
+        try_load_model()
     if _state["loaded"]:
-        return jsonify({"available": True, "loaded": True, "message": "Iron Oracle model loaded."})
-    ok = try_load_model()
-    if ok:
-        return jsonify({"available": True, "loaded": True, "message": "Iron Oracle model loaded."})
+        return jsonify({"available": True, "loaded": True, "message": "Iron Oracle model loaded.",
+                         "context_length": _state["context_window"],
+                         "forecast_steps": _state["forecast_steps"],
+                         "timeframe": _state["timeframe"]})
     return jsonify({"available": False, "loaded": False, "message": _state["error"]})
 
 
@@ -180,30 +192,39 @@ def load_model_route():
     return jsonify({"success": True, "message": "Iron Oracle checkpoint loaded.",
                      "model_info": {"name": "Iron Oracle (KAT)",
                                     "context_length": _state["context_window"],
+                                    "forecast_steps": _state["forecast_steps"],
                                     "timeframe": _state["timeframe"]}})
 
 
 @app.route("/api/data-files")
 def data_files():
-    path = os.path.join(DATA_DIR, "BTCUSD_15m_history_master.parquet")
+    timeframe = _state.get("timeframe", "15m")
+    name = f"BTCUSD_{timeframe}_history_master.parquet"
+    path = os.path.join(DATA_DIR, name)
     if not os.path.exists(path):
         return jsonify([])
     size = os.path.getsize(path)
-    return jsonify([{"name": "BTCUSD_15m_history_master.parquet", "path": path,
-                      "size": f"{size/1024/1024:.1f} MB"}])
+    return jsonify([{"name": name, "path": path, "size": f"{size/1024/1024:.1f} MB"}])
 
 
 @app.route("/api/load-data", methods=["POST"])
 def load_data_route():
     try:
         df = load_master_parquet()
+        price_cols = ["open", "high", "low", "close"]
         return jsonify({
             "success": True,
             "data_info": {
                 "rows": len(df),
+                "columns": list(df.columns),
                 "start_date": df["timestamps"].min().isoformat(),
                 "end_date": df["timestamps"].max().isoformat(),
-                "timeframe": "15 minutes",
+                "price_range": {
+                    "min": float(df[price_cols].min().min()),
+                    "max": float(df[price_cols].max().max()),
+                },
+                "prediction_columns": price_cols + (["volume"] if "volume" in df.columns else []),
+                "timeframe": _state.get("timeframe", "15m"),
             },
             "message": f"Loaded {len(df):,} real Delta Exchange BTCUSD candles."
         })
@@ -218,7 +239,7 @@ def predict_route():
 
     try:
         data = request.get_json()
-        pred_len = int(data.get("pred_len", 15))
+        pred_len = int(data.get("pred_len") or _state["forecast_steps"])
         n_samples = int(data.get("sample_count", 5))
         temperature = float(data.get("temperature", 1.0))
         top_p = float(data.get("top_p", 0.9))
