@@ -11,8 +11,8 @@ from pathlib import Path
 
 # --- CONFIG ---
 SYMBOL = "BTCUSDT"
-START_DATE = "2023-05-16" 
-END_DATE   = "2026-05-08" 
+START_DATE = "2023-05-16"
+END_DATE   = "2026-07-10"
 BASE_URL_DAILY   = "https://data.binance.vision/data/futures/um/daily/bookTicker"
 BASE_URL_MONTHLY_OB = "https://data.binance.vision/data/futures/um/monthly/bookTicker"
 BASE_URL_MONTHLY_TRADES = "https://data.binance.vision/data/futures/um/monthly/aggTrades"

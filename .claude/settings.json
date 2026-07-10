@@ -38,7 +38,14 @@
       "Bash(sudo PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /root/miniconda3/bin/python -m pytest tests/ -v)",
       "Bash(grep -v \"DeprecationWarning\\\\|ast\\\\.\\\\|assertion/rewrite\\\\|^$\")",
       "Bash(sudo rm -rf /var/www/html/ML/kat/.pytest_cache)",
-      "Bash(sudo kill -15 673646 673647)"
+      "Bash(sudo kill -15 673646 673647)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/var/www/html/ML/kat/scripts/ob_collector.py'\\).read\\(\\)\\)\")",
+      "Bash(sudo kill -15 413580)",
+      "Bash(sudo nohup /root/miniconda3/bin/python -u /var/www/html/ML/kat/scripts/ob_collector.py)",
+      "Bash(curl -sI \"https://data.binance.vision/data/futures/um/monthly/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2026-06.zip\")",
+      "Bash(curl -sI \"https://data.binance.vision/data/futures/um/monthly/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2024-01.zip\")",
+      "Bash(curl -sI \"https://data.binance.vision/data/futures/um/daily/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2026-07-08.zip\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/var/www/html/ML/kat/scripts/build_timeframe_master.py'\\).read\\(\\)\\)\")"
     ]
   }
 }

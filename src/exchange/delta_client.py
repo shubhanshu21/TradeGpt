@@ -138,7 +138,7 @@ class DeltaClient:
         """Fetch historical candles with integer-based resolutions (Delta India legacy support)."""
         # Reverting to the confirmed '1m' string format
         target_res = resolution
-        res_secs_map = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "d": 86400}
+        res_secs_map = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "d": 86400}
         res_secs   = res_secs_map.get(resolution, 60)
         
         all_results = []
