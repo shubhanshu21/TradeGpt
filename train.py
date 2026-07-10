@@ -195,12 +195,17 @@ def train_kraken(args):
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN,
                         forecast_steps=FORECAST, vocab_size=vocab_size)
 
-    # Save the return-token vocabulary so inference-side code (live_trader.py,
-    # generate_future_tokens) can reuse the exact same bucket boundaries.
+    # Save the return-token vocabulary AND the exact model shape this checkpoint
+    # was trained with — context_window/forecast_steps/n_features differ per run
+    # (e.g. --timeframe 1h uses a smaller context window), and any inference code
+    # that rebuilds the model to load these weights needs to match exactly or the
+    # layer shapes (e.g. MLALayer's RoPE buffers) won't align.
     import pickle as _pickle
     with open(CKPT_DIR / "return_vocab.pkl", "wb") as _f:
         _pickle.dump({"bin_edges": ds_info["bin_edges"], "bin_centers": ds_info["bin_centers"],
-                      "vocab_size": vocab_size}, _f)
+                      "vocab_size": vocab_size, "context_window": CTX_WIN,
+                      "forecast_steps": FORECAST, "n_features": n_feat,
+                      "timeframe": args.timeframe}, _f)
     
     # Custom weighted loss for reasoning to circumvent Keras 3 tf_dataset_adapter class_weight bug
     weights = [class_weights[i] for i in range(4)]
@@ -241,7 +246,11 @@ def train_kraken(args):
             "reasoning":  weighted_reasoning_loss,
             "next_token": keras.losses.SparseCategoricalCrossentropy(),
         },
-        loss_weights={"prediction": 3.0, "certainty": 1.0, "reasoning": 1.0, "next_token": 2.0},
+        # prediction=6 restores its original ~60% share of the training signal —
+        # adding next_token at weight 2 on top of the old {3,1,1} diluted
+        # prediction from 60% to 43% of the gradient, likely why the model found
+        # a small edge fast and then stopped improving. Scaled up to compensate.
+        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0, "next_token": 2.0},
         metrics={
             "prediction": [SovereignAccuracy()],
             "certainty":  [CertaintyMetric()],

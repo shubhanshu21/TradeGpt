@@ -35,12 +35,16 @@ from data.preprocess import compute_indicators, build_feature_cols, apply_dls, t
 app = Flask(__name__)
 CORS(app)
 
-CTX_WIN = 120  # must match training context window
 DATA_DIR = os.path.join(ROOT, "data")
 MODEL_DIR = os.path.join(ROOT, "models")
 
-# Global state — loaded once via /api/load-model
-_state = {"model": None, "bin_centers": None, "bin_edges": None, "loaded": False, "error": None}
+# Global state — loaded once via /api/load-model. context_window/forecast_steps
+# are read from the checkpoint's own saved metadata (models/return_vocab.pkl),
+# NOT hardcoded — different runs (e.g. --timeframe 1h) use different shapes,
+# and a mismatch here breaks weight-loading (e.g. MLALayer's RoPE buffers are
+# built for a specific sequence length).
+_state = {"model": None, "bin_centers": None, "bin_edges": None, "loaded": False,
+          "error": None, "context_window": 120, "forecast_steps": 15, "timeframe": "15m"}
 
 
 def try_load_model():
@@ -58,11 +62,17 @@ def try_load_model():
     with open(vocab_path, "rb") as f:
         vocab = pickle.load(f)
 
+    ctx_win  = vocab.get("context_window", 120)
+    forecast = vocab.get("forecast_steps", 15)
+
     init_kraken_hardware()
-    n_feat = len(build_feature_cols())
-    model = build_kraken(n_features=n_feat, context_window=CTX_WIN, forecast_steps=15,
+    n_feat = vocab.get("n_features", len(build_feature_cols()))
+    model = build_kraken(n_features=n_feat, context_window=ctx_win, forecast_steps=forecast,
                           vocab_size=vocab["vocab_size"])
     model.load_weights(ckpt_path)
+    _state["context_window"] = ctx_win
+    _state["forecast_steps"] = forecast
+    _state["timeframe"] = vocab.get("timeframe", "15m")
 
     _state["model"] = model
     _state["bin_centers"] = vocab["bin_centers"]
@@ -73,8 +83,11 @@ def try_load_model():
 
 
 def load_master_parquet():
-    """Load our real Delta Exchange BTCUSD candle cache."""
-    path = os.path.join(DATA_DIR, "BTCUSD_15m_history_master.parquet")
+    """Load our real Delta Exchange BTCUSD candle cache, matching the loaded
+    checkpoint's timeframe (15m/1h) — not hardcoded, since different runs use
+    different cache files."""
+    timeframe = _state.get("timeframe", "15m")
+    path = os.path.join(DATA_DIR, f"BTCUSD_{timeframe}_history_master.parquet")
     df = pd.read_parquet(path)
     df = df.reset_index().rename(columns={"index": "timestamps", "timestamp": "timestamps"})
     if "timestamps" not in df.columns:
@@ -83,9 +96,17 @@ def load_master_parquet():
     return df
 
 
-def prepare_context(df, end_idx, ctx_win=CTX_WIN):
+def prepare_context(df, end_idx, ctx_win=None):
     """Compute indicators + DLS scaling + tokens for a real window ending at end_idx."""
-    df_feat = compute_indicators(df.iloc[max(0, end_idx - ctx_win - 150):end_idx].copy())
+    ctx_win = ctx_win or _state["context_window"]
+    # compute_indicators expects a DatetimeIndex (matching train.py's pipeline,
+    # which reads parquet with its native index) — set it explicitly here since
+    # this dataframe was reset_index()'d to expose a "timestamps" column for
+    # charting/date-filtering elsewhere. Leaving "timestamps" as a plain column
+    # breaks compute_indicators' final numeric .clip() over all columns.
+    window_df = df.iloc[max(0, end_idx - ctx_win - 150):end_idx].copy()
+    window_df = window_df.set_index("timestamps")
+    df_feat = compute_indicators(window_df)
     features = build_feature_cols()
     data = df_feat[features].values.astype("float32")
     x_raw = data[-ctx_win:]
@@ -157,7 +178,9 @@ def load_model_route():
     if not ok:
         return jsonify({"error": _state["error"]}), 400
     return jsonify({"success": True, "message": "Iron Oracle checkpoint loaded.",
-                     "model_info": {"name": "Iron Oracle (KAT)", "context_length": CTX_WIN}})
+                     "model_info": {"name": "Iron Oracle (KAT)",
+                                    "context_length": _state["context_window"],
+                                    "timeframe": _state["timeframe"]}})
 
 
 @app.route("/api/data-files")
@@ -209,7 +232,7 @@ def predict_route():
         else:
             end_idx = len(df) - pred_len  # leave room for an actual-outcome holdout by default
 
-        if end_idx < CTX_WIN + 150:
+        if end_idx < _state["context_window"] + 150:
             return jsonify({"error": "Not enough history before this point."}), 400
 
         x_scaled, tok_ids, local_mean, local_std, t_close = prepare_context(df, end_idx)
@@ -234,7 +257,9 @@ def predict_route():
             actual_df = df.iloc[end_idx:end_idx + pred_len]
             has_comparison = True
 
-        chart_json = create_chart(hist_df, entry_ts, conf["paths"], mean_path, actual_df)
+        tf_minutes = 60 if _state["timeframe"] == "1h" else 15
+        chart_json = create_chart(hist_df, entry_ts, conf["paths"], mean_path, actual_df,
+                                   timeframe_minutes=tf_minutes)
 
         return jsonify({
             "success": True,

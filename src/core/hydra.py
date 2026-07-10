@@ -627,7 +627,7 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
             "reasoning":  SovereignReasoningLoss(label_smoothing=0.1),
             "next_token": keras.losses.SparseCategoricalCrossentropy(),
         },
-        loss_weights={"prediction": 3.0, "certainty": 1.0, "reasoning": 1.0, "next_token": 2.0},
+        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0, "next_token": 2.0},
         metrics={
             "prediction": [SovereignAccuracy()],
             "certainty":  [CertaintyMetric()],
