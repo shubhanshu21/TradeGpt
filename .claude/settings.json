@@ -45,7 +45,8 @@
       "Bash(curl -sI \"https://data.binance.vision/data/futures/um/monthly/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2026-06.zip\")",
       "Bash(curl -sI \"https://data.binance.vision/data/futures/um/monthly/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2024-01.zip\")",
       "Bash(curl -sI \"https://data.binance.vision/data/futures/um/daily/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2026-07-08.zip\")",
-      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/var/www/html/ML/kat/scripts/build_timeframe_master.py'\\).read\\(\\)\\)\")"
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/var/www/html/ML/kat/scripts/build_timeframe_master.py'\\).read\\(\\)\\)\")",
+      "Bash(sudo kill -15 690288 690291)"
     ]
   }
 }

@@ -96,7 +96,20 @@ for c in range(n_chunks):
         actual_mean_future = float(np.mean(data[i: i + FORECAST, t_close]))
         actual_dir = np.sign(actual_mean_future - actual_now)
 
-        chunk_results.append({"chunk": c, "signal": signal, "actual_dir": actual_dir})
+        # Naive persistence baseline: "next move repeats the last completed
+        # move." The whole point of the model is to beat this for free — if
+        # it can't, the extra complexity isn't buying anything.
+        naive_dir = float(np.sign(data[i - 1, t_close] - data[i - 2, t_close])) if i >= 2 else 0.0
+
+        # Local realized volatility (same std DLS already computed for scaling
+        # this window) — used to check whether any edge holds across both
+        # calm and turbulent regimes, or only shows up in one of them.
+        vol_at_i = float(local_std[t_close])
+
+        chunk_results.append({
+            "chunk": c, "signal": signal, "actual_dir": actual_dir,
+            "naive_dir": naive_dir, "vol": vol_at_i,
+        })
 
     df_c = pd.DataFrame(chunk_results)
     trades_c = df_c[df_c["signal"] != "HOLD"]
@@ -146,6 +159,19 @@ for c in range(n_chunks):
         model.fit(ds_info["tr_ds"], epochs=FT_EPOCHS, steps_per_epoch=ds_info["steps_tr"], verbose=0)
         model.save(str(WFA_MODEL_PATH))
 
+def wilson_ci(wins: int, n: int, z: float = 1.959964):
+    """95% Wilson score interval — same formula as train.py's EdgeTracker,
+    used here so a backtest win rate and a training-epoch accuracy are
+    judged by the same statistical bar."""
+    if n == 0:
+        return 0.5, 0.0, 1.0
+    p = wins / n
+    denom  = 1.0 + (z * z) / n
+    center = (p + (z * z) / (2 * n)) / denom
+    margin = (z * ((p * (1 - p) / n + (z * z) / (4 * n ** 2)) ** 0.5)) / denom
+    return p, center - margin, center + margin
+
+
 # ── 3. Final Report ────────────────────────────────────────────────────────────
 df_r = pd.DataFrame(results)
 trades = df_r[df_r["signal"] != "HOLD"].copy()
@@ -159,15 +185,49 @@ if n_trades > 0:
     trades["pred_dir"] = trades["signal"].map({"LONG": 1.0, "SHORT": -1.0})
     trades["correct"]  = (trades["pred_dir"] == trades["actual_dir"])
     trades["pnl"]      = trades["correct"].map({True: 1 - FEE_PCT*2, False: -1 - FEE_PCT*2})
+    trades["naive_correct"] = (trades["naive_dir"] == trades["actual_dir"])
 
     win_rate = trades["correct"].mean() * 100
     tot_pnl  = trades["pnl"].sum()
+    n_wins   = int(trades["correct"].sum())
 
-    print(f"  Total Chunks : {n_chunks}")
-    print(f"  Total Trades : {n_trades}")
-    print(f"  Win Rate     : {win_rate:.1f}%")
-    print(f"  Total P&L    : {tot_pnl:+.2f} units")
-    print(f"  Return/Trade : {tot_pnl/n_trades*100:+.1f}%")
+    p, ci_low, ci_high = wilson_ci(n_wins, n_trades)
+    significant = ci_low > 0.50
+    verdict = "✅ STATISTICALLY SIGNIFICANT EDGE" if significant else "— not significant yet (could be noise)"
+
+    # Naive baseline: same persistence rule, judged unconditionally over
+    # every candle in the test window, and again restricted to only the
+    # candles the model actually chose to trade (the fair comparison — if
+    # the model can't beat the naive rule on the trades it hand-picked,
+    # the certainty gate isn't adding anything).
+    all_valid = df_r[df_r["naive_dir"] != 0.0]
+    naive_unconditional = (all_valid["naive_dir"] == all_valid["actual_dir"]).mean() * 100
+    naive_on_same_trades = trades["naive_correct"].mean() * 100
+
+    print(f"  Total Chunks   : {n_chunks}")
+    print(f"  Total Trades   : {n_trades}")
+    print(f"  Win Rate       : {win_rate:.1f}%  (95% CI [{ci_low*100:.1f}%, {ci_high*100:.1f}%])  {verdict}")
+    print(f"  Naive Baseline : {naive_unconditional:.1f}% (all candles) | "
+          f"{naive_on_same_trades:.1f}% (same trades model picked)")
+    print(f"  Total P&L      : {tot_pnl:+.2f} units")
+    print(f"  Return/Trade   : {tot_pnl/n_trades*100:+.1f}%")
+
+    # Volatility-regime breakdown — median split on the local realized vol
+    # each trade was made under, to check the edge isn't concentrated in
+    # just one market regime (the literature's #1 reason backtested "edge"
+    # doesn't survive live trading).
+    vol_median = trades["vol"].median()
+    print(f"\n  Regime breakdown (median local vol = {vol_median:.4f}):")
+    for label, mask in [("Low-vol ", trades["vol"] <= vol_median),
+                         ("High-vol", trades["vol"] > vol_median)]:
+        sub = trades[mask]
+        if len(sub) > 0:
+            sub_win = sub["correct"].mean() * 100
+            _, sub_lo, sub_hi = wilson_ci(int(sub["correct"].sum()), len(sub))
+            print(f"    {label} : {len(sub):>4} trades | win {sub_win:5.1f}% | "
+                  f"95% CI [{sub_lo*100:.1f}%, {sub_hi*100:.1f}%]")
+        else:
+            print(f"    {label} : 0 trades")
 else:
     print("  No trades executed during the simulation period.")
 print("=" * 60 + "\n")
