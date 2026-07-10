@@ -6,7 +6,9 @@
       "Bash(curl -s -X POST http://localhost:5000/api/predict -H \"Content-Type: application/json\" -d '{\"pred_len\": 4, \"sample_count\": 5, \"temperature\": 1.0, \"top_p\": 0.9}')",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\({k:v for k,v in d.items\\(\\) if k!='chart'}\\)\")",
       "Bash(mv /var/www/html/ML/kat/logs/iron_oracle_v11.log \"/var/www/html/ML/kat/logs/iron_oracle_v11_1h_prefix_$\\(date +%H%M\\).log\")",
-      "Bash(mv /var/www/html/ML/kat/logs/edge_tracker.csv \"/var/www/html/ML/kat/logs/edge_tracker_1h_prefix_$\\(date +%H%M\\).csv\")"
+      "Bash(mv /var/www/html/ML/kat/logs/edge_tracker.csv \"/var/www/html/ML/kat/logs/edge_tracker_1h_prefix_$\\(date +%H%M\\).csv\")",
+      "Bash(curl -s -X POST http://localhost:5000/api/predict -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

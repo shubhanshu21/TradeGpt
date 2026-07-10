@@ -134,8 +134,17 @@ def create_chart(hist_df, entry_ts, paths, mean_close_path, actual_df=None, time
     """
     fig = go.Figure()
 
+    # Force plain Python lists (not pandas Series/numpy arrays) for every
+    # x/y — newer plotly (server-side, installed as 6.x) serializes numpy
+    # arrays as compact {"dtype","bdata"} binary blobs by default, which an
+    # older/mismatched plotly.js build on the page can't decode, silently
+    # rendering nothing. Plain lists always serialize as ordinary JSON arrays
+    # regardless of plotly.js version, so this can't break again on a CDN update.
+    hist_x = [t.isoformat() for t in hist_df["timestamps"]]
+    hist_y = [float(v) for v in hist_df["close"]]
+
     fig.add_trace(go.Scatter(
-        x=hist_df["timestamps"], y=hist_df["close"], mode="lines",
+        x=hist_x, y=hist_y, mode="lines",
         line=dict(color="#3b82f6", width=2), name="Real price (recent)"))
 
     future_ts = pd.date_range(start=entry_ts + pd.Timedelta(minutes=timeframe_minutes),
@@ -146,15 +155,15 @@ def create_chart(hist_df, entry_ts, paths, mean_close_path, actual_df=None, time
 
     # Connect the historical line directly into the prediction so it reads as
     # one continuous story, not two disconnected charts.
-    bridge_x = [hist_df["timestamps"].iloc[-1]] + list(future_ts)
-    bridge_y = [hist_df["close"].iloc[-1]] + list(mean_close_path)
+    bridge_x = [hist_x[-1]] + [t.isoformat() for t in future_ts]
+    bridge_y = [hist_y[-1]] + [float(v) for v in mean_close_path]
     fig.add_trace(go.Scatter(
         x=bridge_x, y=bridge_y, mode="lines+markers",
         line=dict(color=pred_color, width=3, dash="dash"), name="AI's guess"))
 
     if actual_df is not None and len(actual_df) > 0:
-        bridge_actual_x = [hist_df["timestamps"].iloc[-1]] + list(actual_df["timestamps"])
-        bridge_actual_y = [hist_df["close"].iloc[-1]] + list(actual_df["close"])
+        bridge_actual_x = [hist_x[-1]] + [t.isoformat() for t in actual_df["timestamps"]]
+        bridge_actual_y = [hist_y[-1]] + [float(v) for v in actual_df["close"]]
         fig.add_trace(go.Scatter(
             x=bridge_actual_x, y=bridge_actual_y, mode="lines+markers",
             line=dict(color="#7c3aed", width=2), name="What really happened"))
