@@ -1,84 +1,70 @@
 """
-SOVEREIGN KRAKEN — Backtest Engine (V5.0) ⚓📊
+SOVEREIGN KRAKEN — Backtest Engine (V6.0) ⚓📊
 ===============================================
 Runs a walk-forward directional backtest on the current best model.
 Tests: directional accuracy, simulated P&L, fee-aware win rate.
 
 Usage:
-    python src/backtest_checkup.py
+    python src/evaluation/backtest_checkup.py
 """
 
 import sys, os
 os.environ["PYTHONUNBUFFERED"] = "1"
 import numpy as np
 import pandas as pd
-import keras
 from pathlib import Path
-from datetime import datetime
 
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.hydra import build_kraken, SovereignLoss
-from data.preprocess import KATScaler, build_feature_cols, compute_indicators, apply_dls
-from exchange.fetch_data  import fetch_live_kat_data
+from core.inference import load_trained_model, prepare_window, run_inference
+from config.sovereign_config import FEE_RATE
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-SYMBOL       = "BTCUSD"
-TIMEFRAME    = "15m"      # Match training timeframe
-CTX_WIN      = 120        # Must match training
 N_CANDLES    = 1000       # Test window
-THRESHOLD    = 0.15       # Signal threshold
-from config.sovereign_config import FEE_RATE
+THRESHOLD    = 0.15       # Signal threshold (Z-score)
 FEE_PCT      = FEE_RATE   # Synced from sovereign_config (0.0012)
-TRADE_SIZE   = 1          # 1 contract (for P&L simulation)
 
-# ── Smart Checkpoint Selection ────────────────────────────────────────────────
-MODELS_DIR  = ROOT / "models"
-checkpoints = sorted(MODELS_DIR.glob("hydra_checkpoint_E*.keras"), reverse=True)
-MODEL_PATH  = checkpoints[0] if checkpoints else MODELS_DIR / "hydra_best.keras"
-if not MODEL_PATH.exists():
-    print(f"❌ No model at {MODEL_PATH} — train first."); sys.exit(1)
+MODELS_DIR = ROOT / "models"
+model, vocab = load_trained_model(MODELS_DIR)
+ctx_win  = vocab["context_window"]
+forecast = vocab["forecast_steps"]
+timeframe = vocab["timeframe"]
+print(f"✅ Model loaded — timeframe={timeframe}, context_window={ctx_win}, forecast_steps={forecast}")
 
-print(f"📦 Loading model: {MODEL_PATH.name}")
-print(f"🏗️  Re-building Kraken V12.0...")
-features  = build_feature_cols()
-n_feats   = len(features)
-model = build_kraken(n_features=n_feats, context_window=CTX_WIN, forecast_steps=15)
-print(f"🧠 Loading Weights from: {MODEL_PATH.name} | Features: {n_feats}")
-model.load_weights(str(MODEL_PATH))
-print(f"✅ Brain loaded")
+print(f"\n⚓ SOVEREIGN BACKTEST ENGINE V6.0 — BTCUSD {timeframe}")
+print("=" * 60)
 
-print(f"\n⚓ SOVEREIGN BACKTEST ENGINE V5.0 — {SYMBOL}")
-print("="*60)
-
-# DLS — matches training pipeline
-
-df = fetch_live_kat_data(symbol=SYMBOL, n_candles=N_CANDLES + CTX_WIN + 50, timeframe=TIMEFRAME)
+df = pd.read_parquet(ROOT / "data" / f"BTCUSD_{timeframe}_history_master.parquet")
+df = df.reset_index().rename(columns={"index": "timestamps", "timestamp": "timestamps"})
 print(f"   Got {len(df):,} candles")
-df_feat = compute_indicators(df)
-data    = df_feat[features].values.astype("float32")
 
-print(f"\n🔄 Running walk-forward backtest ({N_CANDLES:,} steps)...")
+close_col_vals = df["close"].values
+n_test = min(N_CANDLES, len(df) - ctx_win - forecast - 150 - 1)
+start_idx = len(df) - n_test - forecast
+
+print(f"\n🔄 Running walk-forward backtest ({n_test:,} steps)...")
 
 results = []
-close_col = features.index("close")
+for step, i in enumerate(range(start_idx, start_idx + n_test)):
+    x_scaled, tok_ids, local_mean, local_std, t_close = prepare_window(df, i, vocab)
+    pred, cert, reasoning, _ = run_inference(model, x_scaled, tok_ids)
 
-for i in range(CTX_WIN, len(data) - 15):
-    X_in = apply_dls(data[i - CTX_WIN : i])[0].reshape(1, CTX_WIN, n_feats)
-    
-    # Dual Output: [0] = Prediction (1, 16, 3), [1] = Certainty (1, 120)
-    out       = model(X_in, training=False)
-    pred      = out[0].numpy()[0]   # Predictions
-    cert      = out[1].numpy()[0]   # Certainty mean
-    
     p_anchor = pred[0, 0]
-    mean_move = float(np.mean(pred[1:, 0] - p_anchor)) # Future returns relative to anchor
-    mean_cert = float(np.mean(cert))        # Expert consensus score
-    
-    # Strategy: Only trade when consensus > threshold (85% certainty)
+    mean_move = float(np.mean(pred[1:, 0] - p_anchor))  # Future returns relative to anchor (Z-score space)
+    mean_cert = float(np.mean(cert))
+    reasoning_class = int(np.argmax(reasoning))
+
+    # Strategy: only trade when consensus is high AND the reasoning head agrees
+    # with the price-trajectory direction (closes the gap found earlier where
+    # live_trader.py could fire against its own reasoning gate).
+    reasoning_dir = 1 if reasoning_class == 0 else (-1 if reasoning_class == 1 else 0)
+    price_dir = 1 if mean_move > 0 else (-1 if mean_move < 0 else 0)
+
     if mean_cert < 0.85:
-        signal = "HOLD" # Experts are confused
+        signal = "HOLD"
+    elif reasoning_class not in (0, 1) or reasoning_dir != price_dir:
+        signal = "HOLD"
     elif mean_move > THRESHOLD:
         signal = "LONG"
     elif mean_move < -THRESHOLD:
@@ -86,72 +72,57 @@ for i in range(CTX_WIN, len(data) - 15):
     else:
         signal = "HOLD"
 
-    # Actual future return direction over the 15-step forecast window (T to T+15)
-    actual_now  = float(data[i - 1, close_col])
-    actual_next_15 = data[i : i + 15, close_col]
-    actual_mean_future = float(np.mean(actual_next_15))
-    actual_dir  = np.sign(actual_mean_future - actual_now)
+    actual_now = float(close_col_vals[i - 1])
+    actual_next = close_col_vals[i:i + forecast]
+    actual_mean_future = float(np.mean(actual_next))
+    actual_dir = np.sign(actual_mean_future - actual_now)
 
-    results.append({
-        "i":          i,
-        "signal":     signal,
-        "mean_move":  mean_move,
-        "actual_dir": actual_dir,
-    })
+    results.append({"i": i, "signal": signal, "mean_move": mean_move, "actual_dir": actual_dir})
 
-    if i % 500 == 0:
-        print(f"   Step {i - CTX_WIN:,}/{N_CANDLES:,}...", end="\r")
+    if step % 100 == 0:
+        print(f"   Step {step:,}/{n_test:,}...", end="\r")
 
 print(f"\n   ✅ {len(results):,} steps evaluated")
 
 # ── Analysis ──────────────────────────────────────────────────────────────────
 df_r = pd.DataFrame(results)
-
-# Trades only (exclude HOLDs)
 trades = df_r[df_r["signal"] != "HOLD"].copy()
-n_trades  = len(trades)
+n_trades = len(trades)
 n_signals = len(df_r)
-hold_pct  = (n_signals - n_trades) / n_signals * 100
+hold_pct = (n_signals - n_trades) / n_signals * 100 if n_signals else 0
 
-# Directional accuracy on trades
-def pred_dir(row):
-    return 1.0 if row["signal"] == "LONG" else -1.0
+if n_trades == 0:
+    print("\n⚠️  No trades fired under current gates in this window — nothing to report.")
+    sys.exit(0)
 
-trades["pred_dir"] = trades.apply(pred_dir, axis=1)
-trades["correct"]  = (trades["pred_dir"] == trades["actual_dir"])
+trades["pred_dir"] = trades["signal"].map({"LONG": 1.0, "SHORT": -1.0})
+trades["correct"] = (trades["pred_dir"] == trades["actual_dir"])
 
-win_rate  = trades["correct"].mean() * 100
-long_wr   = trades[trades["signal"] == "LONG"]["correct"].mean() * 100
-short_wr  = trades[trades["signal"] == "SHORT"]["correct"].mean() * 100
+win_rate = trades["correct"].mean() * 100
+long_wr = trades[trades["signal"] == "LONG"]["correct"].mean() * 100 if (trades["signal"] == "LONG").any() else 0
+short_wr = trades[trades["signal"] == "SHORT"]["correct"].mean() * 100 if (trades["signal"] == "SHORT").any() else 0
 
-# Simulated P&L (1 pip = 1 scaled unit → directional binary result)
-# Win = +1 unit, Lose = -1 unit, minus 2× fee per round trip
-fee_per_trade = FEE_PCT * 2   # entry + exit
-trades["pnl"] = trades.apply(
-    lambda r: (1 - fee_per_trade) if r["correct"] else (-1 - fee_per_trade), axis=1
-)
-total_pnl    = trades["pnl"].sum()
-cum_pnl      = trades["pnl"].cumsum()
+fee_per_trade = FEE_PCT * 2
+trades["pnl"] = trades["correct"].map({True: 1 - fee_per_trade, False: -1 - fee_per_trade})
+total_pnl = trades["pnl"].sum()
+cum_pnl = trades["pnl"].cumsum()
 max_drawdown = (cum_pnl - cum_pnl.cummax()).min()
 sharpe_proxy = trades["pnl"].mean() / (trades["pnl"].std() + 1e-9)
 
-# ── Report ────────────────────────────────────────────────────────────────────
-print("\n" + "="*60)
-print("📊 SOVEREIGN BACKTEST REPORT V5.0")
-print("="*60)
-print(f"  Symbol     : {SYMBOL} {TIMEFRAME}")
-print(f"  Model      : {MODEL_PATH.name}")
-print(f"  Window     : {N_CANDLES:,} candles (~{N_CANDLES/96:.1f} days)")
-print(f"  Threshold  : ±{THRESHOLD} (Z-score)")
-print("-"*60)
+print("\n" + "=" * 60)
+print("📊 SOVEREIGN BACKTEST REPORT V6.0")
+print("=" * 60)
+print(f"  Symbol/TF  : BTCUSD {timeframe}")
+print(f"  Window     : {n_test:,} candles")
+print(f"  Threshold  : ±{THRESHOLD} (Z-score) + reasoning/direction agreement gate")
+print("-" * 60)
 print(f"  Signals    : {n_trades:,} trades  |  {hold_pct:.1f}% HOLD")
 print(f"  Win Rate   : {win_rate:.1f}%  (Long: {long_wr:.1f}%  Short: {short_wr:.1f}%)")
 print(f"  Net P&L    : {total_pnl:+.2f} units  ({total_pnl/n_trades*100:+.1f}% per trade)")
 print(f"  Max Drawdown: {max_drawdown:.2f} units")
 print(f"  Sharpe Proxy: {sharpe_proxy:.3f}")
-print("-"*60)
+print("-" * 60)
 
-# Verdict
 if win_rate > 55:
     verdict = f"✅ PROFITABLE ALPHA — {win_rate:.1f}% win rate"
 elif win_rate > 51:
@@ -160,8 +131,8 @@ else:
     verdict = f"🛑 NO EDGE — {win_rate:.1f}% (below fee breakeven, keep training)"
 
 print(f"\n  {verdict}")
-print("="*60)
+print("=" * 60)
 print(f"\n  Fee breakeven: >50.5% win rate")
 print(f"  Profitable:    >53.0% win rate")
 print(f"  Strong edge:   >57.0% win rate")
-print("="*60 + "\n")
+print("=" * 60 + "\n")

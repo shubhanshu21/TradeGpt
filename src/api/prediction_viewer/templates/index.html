@@ -15,7 +15,7 @@
             color: #1e293b;
             padding: 24px 16px;
         }
-        .wrap { max-width: 780px; margin: 0 auto; }
+        .wrap { max-width: 1100px; margin: 0 auto; }
         .header { text-align: center; color: white; margin-bottom: 24px; }
         .header h1 { font-size: 2rem; margin-bottom: 6px; }
         .header p { opacity: 0.8; font-size: 1rem; }
@@ -55,9 +55,11 @@
         .verdict {
             text-align: center;
             padding: 20px;
+            max-width: 620px;
+            margin: 0 auto;
         }
         .verdict .arrow { font-size: 4rem; line-height: 1; margin-bottom: 8px; }
-        .verdict .direction { font-size: 1.8rem; font-weight: 800; margin-bottom: 6px; }
+        .verdict .direction { font-size: 2.2rem; font-weight: 800; margin-bottom: 6px; }
         .verdict .direction.up { color: #16a34a; }
         .verdict .direction.down { color: #dc2626; }
         .verdict .subtext { color: #64748b; font-size: 1rem; margin-bottom: 20px; }
@@ -78,7 +80,22 @@
             text-align: left;
         }
 
-        #chart { width: 100%; height: 400px; }
+        #chart { width: 100%; height: 560px; }
+
+        .reset-btn {
+            display: block;
+            margin: 14px auto 0;
+            padding: 10px 20px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            background: #f8fafc;
+            color: #334155;
+            cursor: pointer;
+        }
+        .reset-btn:hover { background: #e2e8f0; }
+        .chart-hint { text-align: center; color: #94a3b8; font-size: 0.85rem; margin-top: 10px; }
 
         .hidden { display: none; }
 
@@ -132,6 +149,8 @@
 
         <div id="chart-card" class="card hidden">
             <div id="chart"></div>
+            <button id="reset-view-btn" class="reset-btn">🔄 Reset View</button>
+            <div class="chart-hint">💡 Drag to move around, scroll to zoom, or hit Reset View if it looks broken</div>
         </div>
 
         <div class="footer-note">Trained on real Delta Exchange BTC/USDT history. This is a research tool, not financial advice.</div>
@@ -235,8 +254,17 @@
         function showChart(chartJson) {
             const chartData = JSON.parse(chartJson);
             document.getElementById('chart-card').classList.remove('hidden');
-            Plotly.newPlot('chart', chartData.data, chartData.layout, {displayModeBar: false, responsive: true});
+            // dragmode 'pan' instead of Plotly's default box-zoom-on-drag —
+            // dragging a small accidental box zooms into a tiny, confusing
+            // sliver of the chart (exactly what happened before). Panning is
+            // much harder to get "lost" in; scroll wheel still zooms in/out.
+            chartData.layout.dragmode = 'pan';
+            Plotly.newPlot('chart', chartData.data, chartData.layout, {displayModeBar: false, responsive: true, scrollZoom: true});
         }
+
+        document.getElementById('reset-view-btn').addEventListener('click', () => {
+            Plotly.relayout('chart', {'xaxis.autorange': true, 'yaxis.autorange': true});
+        });
     </script>
 </body>
 </html>

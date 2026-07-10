@@ -145,7 +145,8 @@ def create_chart(hist_df, entry_ts, paths, mean_close_path, actual_df=None, time
 
     fig.add_trace(go.Scatter(
         x=hist_x, y=hist_y, mode="lines",
-        line=dict(color="#3b82f6", width=2), name="Real price (recent)"))
+        line=dict(color="#3b82f6", width=2), name="Real price (recent)",
+        hovertemplate="%{x|%b %d, %I:%M %p}<br>$%{y:,.0f}<extra></extra>"))
 
     future_ts = pd.date_range(start=entry_ts + pd.Timedelta(minutes=timeframe_minutes),
                                periods=len(mean_close_path), freq=f"{timeframe_minutes}min")
@@ -159,20 +160,39 @@ def create_chart(hist_df, entry_ts, paths, mean_close_path, actual_df=None, time
     bridge_y = [hist_y[-1]] + [float(v) for v in mean_close_path]
     fig.add_trace(go.Scatter(
         x=bridge_x, y=bridge_y, mode="lines+markers",
-        line=dict(color=pred_color, width=3, dash="dash"), name="AI's guess"))
+        line=dict(color=pred_color, width=3, dash="dash"), name="AI's guess",
+        hovertemplate="%{x|%b %d, %I:%M %p}<br>$%{y:,.0f}<extra>AI's guess</extra>"))
 
     if actual_df is not None and len(actual_df) > 0:
         bridge_actual_x = [hist_x[-1]] + [t.isoformat() for t in actual_df["timestamps"]]
         bridge_actual_y = [hist_y[-1]] + [float(v) for v in actual_df["close"]]
         fig.add_trace(go.Scatter(
             x=bridge_actual_x, y=bridge_actual_y, mode="lines+markers",
-            line=dict(color="#7c3aed", width=2), name="What really happened"))
+            line=dict(color="#7c3aed", width=2), name="What really happened",
+            hovertemplate="%{x|%b %d, %I:%M %p}<br>$%{y:,.0f}<extra>Actual</extra>"))
+
+    # "NOW" marker — the single most important landmark on this chart: it's
+    # the line between "this already happened" and "this is a guess." Without
+    # it, a first-time viewer has no way to tell where history ends.
+    fig.add_vline(x=hist_x[-1], line_width=1.5, line_dash="dot", line_color="#64748b",
+                  annotation_text="NOW", annotation_position="top",
+                  annotation_font=dict(color="#64748b", size=12))
+
+    # Zoom the y-axis to the actual price movement, not down to $0 — BTC
+    # moves by a few thousand dollars around an ~$80k base, so an axis
+    # starting at zero squeezes all the real detail into a sliver at the top.
+    all_prices = hist_y + bridge_y + (bridge_actual_y if actual_df is not None and len(actual_df) > 0 else [])
+    pad = (max(all_prices) - min(all_prices)) * 0.15 or max(all_prices) * 0.01
+    fig.update_yaxes(range=[min(all_prices) - pad, max(all_prices) + pad])
 
     fig.update_layout(title="Recent Price → AI's Guess vs Reality",
                        xaxis_title="Time", yaxis_title="Price (USD)",
-                       template="plotly_white", height=380, showlegend=True,
-                       legend=dict(orientation="h", yanchor="bottom", y=1.02))
-    fig.update_xaxes(rangeslider_visible=False, type="date")
+                       template="plotly_white", height=560, showlegend=True,
+                       legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                       hovermode="x unified")
+    fig.update_xaxes(rangeslider_visible=False, type="date", showspikes=True,
+                      spikemode="across", spikecolor="#94a3b8", spikethickness=1)
+    fig.update_yaxes(tickprefix="$", separatethousands=True)
     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
 
 

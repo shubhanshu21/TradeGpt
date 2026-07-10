@@ -16,44 +16,38 @@ from datetime import datetime
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.hydra import build_kraken
-from data.preprocess import build_feature_cols, compute_indicators, apply_dls
-from exchange.fetch_data  import fetch_live_kat_data
+from core.inference import load_trained_model, prepare_window, run_inference
+from data.preprocess import build_feature_cols, compute_indicators, apply_dls, tokenize_returns
 from config.sovereign_config import (FEE_RATE, LEVERAGE, POSITION_SIZE_PCT, MAX_TRADES_PER_DAY,
                                      BREAKEVEN_TRIGGER_PCT, TRAILING_STOP_PCT, CERT_THRESHOLD, LABELS)
 
 # ── SIMULATION CONFIG ─────────────────────────────────────────────────────────
 SYMBOL         = "BTCUSD"
-TIMEFRAME      = "15m"      
-CTX_WIN        = 120        
 N_CANDLES      = 1000       # Test window size
 THRESHOLD      = 0.08       # Matches live_trader.py THRESHOLD (increased base conviction)
 MIN_SWING_FLOOR = 100.0     # Clamps
-MIN_SWING_CEIL  = 100.0     
+MIN_SWING_CEIL  = 100.0
 COOLDOWN_BARS  = 1          # live_trader cooldown
 
-# ── Load Model ────────────────────────────────────────────────────────
-MODELS_DIR  = ROOT / "models"
-checkpoints = sorted(MODELS_DIR.glob("hydra_checkpoint_E*.keras"), reverse=True)
-MODEL_PATH  = checkpoints[0] if checkpoints else MODELS_DIR / "hydra_best.keras"
-if not MODEL_PATH.exists():
-    print(f"❌ No model at {MODEL_PATH} — train first."); sys.exit(1)
-
-print(f"📦 Loading model: {MODEL_PATH.name}")
-print(f"🏗️  Re-building Iron Oracle...")
-features  = build_feature_cols()
-n_feats   = len(features)
-model = build_kraken(n_features=n_feats, context_window=CTX_WIN, forecast_steps=15)
-model.load_weights(str(MODEL_PATH))
-print(f"✅ Model loaded successfully")
+# ── Load Model — real trained shape (context_window/forecast_steps/timeframe),
+# not hardcoded, since different runs use different shapes ─────────────────
+MODELS_DIR = ROOT / "models"
+model, vocab = load_trained_model(MODELS_DIR)
+CTX_WIN   = vocab["context_window"]
+TIMEFRAME = vocab["timeframe"]
+print(f"✅ Model loaded — timeframe={TIMEFRAME}, context_window={CTX_WIN}, forecast_steps={vocab['forecast_steps']}")
 
 print(f"\n⚓ RUNNING LIVE-LOGIC SIMULATOR — {SYMBOL}")
 print("="*80)
 
-# Fetch data: needs extra historical context for preprocessing and future outlook
-df = fetch_live_kat_data(symbol=SYMBOL, n_candles=N_CANDLES + CTX_WIN + 50, timeframe=TIMEFRAME)
+# Fetch data from the same cached master parquet everything else uses
+features = build_feature_cols()
+n_feats  = len(features)
+df = pd.read_parquet(ROOT / "data" / f"BTCUSD_{TIMEFRAME}_history_master.parquet")
+df = df.reset_index().rename(columns={"index": "timestamps", "timestamp": "timestamps"})
+df = df.tail(N_CANDLES + CTX_WIN + 150).reset_index(drop=True)
 print(f"   Got {len(df):,} candles")
-df_feat = compute_indicators(df)
+df_feat = compute_indicators(df.drop(columns=["timestamps"]))
 data    = df_feat[features].values.astype("float32")
 close_col = features.index("close")
 high_col  = features.index("high")
@@ -89,7 +83,7 @@ daily_trade_counts = [] # list of indices where trades occurred to enforce 4 tra
 
 print(f"🔄 Simulating walk-forward steps with live_trader sniper gates...")
 
-for i in range(CTX_WIN, len(data) - 15):
+for i in range(CTX_WIN, len(data) - vocab["forecast_steps"]):
     current_price = data[i, close_col]
     current_high  = data[i, high_col]
     current_low   = data[i, low_col]
@@ -195,12 +189,16 @@ for i in range(CTX_WIN, len(data) - 15):
     if (i - last_trade_idx) < COOLDOWN_BARS:
         continue
 
-    # Run inference
-    X_in = apply_dls(data[i - CTX_WIN : i])[0].reshape(1, CTX_WIN, n_feats)
-    out = model(X_in, training=False)
-    pred         = out[0].numpy()[0]
-    certainty_2d = out[1].numpy()[0]
-    reasoning    = int(np.argmax(out[2].numpy()[0]))
+    # Run inference — dual input (market features + return tokens), reusing
+    # the already-computed `data` array rather than recomputing indicators
+    # per step (this loop runs 1000+ times; recomputation would be very slow).
+    x_scaled, local_mean, local_std = apply_dls(data[i - CTX_WIN : i])
+    raw_returns = np.diff(data[i - CTX_WIN - 1: i, close_col]) / (data[i - CTX_WIN - 1: i - 1, close_col] + 1e-9)
+    tok_ids = tokenize_returns(raw_returns.astype("float64"), vocab["bin_edges"])
+    out = run_inference(model, x_scaled, tok_ids)
+    pred         = out[0]
+    certainty_2d = out[1]
+    reasoning    = int(np.argmax(out[2]))
     
     pred_future  = pred[1:]
     p_anchor     = pred[0, 0]
@@ -225,7 +223,16 @@ for i in range(CTX_WIN, len(data) - 15):
     # Gate 2: Reasoning (must be SOVEREIGN_LONG or SOVEREIGN_SHORT)
     if reasoning not in [0, 1]:
         continue
-        
+
+    # Gate 2b: Direction Agreement — reasoning and price-trajectory heads must
+    # point the same way (matches the fix added to live_trader.py; without
+    # this, this "exact live-logic" simulator was silently more permissive
+    # than the real live_trader.py it claims to replicate).
+    reasoning_dir = 1 if reasoning == 0 else -1
+    price_dir = 1 if mean_price > 0 else (-1 if mean_price < 0 else 0)
+    if reasoning_dir != price_dir:
+        continue
+
     # Gate 3: Fee Protection (expected swing size)
     if est_swing < dyn_min_swing:
         continue

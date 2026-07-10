@@ -1,5 +1,5 @@
 """
-SOVEREIGN KRAKEN — Daily Fine-Tuner (V5.0) ⚓📅
+SOVEREIGN KRAKEN — Daily Fine-Tuner (V6.0) ⚓📅
 ================================================
 Adapts the trained brain to the latest market regime each morning.
 
@@ -20,33 +20,32 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 import keras
-from core.hydra import (build_kraken, HydraBlock, GatedMoE, MLALayer,
-                                  RMSNorm, TurboQuant, SwiGLU,
-                                  SovereignLoss, CertaintyMetric, SovereignAccuracy,
-                                  SovereignReasoningLoss, certainty_loss,
-                                  init_kraken_hardware)
+from core.inference import load_trained_model
+from core.hydra import SovereignLoss, CertaintyMetric, SovereignAccuracy, certainty_loss, init_kraken_hardware
 from data.preprocess import build_dataset_streaming
-from exchange.fetch_data  import fetch_live_kat_data
+from exchange.fetch_data import fetch_live_kat_data
 
 # Initialize hardware/thread limits immediately
 init_kraken_hardware()
 
+# Minutes-per-candle for translating a "days of data" window into a candle count,
+# whatever timeframe the currently-trained checkpoint actually uses.
+TIMEFRAME_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440}
+
 # ── DEFAULTS ──────────────────────────────────────────────────────────────────
-DAYS         = 2        # Days of recent data to fine-tune on (~2,880 candles)
+DAYS         = 2        # Days of recent data to fine-tune on
 EPOCHS       = 5        # Fine-tune epochs — keep small (3–10)
 LR           = 1e-6     # Very low LR — nudge, don't overwrite base knowledge
-CTX_WIN      = 120      # Must match training context window
 BATCH        = 8        # Capped for dynamic performance safety
 FREEZE_BELOW = 6        # Freeze foundational blocks (0-5), adapt top blocks (6-7)
 MODEL_FILE   = "sandbox_active.keras"
 SYMBOL       = "BTCUSD"
-TIMEFRAME    = "15m"   # Switched to 15m for maximum SNR (Phase 5+)
 KEEP_BACKUPS = 7        # Days of backups to retain
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-MODEL_PATH = ROOT / "models" / MODEL_FILE
-BACKUP_DIR = ROOT / "models" / "backups"
-CANDLES    = DAYS * 24 * 60 + 200   # +200 for indicator warm-up
+MODELS_DIR = ROOT / "models"
+MODEL_PATH = MODELS_DIR / MODEL_FILE
+BACKUP_DIR = MODELS_DIR / "backups"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 def log(msg):
@@ -55,10 +54,9 @@ def log(msg):
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 log("=" * 55)
-log("⚓ SOVEREIGN DAILY FINE-TUNER V5.0")
-log(f"   Data    : last {DAYS} days ({CANDLES:,} candles)")
+log("⚓ SOVEREIGN DAILY FINE-TUNER V6.0")
 log(f"   Epochs  : {EPOCHS}  |  LR: {LR}  |  Batch: {BATCH}")
-log(f"   Frozen  : bottom {FREEZE_BELOW} blocks  |  CTX: {CTX_WIN}")
+log(f"   Frozen  : bottom {FREEZE_BELOW} blocks")
 log("=" * 55)
 
 # ── 1. Validate model ─────────────────────────────────────────────────────────
@@ -105,7 +103,7 @@ try:
                                 log(f"🔎 Extracted active train command: {' '.join(active_train_cmd)}")
                 except Exception as proc_err:
                     log(f"⚠️ Could not read /proc/{pid}/cmdline: {proc_err}")
-                
+
                 # Read stdout redirection
                 try:
                     fd1_path = os.readlink(f"/proc/{pid}/fd/1")
@@ -114,7 +112,7 @@ try:
                         log(f"🔎 Extracted active train log file: {active_train_log}")
                 except Exception as fd_err:
                     log(f"⚠️ Could not resolve stdout link /proc/{pid}/fd/1: {fd_err}")
-                
+
                 log(f"🛑 RAM SAFEGUARD: Found running base training process (PID {pid}).")
                 log("   Sending SIGTERM for clean shutdown (saves checkpoint)...")
                 subprocess.run(["kill", "-15", str(pid)])  # FIX: SIGTERM first (safe)
@@ -130,6 +128,17 @@ try:
         # No train.py process running or pgrep failed, safe to proceed
         pass
 
+    # ── 4. Load sandbox model + its real trained shape ─────────────────────────
+    log("🏗️  Loading sandbox checkpoint and its trained shape metadata...")
+    model, vocab = load_trained_model(MODELS_DIR, checkpoint_name=MODEL_FILE)
+    CTX_WIN   = vocab["context_window"]
+    FORECAST  = vocab["forecast_steps"]
+    TIMEFRAME = vocab["timeframe"]
+    candle_minutes = TIMEFRAME_MINUTES.get(TIMEFRAME, 60)
+    CANDLES = DAYS * 24 * 60 // candle_minutes + 200  # +200 for indicator warm-up
+    log(f"✅ Checkpoint loaded — timeframe={TIMEFRAME}, context_window={CTX_WIN}, forecast_steps={FORECAST}")
+    log(f"   Data: last {DAYS} days ({CANDLES:,} {TIMEFRAME} candles)")
+
     log(f"📡 Fetching {CANDLES:,} fresh candles...")
     try:
         df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CANDLES, timeframe=TIMEFRAME)
@@ -144,9 +153,9 @@ try:
         log(f"❌ Insufficient data: {len(df)} candles")
         sys.exit(1)
 
-    # ── 4. Streaming dataset (DLS — no global scaler needed) ──────────────────────
+    # ── 5. Streaming dataset (DLS — no global scaler needed) ──────────────────────
     log("🌊 Building fine-tune stream (DLS — Dynamic Local Scaling)...")
-    ds_info  = build_dataset_streaming(df, context_window=CTX_WIN, forecast_steps=15,
+    ds_info  = build_dataset_streaming(df, context_window=CTX_WIN, forecast_steps=FORECAST,
                                         batch_size=BATCH)
     tr_ds    = ds_info["tr_ds"]
     va_ds    = ds_info["va_ds"]
@@ -161,21 +170,7 @@ try:
     log(f"   ⚖️  Fine-tune class weights: Bull={ft_class_weights[0]:.2f} Bear={ft_class_weights[1]:.2f} "
         f"FeeTrap={ft_class_weights[2]:.2f} Noise={ft_class_weights[3]:.2f}")
 
-    # V10.6 Phase 3: Re-build from scratch to avoid deserialization issues
-    log("🏗️  Re-building Phase 3 architecture and loading weights...")
-    from data.preprocess import build_feature_cols
-    _features = build_feature_cols()
-    _n_feat   = len(_features)
-    log(f"   Dynamic feature count: {_n_feat}")
-    model = build_kraken(n_features=_n_feat, context_window=CTX_WIN, forecast_steps=15)
-    try:
-        model.load_weights(str(MODEL_PATH))
-        log(f"✅ Weights loaded from {MODEL_FILE}")
-    except Exception as e:
-        log(f"⚠️  Weight load warning (shape mismatch if upgrading phase): {e}")
-        log("   Starting from scratch for this fine-tune session.")
-
-    # ── 7. Freeze bottom blocks ───────────────────────────────────────────────────
+    # ── 6. Freeze bottom blocks ───────────────────────────────────────────────────
     # HydraBlocks are named "hydra_0" through "hydra_7" (from build_kraken name=f"hydra_{i}")
     frozen = 0
     for layer in model.layers:
@@ -190,7 +185,7 @@ try:
     total     = sum(w.numpy().size for w in model.weights)
     log(f"🔒 Frozen {frozen} blocks → {trainable:,} / {total:,} params active")
 
-    # ── 8. Recompile at low LR ────────────────────────────────────────────────────
+    # ── 7. Recompile at low LR ────────────────────────────────────────────────────
     ft_weights_tensor = tf.constant([ft_class_weights[i] for i in range(4)], dtype=tf.float32)
 
     def ft_weighted_reasoning_loss(y_true, y_pred):
@@ -203,17 +198,19 @@ try:
     model.compile(
         optimizer=keras.optimizers.AdamW(LR, weight_decay=0.01, clipnorm=0.5),
         loss={
-            "prediction": SovereignLoss(direction_weight=10.0),
-            "certainty":  certainty_loss,
-            "reasoning":  ft_weighted_reasoning_loss
+            "prediction":  SovereignLoss(direction_weight=10.0),
+            "certainty":   certainty_loss,
+            "reasoning":   ft_weighted_reasoning_loss,
+            "next_token":  keras.losses.SparseCategoricalCrossentropy(),
         },
+        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0, "next_token": 2.0},
         metrics={
             "prediction": [SovereignAccuracy(name="dir_acc"), "mae"],
             "certainty":  [CertaintyMetric(name="certainty")]
         }
     )
 
-    # ── 9. Fine-tune ──────────────────────────────────────────────────────────────
+    # ── 8. Fine-tune ──────────────────────────────────────────────────────────────
     log(f"\n Fine-tuning: {EPOCHS} epochs on latest {DAYS}-day data...")
     history = model.fit(tr_ds, validation_data=va_ds,
                         epochs=EPOCHS, steps_per_epoch=steps_tr,
@@ -224,13 +221,13 @@ try:
     val_loss     = history.history["val_loss"][-1]
     delta        = initial_loss - final_loss
 
-    # ── 10. Save or rollback ──────────────────────────────────────────────────────
+    # ── 9. Save or rollback ──────────────────────────────────────────────────────
     log(f"\n📊 Results: loss {initial_loss:.4f} → {final_loss:.4f} (Δ{delta:+.4f}) | val: {val_loss:.4f}")
 
     if delta > 0:
         model.save(str(MODEL_PATH))
         log(f"✅ Sandbox model updated — improved by {delta:.4f}")
-        
+
         # --- CLEANUP: Clear used L5 snapshots to save space ---
         log("🗑️  Cleaning up processed L5 snapshots...")
         SNAPSHOT_DIR = ROOT / "data/orderbook_history"
@@ -249,7 +246,7 @@ except Exception as e:
     import traceback
     log(f"❌ CRITICAL FINE-TUNE RUNTIME ERROR: {e}")
     log(traceback.format_exc())
-    
+
     # Safe Rollback Safeguard
     if 'backup_path' in locals() and backup_path.exists() and MODEL_PATH.exists():
         try:
@@ -279,32 +276,53 @@ finally:
                     script_args = launch_args[train_idx + 1:]
                 else:
                     train_script = "/var/www/html/ML/kat/train.py"
-                    script_args = ["--model", "hydra", "--epochs", "300", "--batch", "32", "--candles", "120000", "--timeframe", "15m", "--symbol", "BTCUSD", "--resume"]
+                    script_args = None
             else:
                 train_script = "/var/www/html/ML/kat/train.py"
-                script_args = ["--model", "hydra", "--epochs", "300", "--batch", "32", "--candles", "120000", "--timeframe", "15m", "--symbol", "BTCUSD", "--resume"]
+                script_args = None
 
-            if active_train_log:
-                log_path = active_train_log
-            else:
-                log_path = f"/var/www/html/ML/kat/logs/hydra_train_{time.strftime('%Y%m%d_%H%M%S')}.log"
+            if script_args is None:
+                # No captured live command — fall back to whatever the last checkpoint
+                # was actually trained with (models/return_vocab.pkl), never a guess.
+                try:
+                    import pickle
+                    with open(MODELS_DIR / "return_vocab.pkl", "rb") as f_vocab:
+                        last_vocab = pickle.load(f_vocab)
+                    script_args = [
+                        "--model", "hydra", "--epochs", "300", "--batch", "32",
+                        "--candles", "31430",
+                        "--timeframe", last_vocab.get("timeframe", "1h"),
+                        "--context_window", str(last_vocab.get("context_window", 30)),
+                        "--forecast_steps", str(last_vocab.get("forecast_steps", 4)),
+                        "--symbol", "BTCUSD", "--resume",
+                    ]
+                except Exception as vocab_err:
+                    log(f"⚠️ Could not read return_vocab.pkl for restart fallback: {vocab_err}")
+                    log("   Skipping auto-restart — start train.py manually with the correct settings.")
+                    script_args = None
 
-            args_str = " ".join(script_args)
-            if "--resume" not in args_str:
-                args_str += " --resume"
+            if script_args is not None:
+                if active_train_log:
+                    log_path = active_train_log
+                else:
+                    log_path = f"/var/www/html/ML/kat/logs/hydra_train_{time.strftime('%Y%m%d_%H%M%S')}.log"
 
-            launch_cmd = (
-                f"nohup /root/miniconda3/bin/python -u {train_script} {args_str} "
-                f"> {log_path} 2>&1 &"
-            )
-            log(f"   Executing: {launch_cmd}")
-            subprocess.Popen(
-                launch_cmd,
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            log("   ✅ Base training process restarted cleanly.")
+                args_str = " ".join(script_args)
+                if "--resume" not in args_str:
+                    args_str += " --resume"
+
+                launch_cmd = (
+                    f"nohup /root/miniconda3/bin/python -u {train_script} {args_str} "
+                    f"> {log_path} 2>&1 &"
+                )
+                log(f"   Executing: {launch_cmd}")
+                subprocess.Popen(
+                    launch_cmd,
+                    shell=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                log("   ✅ Base training process restarted cleanly.")
         except Exception as relaunch_err:
             log(f"❌ SELF-HEALING: Failed to restart base training: {relaunch_err}")
     else:

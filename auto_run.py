@@ -2,43 +2,34 @@
 """
 Sovereign Kraken Auto-Run
 =========================
-Single entry point for the entire Sovereign Kraken pipeline.
+Single entry point for the Sovereign Kraken pipeline. Hydra is the only
+architecture in the codebase — there is no `src/architectures/` directory
+and no alternate model to select, so this wraps train.py and live_trader.py
+directly rather than exposing dead architecture choices.
+
+For predictions, use the dashboard (src/api/prediction_viewer/app.py) or
+the scripts in src/evaluation/ (certainty_audit.py, backtest_checkup.py, etc).
 
 Modes:
-  train   → generate data, preprocess, train all models
-  predict → load latest checkpoint, run prediction on recent data
-  serve   → launch FastAPI inference server
-  demo    → quick end-to-end demo (small dataset, 5 epochs)
+  train → generate data, preprocess, train the Hydra model
+  trade → live autonomous Sandbox trading
 
 Usage:
-    python auto_run.py train --model all --epochs 50
-    python auto_run.py train --model causal_tiger --epochs 30
-    python auto_run.py predict --model causal_tiger --steps 60
-    python auto_run.py serve --port 8000
-    python auto_run.py demo
+    python auto_run.py train --epochs 300 --timeframe 1h --candles 31430
+    python auto_run.py trade --symbol BTCUSD
 """
 
-import sys, time
-import numpy as np
+import sys
 import argparse
 from pathlib import Path
 
-ROOT        = Path(__file__).parent
-DATA_DIR    = ROOT / "data"
-MODEL_DIR   = ROOT / "src/architectures"
-LOG_DIR     = ROOT / "logs"
-SAVED_MODELS = ROOT / "models"
-
+ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(MODEL_DIR))
 
 try:
     from config.sovereign_config import CERT_THRESHOLD
 except ImportError:
-    try:
-        from src.config.sovereign_config import CERT_THRESHOLD
-    except ImportError:
-        CERT_THRESHOLD = 0.85
+    CERT_THRESHOLD = 0.85
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -46,247 +37,25 @@ except ImportError:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def mode_train(args):
-    """Full training pipeline."""
+    """Full training pipeline — thin wrapper around train.py."""
     import subprocess
     cmd = [
         sys.executable, str(ROOT / "train.py"),
-        "--model",    args.model,
         "--epochs",   str(args.epochs),
         "--batch",    str(args.batch),
         "--candles",  str(args.candles),
         "--timeframe", args.timeframe,
+        "--symbol",   args.symbol,
     ]
-    print(f"Running: {' '.join(cmd)}")
-    if getattr(args, "symbol", None):
-        cmd.extend(["--symbol", args.symbol])
-    if getattr(args, "finetune", False):
-        cmd.append("--finetune")
-    if getattr(args, "resume", False):
+    if args.context_window:
+        cmd.extend(["--context_window", str(args.context_window)])
+    if args.forecast_steps:
+        cmd.extend(["--forecast_steps", str(args.forecast_steps)])
+    if args.resume:
         cmd.append("--resume")
-    
+
+    print(f"Running: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
-
-
-def mode_predict(args):
-    """Load a trained model and run prediction on fresh synthetic data."""
-    import numpy as np
-    import tensorflow as tf
-    import keras
-    from data.preprocess import build_dataset_streaming as build_dataset, KATScaler, build_feature_cols
-    from exchange.fetch_data     import fetch_live_kat_data
-
-    model_file = SAVED_MODELS / "hydra_best.keras" if "hydra" in args.model else SAVED_MODELS / f"{args.model}_best.keras"
-    # DLS pipeline: no global scaler needed
-    scaler = None
-
-    print(f"📡 Fetching live data for {args.symbol} {args.model} prediction...")
-    df = fetch_live_kat_data(symbol=args.symbol, n_candles=300, timeframe=args.timeframe)
-    if df is None or len(df) < 120:
-        print("❌ Not enough data for prediction.")
-        return
-
-    from data.preprocess import compute_indicators
-    df = compute_indicators(df)
-    features = build_feature_cols()
-    data = df[features].values.astype("float32")
-    
-    # Phase 2: Dynamic Local Scaling (DLS)
-    # We use the raw data directly. The scale happens inside the model logic.
-    seed = data[-120:] 
-    # CTX_WIN = 120
-
-    print(f"Loading {model_file.name}...")
-
-    from core.hydra import (HydraBlock, GatedMoE, 
-                            RMSNorm, TurboQuant, SwiGLU,
-                            SovereignLoss, CertaintyMetric, SovereignAccuracy, MLALayer,
-                            SovereignReasoningLoss, dummy_certainty_loss)
-    custom_objs = {
-        "HydraBlock":             HydraBlock,
-        "GatedMoE":               GatedMoE,
-        "MLALayer":               MLALayer,
-        "RMSNorm":                RMSNorm,
-        "TurboQuant":             TurboQuant,
-        "SwiGLU":                 SwiGLU,
-        "SovereignLoss":          SovereignLoss,
-        "CertaintyMetric":        CertaintyMetric,
-        "SovereignAccuracy":      SovereignAccuracy,
-        "SovereignReasoningLoss": SovereignReasoningLoss,
-        "dummy_certainty_loss":   dummy_certainty_loss,
-    }
-    if "hydra" in args.model or "alpha" in args.model or "titan" in args.model:
-        from core.hydra import build_kraken
-        from data.preprocess import build_feature_cols as _bfc
-        _n_feat = len(_bfc())
-        model = build_kraken(n_features=_n_feat)
-        model.load_weights(str(model_file))
-        print(f"✅ Weights loaded from {model_file.name} | Features: {_n_feat}")
-    else:
-        model = keras.models.load_model(str(model_file), custom_objects=custom_objs, safe_mode=False)
-        print(f"✅ Model loaded from {model_file.name}")
-
-    # ── Predict ──────────────────────────────────────────────────────────────
-    # ── Phase 2: Dynamic Local Scaling (DLS) ─────────────────────────────────
-    if "hydra" in args.model or "alpha" in args.model or "titan" in args.model:
-        # 1. Calculate local stats for the context window
-        # FIX: Use 1e-3 std floor to match apply_dls() in preprocess.py (was 1e-8)
-        local_mean = seed.mean(axis=0)
-        local_std  = np.maximum(seed.std(axis=0), 1e-3)
-        
-        # 2. Scale locally (clip to [-5, 5] matching training DLS)
-        seed_scaled = np.clip((seed - local_mean) / local_std, -5.0, 5.0)
-        inp = seed_scaled[np.newaxis]
-        
-        # 3. Predict
-        outputs = model(inp, training=False)
-        pred_all = outputs[0].numpy()[0] # (16, 3)
-        
-        # 4. Extract Trajectory
-        p_anchor = pred_all[0, 0]
-        p_future = pred_all[1:, 0]
-        
-        # Unscaled USD Price for reporting
-        t_close = list(features).index('close')
-        last_known_usd = seed[-1, t_close]
-        
-        # Unscaled deltas (USD) = (p_future - p_anchor) * local_std[t_close]
-        usd_deltas = (p_future - p_anchor) * local_std[t_close]
-        
-        print(f"\nLast known close: ${last_known_usd:,.2f}")
-        print(f"Predicted MTP-15 trajectory ({len(p_future)} steps):")
-        
-        # Cache curve assignments above try block to avoid NameError if matplotlib fails
-        p_curve = usd_deltas 
-        v_curve = pred_all[1:, 1]
-        q_curve = pred_all[1:, 2]
-
-        try:
-            import matplotlib.pyplot as plt
-            plot_dir = LOG_DIR / "plots"
-            plot_dir.mkdir(parents=True, exist_ok=True)
-            # Use dynamic close index to extract correct column (avoid hardcoding 3)
-            hist_close = seed[-30:, t_close]
-            
-            # Forecast visual starts at last known and applies USD deltas relative to it
-            forecast_visual = [last_known_usd] + list(last_known_usd + usd_deltas)
-            
-            forecast_x = range(len(hist_close) - 1, len(hist_close) + len(usd_deltas))
-            
-            plt.figure(figsize=(10, 6))
-            plt.plot(range(len(hist_close)), hist_close, label="History", color="blue", marker="o", markersize=3)
-            plt.plot(forecast_x, forecast_visual, label="Forecast (Deep-Predator V10.7)", color="green", linestyle="--", marker="x", markersize=4)
-            
-            plt.title(f"KAT Prediction: {args.model} {args.symbol} MTP-15")
-            plt.xlabel("Minutes")
-            plt.ylabel("Price ($)")
-            plt.legend()
-            plt.grid(True, alpha=0.3)
-            plot_file = plot_dir / f"{args.model}_{time.strftime('%H%M%S')}.png"
-            plt.savefig(plot_file)
-            print(f"📈 Visual plot saved to: {plot_file}")
-            plt.close()
-        except Exception as e:
-            print(f"! Could not generate visual plot: {e}")
-
-        for i, p in enumerate(p_curve, 1):
-            is_above = "↑" if p > 0 else "↓"
-            print(f"  +{i:3d}min  Delta ${p:+.2f}  {is_above}  |  Vol: {v_curve[i-1]:.4f}  |  Flow: {q_curve[i-1]:.4f}")
-
-    elif "causal" in args.model:
-        # Load and generate from causal model
-        traj = model.generate(seed, steps=args.steps, scaler=scaler)
-        last_known = scaler.inverse_y(seed[-1:, 3:4].ravel())[0]
-        print(f"\nLast known close: ${last_known:,.2f}")
-        print(f"Predicted trajectory ({args.steps} steps):")
-
-        # ── Visual Plotting ──────────────────────────────────────────────────
-        try:
-            import matplotlib.pyplot as plt
-            plot_dir = LOG_DIR / "plots"
-            plot_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Get last 30 historical points for context
-            hist_close = scaler.inverse_y(seed[-30:, 3:4].ravel())
-            
-            plt.figure(figsize=(10, 6))
-            plt.plot(range(len(hist_close)), hist_close, label="History", color="blue", marker="o", markersize=3)
-            
-            # Forecast starts from the last historical point (connects history to forecast)
-            forecast_x = range(len(hist_close) - 1, len(hist_close) + len(traj))
-            plt.plot(forecast_x, [hist_close[-1]] + list(traj), label="Forecast", color="orange", linestyle="--", marker="x", markersize=4)
-            
-            plt.title(f"KAT Prediction: {args.model}")
-            plt.xlabel("Minutes")
-            plt.ylabel("Price ($)")
-            plt.legend()
-            plt.grid(True, alpha=0.3)
-            
-            plot_file = plot_dir / f"{args.model}_{time.strftime('%H%M%S')}.png"
-            plt.savefig(plot_file)
-            print(f"📈 Visual plot saved to: {plot_file}")
-            plt.close()
-            
-        except Exception as e:
-            print(f"! Could not generate visual plot: {e}")
-
-        # Text output
-        for i, p in enumerate(traj, 1):
-            arrow = "↑" if p > (traj[i-2] if i > 1 else last_known) else "↓"
-            print(f"  +{i:3d}min  ${p:,.2f}  {arrow}")
-    else:
-        inp = seed[np.newaxis]
-        pred_s = model.predict(inp, verbose=0)[0]
-        if hasattr(pred_s, "__len__"):
-            pred_s = pred_s[-1]
-        pred = scaler.inverse_y(np.array([float(pred_s)]))[0]
-        last_known = scaler.inverse_y(seed[-1:, 3:4].ravel())[0]
-        direction = "UP ↑" if pred > last_known else "DOWN ↓"
-        print(f"\nLast known close : ${last_known:,.2f}")
-        print(f"Predicted close  : ${pred:,.2f}  ({direction})")
-        delta = pred - last_known
-        sign = "+" if delta >= 0 else "-"
-        print(f"Delta            : {sign}${abs(delta):,.2f}")
-
-
-def mode_serve(args):
-    """Launch FastAPI server."""
-    try:
-        import uvicorn
-        print(f"Starting KAT API server on port {args.port}...")
-        uvicorn.run(
-            "src.api.serve:app",
-            host="0.0.0.0",
-            port=args.port,
-            reload=False,
-            app_dir=str(ROOT),
-        )
-    except ImportError:
-        print("uvicorn not installed. Run: pip install uvicorn fastapi")
-
-
-def mode_demo(args):
-    """Quick end-to-end demo: train KAT for 5 epochs, predict."""
-    import subprocess
-
-    print("=" * 60)
-    print("  KAT DEMO — Quick end-to-end pipeline test")
-    print("=" * 60)
-
-    print("\n[1/2] Training ALPHA (5 epochs, 500 candles)...")
-    subprocess.run([
-        sys.executable, str(ROOT / "train.py"),
-        "--model", "alpha",
-        "--epochs", "5",
-        "--batch", "8",
-        "--candles", "500"
-    ], check=True)
-
-    print("\n[2/2] Running prediction...")
-    # Add symbol and timeframe default arguments to Namespace to avoid AttributeError
-    predict_args = argparse.Namespace(model="alpha", steps=1, symbol="BTCUSD", timeframe="15m")
-    mode_predict(predict_args)
-
-    print("\n✓ Demo complete! Run `python auto_run.py train` for full training.")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -310,56 +79,32 @@ def main():
     sub = parser.add_subparsers(dest="mode", required=True)
 
     # ── train ─────────────────────────────────────────────────────────────────
-    p_train = sub.add_parser("train", help="Train KAT models")
-    p_train.add_argument("--model",   default="all",
-        choices=["all","alpha","titan","causal_base","causal_lion","causal_tiger","hydra"])
-    p_train.add_argument("--epochs",  type=int, default=50)
-    p_train.add_argument("--batch",   type=int, default=8)  # Capped for safe CPU performance
-    p_train.add_argument("--candles", type=int, default=120_000)
+    p_train = sub.add_parser("train", help="Train the Hydra model")
+    p_train.add_argument("--epochs",  type=int, default=300)
+    p_train.add_argument("--batch",   type=int, default=32)
+    p_train.add_argument("--candles", type=int, default=31430)
     p_train.add_argument("--symbol",  default="BTCUSD")
-    p_train.add_argument("--timeframe", default="15m", help="Timeframe (15m recommended for Phase 5)")
-    p_train.add_argument("--finetune", action="store_true", help="Fine-tune existing model")
-    p_train.add_argument("--resume", action="store_true", help="Resume from the latest 'Decade Backup' Epoch checkpoint")
-
-    # ── predict ───────────────────────────────────────────────────────────────
-    p_pred = sub.add_parser("predict", help="Run prediction with a trained model")
-    p_pred.add_argument("--model", default="causal_base",
-        choices=["alpha", "titan", "causal_base", "causal_lion", "causal_tiger", "hydra"])
-    p_pred.add_argument("--steps", type=int, default=60,
-        help="Forecast steps (CAUSAL/HYDRA only)")
-    p_pred.add_argument("--timeframe", default="15m", help="Timeframe (must match training)")
-    p_pred.add_argument("--symbol",  default="BTCUSD")
-    p_pred.add_argument("--live", action="store_true", default=True,
-        help="Fetch live data for prediction (default: True)")
-
-    # ── serve ─────────────────────────────────────────────────────────────────
-    p_srv = sub.add_parser("serve", help="Launch FastAPI inference server")
-    p_srv.add_argument("--port", type=int, default=8000)
+    p_train.add_argument("--timeframe", default="1h")
+    p_train.add_argument("--context_window", type=int, default=None)
+    p_train.add_argument("--forecast_steps", type=int, default=None)
+    p_train.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint")
 
     # ── trade ─────────────────────────────────────────────────────────────────
     p_trade = sub.add_parser("trade", help="Live autonomous Sandbox trading")
-    p_trade.add_argument("--model",  default="hydra",
-        choices=["alpha", "titan", "causal_base", "causal_lion", "causal_tiger", "hydra"])
     p_trade.add_argument("--symbol", default="BTCUSD")
     p_trade.add_argument("--size",   type=int, default=1)
     p_trade.add_argument("--thresh", type=float, default=0.05)
-    p_trade.add_argument("--timeframe", default="15m", help="Timeframe (must match training)")
+    p_trade.add_argument("--timeframe", default="1h", help="Timeframe (must match training)")
     p_trade.add_argument("--cert_thresh", type=float, default=CERT_THRESHOLD,
         help="Certainty threshold (0-1). Only trade signals above this. "
              "Higher = fewer trades but higher accuracy. Recommended: 0.70-0.85")
 
-    # ── demo ──────────────────────────────────────────────────────────────────
-    p_demo = sub.add_parser("demo", help="Quick end-to-end demo")
-
     args = parser.parse_args()
 
-    MODEL_DIR = ROOT / "src/core"
-
-    if   args.mode == "train":   mode_train(args)
-    elif args.mode == "predict": mode_predict(args)
+    if args.mode == "train":
+        mode_train(args)
     elif args.mode == "trade":
         from trading import live_trader
-        live_trader.MODEL_NAME    = args.model
         live_trader.SYMBOL        = args.symbol
         live_trader.SIZE          = args.size
         live_trader.THRESHOLD     = args.thresh
@@ -367,8 +112,6 @@ def main():
         live_trader.CERT_THRESHOLD = args.cert_thresh  # High-conviction filter
         print(f"⚖️  Certainty Filter: Only trading signals with >{args.cert_thresh*100:.0f}% conviction")
         live_trader.run_pilot()
-    elif args.mode == "serve":   mode_serve(args)
-    elif args.mode == "demo":    mode_demo(args)
 
 
 if __name__ == "__main__":

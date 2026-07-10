@@ -1,105 +1,81 @@
-import os, time, sys
+"""
+SOVEREIGN KRAKEN — Prediction vs Reality Visualizer ⚓📈
+=========================================================
+Generates a zoomed-in plot comparing the model's forecast trajectory against
+the actual realized price, saved to backtest_honesty.png.
+
+Usage:
+    python src/evaluation/visualize_backtest.py
+"""
+import sys
 import numpy as np
-import tensorflow as tf
-import keras
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# Paths
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from core.hydra import build_kraken
-from data.preprocess import compute_indicators, build_feature_cols, apply_dls
-from exchange.fetch_data import fetch_live_kat_data
+from core.inference import load_trained_model, run_inference
+from data.preprocess import compute_indicators, build_feature_cols, apply_dls, tokenize_returns
 
-def visualize_performance(model_path: str, timeframe: str = "15m"):
-    print(f"🔬 INITIALIZING SINGULARITY VISUALIZER (V10.3) | Source: {model_path}")
-    
-    ctx = 120
-    forecast = 15
+
+def visualize_performance():
+    print("🔬 INITIALIZING PREDICTION VISUALIZER")
+
+    model, vocab = load_trained_model(ROOT / "models")
+    ctx = vocab["context_window"]
+    forecast = vocab["forecast_steps"]
+    timeframe = vocab["timeframe"]
+    print(f"✅ Model loaded — timeframe={timeframe}, context_window={ctx}, forecast_steps={forecast}")
+
     features = build_feature_cols()
-    n_feat   = len(features)
-    models_dir  = ROOT / "models"
-    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
-    model_path  = model_path if Path(model_path).exists() and "checkpoint" in model_path \
-                  else (str(checkpoints[0]) if checkpoints else model_path)
-    print(f"🏗️  Re-building Iron Oracle V12.0 ({n_feat} features)...")
-    model = build_kraken(n_features=n_feat, context_window=ctx, forecast_steps=forecast)
-    model.load_weights(model_path)
-    
-    # 2. Fetch Data
-    print(f"📡 Fetching 1,000 candles for visualization...")
-    from exchange.fetch_data import fetch_live_kat_data
-    df = fetch_live_kat_data(symbol="BTCUSD", n_candles=1000, timeframe=timeframe)
-    if df is None: return
-    
-    # 3. Preprocess with DLS (Dynamic Local Scaling)
+    df = pd.read_parquet(ROOT / "data" / f"BTCUSD_{timeframe}_history_master.parquet")
     df_feat = compute_indicators(df)
-    features = build_feature_cols()
     data = df_feat[features].values.astype("float32")
-    
-    # We must scale windows exactly like training (Abyss-Streamer V4.7) 
-    def prepare_dls_window(idx):
-        x_raw = data[idx : idx + ctx]
-        return apply_dls(x_raw)[0]
-    
-    # 4. Generate Windows and Predict
+    t_close = features.index("close")
+
     num_windows = 150
-    valid_range = len(data) - ctx - 15
-    Xs = np.array([prepare_dls_window(i) for i in range(valid_range)])
-    Xs = Xs[-num_windows:]
-    
-    print(f"🔬 Generating {len(Xs)} predictions...")
-    out = model.predict(Xs, verbose=0, batch_size=16)
-    preds = out[0] # (N, 16, 3)
-    
-    # 5. Extract Targets (Terminal 15-step) aligned with prediction timesteps
-    y_pred_usd = []
-    y_true_usd = []
-    for i in range(num_windows):
-        idx = valid_range - num_windows + i
-        x_raw = data[idx : idx + ctx]
-        _, l_mean, l_std = apply_dls(x_raw)
-        
-        pred_scaled_ret = preds[i, -1, 0] # terminal return
-        
-        # Denormalize correctly: raw = (scaled * std) + mean
-        close_idx = features.index('close')
-        y_pred_usd.append((pred_scaled_ret * l_std[close_idx]) + l_mean[close_idx])
-        y_true_usd.append(df_feat['close'].iloc[idx + ctx + 14])
-    
+    valid_range = len(data) - ctx - forecast
+    start = valid_range - num_windows
+
+    print(f"🔬 Generating {num_windows} predictions...")
+    y_pred_usd, y_true_usd = [], []
+    for idx in range(start, valid_range):
+        x_scaled, local_mean, local_std = apply_dls(data[idx: idx + ctx])
+        raw_returns = np.diff(data[idx - 1: idx + ctx, t_close]) / (data[idx - 1: idx + ctx - 1, t_close] + 1e-9)
+        tok_ids = tokenize_returns(raw_returns.astype("float64"), vocab["bin_edges"])
+        pred, _, _, _ = run_inference(model, x_scaled, tok_ids)
+
+        pred_scaled_ret = pred[-1, 0]  # terminal step, close channel
+        y_pred_usd.append((pred_scaled_ret * local_std[t_close]) + local_mean[t_close])
+        y_true_usd.append(float(df_feat['close'].iloc[idx + ctx + forecast - 1]))
+
     y_pred_usd = np.array(y_pred_usd)
     y_true_usd = np.array(y_true_usd)
-    
-    print(f"📊 Crafting HIGH-RESOLUTION ZOOM (Last 150 Cycles)...")
+
+    print("📊 Crafting visualization...")
     plt.figure(figsize=(16, 8))
     plt.style.use('dark_background')
-    
     plt.plot(y_true_usd, color='#00FFFF', linewidth=3.0, label='ACTUAL BTC (TRUTH)')
     plt.plot(y_pred_usd, color='#FFD700', linewidth=2.0, linestyle='--', label='IRON ORACLE FORECAST')
-    
-    # Calculate stats
+
     avg_err = np.mean(np.abs(y_true_usd - y_pred_usd))
     dir_acc = np.mean(np.sign(np.diff(y_true_usd)) == np.sign(np.diff(y_pred_usd))) * 100
-    
-    plt.title(f'IRON ORACLE V11.0: ${avg_err:.2f} Avg Error | {dir_acc:.1f}% Trend Accuracy', fontsize=16, color='white')
-    plt.xlabel('Last 150 Candles (15m Resolution)', color='#888888')
+
+    plt.title(f'IRON ORACLE: ${avg_err:.2f} Avg Error | {dir_acc:.1f}% Trend Accuracy', fontsize=16, color='white')
+    plt.xlabel(f'Last {num_windows} Candles ({timeframe} Resolution)', color='#888888')
     plt.ylabel('BTC Price (USD)', color='#888888')
     plt.grid(True, linestyle=':', alpha=0.2)
     plt.legend(loc='upper right')
-    
+
     plot_path = ROOT / "backtest_honesty.png"
     plt.savefig(plot_path, dpi=180)
     plt.close()
-    
+
     print(f"✅ VISUAL COMPLETED: {plot_path}")
-    print(f"📊 FINAL STATS (Visual): MAE ${avg_err:.2f} | DIR {dir_acc:.1f}%")
+    print(f"📊 FINAL STATS: MAE ${avg_err:.2f} | DIR {dir_acc:.1f}%")
+
 
 if __name__ == "__main__":
-    models_dir  = ROOT / "models"
-    checkpoints = sorted(models_dir.glob("hydra_checkpoint_E*.keras"), reverse=True)
-    MODEL_P = str(checkpoints[0]) if checkpoints else str(models_dir / "hydra_best.keras")
-    print(f"Using checkpoint: {Path(MODEL_P).name}")
-    visualize_performance(MODEL_P)
+    visualize_performance()
