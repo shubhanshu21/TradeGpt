@@ -83,7 +83,8 @@
       "Bash(sudo /root/miniconda3/bin/python src/evaluation/check_cert_threshold.py)",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('/var/www/html/ML/kat/scripts/merge_book_depth_into_master.py'\\).read\\(\\)\\)\")",
       "Bash(sudo /root/miniconda3/bin/python /var/www/html/ML/kat/scripts/merge_book_depth_into_master.py)",
-      "Bash(sudo kill -15 691782 691785)"
+      "Bash(sudo kill -15 691782 691785)",
+      "Bash(sudo kill -15 755502 755505)"
     ]
   }
 }

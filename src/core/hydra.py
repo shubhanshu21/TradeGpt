@@ -607,12 +607,18 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
         [inputs, token_inputs], [preds, avg_consensus, reasoning, next_token],
         name="sovereign_kraken_v11_0")
 
-    # Linear warmup (500 steps) into Cosine Decay LR: 5e-6 → 5e-7 over 10,000 steps
+    # Linear warmup (500 steps) into Cosine Decay LR: 1e-4 -> 1e-5 over 10,000 steps.
+    # Research on training transformers from scratch typically finds 1e-4 to 5e-4
+    # effective; the previous 5e-6 was 20-100x below that range and produced the
+    # "near-horizontal, noise-dominated" progress that's the textbook symptom of
+    # too-low a learning rate. Warmup + Pre-Norm + gradient clipping (clipnorm=0.5,
+    # set at compile time below) are the existing stability guards that make this
+    # increase safe despite MoE routing's known early-training sensitivity.
     lr_schedule = WarmupCosineDecay(
-        initial_learning_rate=5e-6,
+        initial_learning_rate=1e-4,
         decay_steps=10000,
         warmup_steps=500,
-        alpha=0.1   # floor = 5e-7
+        alpha=0.1   # floor = 1e-5
     )
 
     model.compile(

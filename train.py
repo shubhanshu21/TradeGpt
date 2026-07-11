@@ -226,11 +226,15 @@ def train_kraken(args):
     # hitting its floor at epoch ~4 (decay_steps=10000 << 300*2996 total steps).
     # Linear warmup over the first epoch's worth of steps as cheap insurance
     # against early MoE routing instability.
+    # 1e-4 peak, not 5e-6 — the old value was 20-100x below what research shows
+    # is typical for training a transformer this size from scratch, and produced
+    # the noise-dominated, barely-moving progress that's the textbook symptom of
+    # too-low a learning rate. See matching comment in core/hydra.py.
     full_lr_schedule = WarmupCosineDecay(
-        initial_learning_rate=5e-6,
+        initial_learning_rate=1e-4,
         decay_steps=EPOCHS * steps_tr,
         warmup_steps=steps_tr,
-        alpha=0.1   # floor = 5e-7
+        alpha=0.1   # floor = 1e-5
     )
 
     print("   ⚖️  Recompiling model with custom weighted sparse categorical crossentropy...")
