@@ -622,7 +622,7 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     # Research on training transformers from scratch typically finds 1e-4 to 5e-4
     # effective; the previous 5e-6 was 20-100x below that range and produced the
     # "near-horizontal, noise-dominated" progress that's the textbook symptom of
-    # too-low a learning rate. Warmup + Pre-Norm + gradient clipping (clipnorm=0.5,
+    # too-low a learning rate. Warmup + Pre-Norm + gradient clipping (clipnorm,
     # set at compile time below) are the existing stability guards that make this
     # increase safe despite MoE routing's known early-training sensitivity.
     lr_schedule = WarmupCosineDecay(
@@ -636,7 +636,11 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
         optimizer=keras.optimizers.AdamW(
             learning_rate=lr_schedule,
             weight_decay=0.05,  # raised from 0.01 — train/val gap showed real overfitting signal
-            clipnorm=0.5       # Tightened clipping for MoE stability
+            clipnorm=1.0       # raised from 0.5 — that value was calibrated for the old 5e-6 LR;
+                               # left unchanged after the 20x LR increase, it would clip far more
+                               # aggressively than intended and quietly cap the larger steps the
+                               # LR fix was meant to enable. 1.0 sits at the low end of the
+                               # standard 1.0-5.0 range for gradient-clip thresholds.
         ),
         loss={
             "prediction": SovereignLoss(direction_weight=3.0),

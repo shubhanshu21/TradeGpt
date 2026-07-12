@@ -242,7 +242,7 @@ def train_kraken(args):
         optimizer=keras.optimizers.AdamW(
             learning_rate=full_lr_schedule,
             weight_decay=0.05,  # raised from 0.01 — train/val gap showed real overfitting signal
-            clipnorm=0.5
+            clipnorm=1.0  # raised from 0.5 — was calibrated for the old 5e-6 LR, too tight for 1e-4
         ),
         loss={
             "prediction": SovereignLoss(direction_weight=3.0),

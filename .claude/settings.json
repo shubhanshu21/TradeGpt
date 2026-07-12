@@ -90,7 +90,8 @@
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('/var/www/html/ML/kat/src/config/sovereign_config.py'\\).read\\(\\)\\)\")",
       "Bash(sudo ls -la /var/www/html/ML/kat/logs/hydra_train_*.log)",
       "Bash(sudo kill -15 930066 930069)",
-      "Bash(sudo kill -15 933870 933873)"
+      "Bash(sudo kill -15 933870 933873)",
+      "Bash(sudo kill -15 935736 935739)"
     ]
   }
 }
