@@ -305,13 +305,18 @@ class MLALayer(layers.Layer):
 @keras.saving.register_keras_serializable(package="KAT")
 class GatedMoE(layers.Layer):
     """
-    V12.5: DeepSeekMoE-style Mixture-of-Experts — routed experts (top-4 of 256,
+    V12.5: DeepSeekMoE-style Mixture-of-Experts — routed experts (top-4 of 32,
     per-token specialized) plus a small always-active shared-expert path that
     captures common patterns every token needs, so the routed experts don't
     have to keep relearning them. Memory-efficient dynamic dispatch for the
     routed side (gathers only the active K=4 expert weight matrices per token).
+    n_experts lowered from 256 — that count makes sense for models trained on
+    billions of tokens (DeepSeek-scale), but with ~25K training windows most
+    of 256 experts were only ever seeing a trickle of gradient signal each.
+    Fewer experts means each one actually gets enough real examples to
+    specialize on, instead of spreading the same data thin across 256 slots.
     """
-    def __init__(self, d_model=128, n_experts=256, **kwargs):
+    def __init__(self, d_model=128, n_experts=32, **kwargs):
         super().__init__(**kwargs)
         self.d_model   = d_model
         self.n_experts = n_experts
@@ -359,10 +364,16 @@ class GatedMoE(layers.Layer):
         weighted_var  = ops.sum(diff_sq * ops.expand_dims(top_k_weights, axis=-1), axis=2)
         consensus     = ops.exp(-ops.mean(weighted_var, axis=-1))
 
-        # Entropy load balancing (prevents expert collapse)
-        # Scaled down to -1e-4 to prevent regularizer accumulation from dominating main loss
+        # Entropy load balancing (prevents expert collapse). The regularizer's
+        # ceiling is log(n_experts) (max entropy = uniform routing), so a
+        # coefficient tuned against log(256)~5.545 was implicitly ~60% too
+        # strong once n_experts dropped to 32 (log(32)~3.466) — rescaled here
+        # so the same proportional pressure applies regardless of expert count,
+        # instead of silently drifting every time n_experts changes.
         entropy = -ops.mean(ops.sum(gate_scores * ops.log(gate_scores + 1e-9), axis=-1))
-        self.add_loss(-1e-4 * entropy)
+        max_entropy = ops.log(ops.cast(self.n_experts, "float32"))
+        entropy_coef = -1e-4 * (max_entropy / ops.log(256.0))
+        self.add_loss(entropy_coef * entropy)
 
         return weighted_avg, consensus
 
@@ -390,7 +401,7 @@ class HydraBlock(layers.Layer):
         self.tq      = TurboQuant(d_model=self.d_model)
         self.swiglu  = SwiGLU()
         self.norm2   = RMSNorm()
-        self.moe     = GatedMoE(d_model=self.d_model, n_experts=256)
+        self.moe     = GatedMoE(d_model=self.d_model, n_experts=32)
         self.dropout = layers.Dropout(self.dropout_rate)
 
     def call(self, x, training=None, context=None):
