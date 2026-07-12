@@ -241,7 +241,7 @@ def train_kraken(args):
     model.compile(
         optimizer=keras.optimizers.AdamW(
             learning_rate=full_lr_schedule,
-            weight_decay=0.01,
+            weight_decay=0.05,  # raised from 0.01 — train/val gap showed real overfitting signal
             clipnorm=0.5
         ),
         loss={

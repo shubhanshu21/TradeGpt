@@ -199,7 +199,7 @@ class MLALayer(layers.Layer):
       approximation this replaces.
     - Attention-probability dropout added (previously only present after the MoE).
     """
-    def __init__(self, d_model=128, n_heads=8, kv_lora_rank=32, dropout_rate=0.1, **kwargs):
+    def __init__(self, d_model=128, n_heads=8, kv_lora_rank=32, dropout_rate=0.15, **kwargs):
         super().__init__(**kwargs)
         self.d_model = d_model
         self.n_heads = n_heads
@@ -378,7 +378,7 @@ class HydraBlock(layers.Layer):
     V10.7 HydraBlock: MLA + TurboQuant + SwiGLU + MoE + Dropout.
     Dropout(0.1) added after MoE output to prevent expert memorization.
     """
-    def __init__(self, d_model=128, n_heads=8, dropout_rate=0.1, **kwargs):
+    def __init__(self, d_model=128, n_heads=8, dropout_rate=0.15, **kwargs):
         super().__init__(**kwargs)
         self.d_model      = d_model
         self.n_heads      = n_heads
@@ -542,7 +542,7 @@ class SovereignAccuracy(keras.metrics.Metric):
 # ── Model Builder ─────────────────────────────────────────────────────────────
 
 def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FORECAST_STEPS,
-                 dropout_rate=0.1, noise_stddev=0.02, vocab_size=128):
+                 dropout_rate=0.15, noise_stddev=0.02, vocab_size=128):
     """
     Build Phase 3 Deep-Predator V12.5.
 
@@ -624,7 +624,7 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     model.compile(
         optimizer=keras.optimizers.AdamW(
             learning_rate=lr_schedule,
-            weight_decay=0.01,
+            weight_decay=0.05,  # raised from 0.01 — train/val gap showed real overfitting signal
             clipnorm=0.5       # Tightened clipping for MoE stability
         ),
         loss={
