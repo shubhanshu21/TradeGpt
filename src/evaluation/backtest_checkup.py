@@ -102,7 +102,7 @@ win_rate = trades["correct"].mean() * 100
 long_wr = trades[trades["signal"] == "LONG"]["correct"].mean() * 100 if (trades["signal"] == "LONG").any() else 0
 short_wr = trades[trades["signal"] == "SHORT"]["correct"].mean() * 100 if (trades["signal"] == "SHORT").any() else 0
 
-fee_per_trade = FEE_PCT * 2
+fee_per_trade = FEE_PCT  # FEE_RATE already represents the full round trip (entry+exit), not one side
 trades["pnl"] = trades["correct"].map({True: 1 - fee_per_trade, False: -1 - fee_per_trade})
 total_pnl = trades["pnl"].sum()
 cum_pnl = trades["pnl"].cumsum()

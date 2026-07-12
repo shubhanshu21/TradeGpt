@@ -98,7 +98,7 @@ for i in range(CTX_WIN, len(data) - vocab["forecast_steps"]):
             # Check Stop Loss
             if current_low <= pos["sl"]:
                 # Stopped out
-                pnl_pct = (pos["sl"] - pos["entry_price"]) / pos["entry_price"] - FEE_RATE * 2
+                pnl_pct = (pos["sl"] - pos["entry_price"]) / pos["entry_price"] - FEE_RATE  # FEE_RATE already represents the full round trip (entry+exit), not one side
                 trades_log.append({
                     "type": "SL", "side": "LONG", "entry": pos["entry_price"], "exit": pos["sl"], 
                     "pnl_pct": pnl_pct, "entry_step": pos["entry_step"], "exit_step": i
@@ -108,7 +108,7 @@ for i in range(CTX_WIN, len(data) - vocab["forecast_steps"]):
             # Check Take Profit
             elif current_high >= pos["tp"]:
                 # Profit target hit
-                pnl_pct = (pos["tp"] - pos["entry_price"]) / pos["entry_price"] - FEE_RATE * 2
+                pnl_pct = (pos["tp"] - pos["entry_price"]) / pos["entry_price"] - FEE_RATE  # FEE_RATE already represents the full round trip (entry+exit), not one side
                 trades_log.append({
                     "type": "TP", "side": "LONG", "entry": pos["entry_price"], "exit": pos["tp"], 
                     "pnl_pct": pnl_pct, "entry_step": pos["entry_step"], "exit_step": i
@@ -138,7 +138,7 @@ for i in range(CTX_WIN, len(data) - vocab["forecast_steps"]):
             # Check Stop Loss
             if current_high >= pos["sl"]:
                 # Stopped out
-                pnl_pct = (pos["entry_price"] - pos["sl"]) / pos["entry_price"] - FEE_RATE * 2
+                pnl_pct = (pos["entry_price"] - pos["sl"]) / pos["entry_price"] - FEE_RATE  # FEE_RATE already represents the full round trip (entry+exit), not one side
                 trades_log.append({
                     "type": "SL", "side": "SHORT", "entry": pos["entry_price"], "exit": pos["sl"], 
                     "pnl_pct": pnl_pct, "entry_step": pos["entry_step"], "exit_step": i
@@ -148,7 +148,7 @@ for i in range(CTX_WIN, len(data) - vocab["forecast_steps"]):
             # Check Take Profit
             elif current_low <= pos["tp"]:
                 # Profit target hit
-                pnl_pct = (pos["entry_price"] - pos["tp"]) / pos["entry_price"] - FEE_RATE * 2
+                pnl_pct = (pos["entry_price"] - pos["tp"]) / pos["entry_price"] - FEE_RATE  # FEE_RATE already represents the full round trip (entry+exit), not one side
                 trades_log.append({
                     "type": "TP", "side": "SHORT", "entry": pos["entry_price"], "exit": pos["tp"], 
                     "pnl_pct": pnl_pct, "entry_step": pos["entry_step"], "exit_step": i
@@ -275,9 +275,9 @@ if active_position is not None:
     last_idx = len(data) - 16
     exit_p = data[last_idx, close_col]
     if pos["side"] == "LONG":
-        pnl_pct = (exit_p - pos["entry_price"]) / pos["entry_price"] - FEE_RATE * 2
+        pnl_pct = (exit_p - pos["entry_price"]) / pos["entry_price"] - FEE_RATE  # FEE_RATE already represents the full round trip (entry+exit), not one side
     else:
-        pnl_pct = (pos["entry_price"] - exit_p) / pos["entry_price"] - FEE_RATE * 2
+        pnl_pct = (pos["entry_price"] - exit_p) / pos["entry_price"] - FEE_RATE  # FEE_RATE already represents the full round trip (entry+exit), not one side
     trades_log.append({
         "type": "FORCE_CLOSE", "side": pos["side"], "entry": pos["entry_price"], "exit": exit_p, 
         "pnl_pct": pnl_pct, "entry_step": pos["entry_step"], "exit_step": last_idx

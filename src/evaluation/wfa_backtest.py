@@ -117,7 +117,7 @@ for c in range(n_chunks):
         trades_c = trades_c.copy()
         trades_c["correct"] = trades_c.apply(lambda r: (1.0 if r["signal"] == "LONG" else -1.0) == r["actual_dir"], axis=1)
         c_win = trades_c["correct"].mean() * 100
-        c_pnl = trades_c.apply(lambda r: (1 - FEE_PCT*2) if r["correct"] else (-1 - FEE_PCT*2), axis=1).sum()
+        c_pnl = trades_c.apply(lambda r: (1 - FEE_PCT) if r["correct"] else (-1 - FEE_PCT), axis=1).sum()
     else:
         c_win = 0.0
         c_pnl = 0.0
@@ -184,7 +184,7 @@ print("=" * 60)
 if n_trades > 0:
     trades["pred_dir"] = trades["signal"].map({"LONG": 1.0, "SHORT": -1.0})
     trades["correct"]  = (trades["pred_dir"] == trades["actual_dir"])
-    trades["pnl"]      = trades["correct"].map({True: 1 - FEE_PCT*2, False: -1 - FEE_PCT*2})
+    trades["pnl"]      = trades["correct"].map({True: 1 - FEE_PCT, False: -1 - FEE_PCT})
     trades["naive_correct"] = (trades["naive_dir"] == trades["actual_dir"])
 
     win_rate = trades["correct"].mean() * 100

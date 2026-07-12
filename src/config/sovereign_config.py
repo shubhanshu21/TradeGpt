@@ -18,9 +18,12 @@ PROFIT_GOAL_PCT    = 0.1    # 10% profit target for UI progress bars
 RISK_MULTIPLIER    = 100.0  # UI display divisor for station health bar (100 = scale PnL% into 0-100 display range)
 SOVEREIGN_MULTIPLIER = 1.0  # Strategic Scaling Constant
 
-# Neural Architecture
-CONTEXT_WINDOW = 120
-FORECAST_STEPS = 15
+# Neural Architecture — defaults for train.py when --context_window/--forecast_steps
+# aren't passed explicitly on the CLI. Kept in sync with the actual 1h training
+# config (previously stale 15m-era values of 120/15 that CLI args always overrode
+# in practice, but would silently mislead anyone running train.py without them).
+CONTEXT_WINDOW = 30
+FORECAST_STEPS = 4
 CERT_THRESHOLD = 0.85
 
 # Reasoning head label map

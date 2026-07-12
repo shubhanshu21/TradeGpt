@@ -28,17 +28,18 @@ from data.preprocess       import build_feature_cols, compute_indicators, apply_
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 from config.sovereign_config import (LEVERAGE, POSITION_SIZE_PCT, MAX_TRADES_PER_DAY,
-                                     BREAKEVEN_TRIGGER_PCT, TRAILING_STOP_PCT, CERT_THRESHOLD)
+                                     BREAKEVEN_TRIGGER_PCT, TRAILING_STOP_PCT, CERT_THRESHOLD,
+                                     FORECAST_STEPS)
 SYMBOL         = "BTCUSD"
 SIZE           = 1              # Legacy fallback contract size
 MIN_SWING      = 100.0          # Minimum floor (to cover 0.12% fees at $70k BTC)
 MIN_SWING_FLOOR = 100.0         # Absolute minimum — never trade below this (fee protection)
 MIN_SWING_CEIL  = 500.0         # ATR dynamic ceiling — widens gate in volatile markets
 THRESHOLD      = 0.08           # Increased base conviction (was 0.05)
-TIMEFRAME      = "15m"          # Match training timeframe (15m)
-CTX_WIN        = 120            # Context window (30 hours)
-SLEEP_S        = 900            # 15 minute polling
-COOLDOWN_BARS  = 15             # Match forecast horizon (15 bars = 3.75h) — prevents overlapping trades
+# Timeframe/context_window are no longer hardcoded here — load_model() reads the
+# real values from the checkpoint's own return_vocab.pkl (see `vocab` in run_pilot).
+SLEEP_S        = 3600           # 1-hour polling — matches native 1h candle cadence
+COOLDOWN_BARS  = FORECAST_STEPS # Match forecast horizon — prevents overlapping trades
 
 # ── HUD ───────────────────────────────────────────────────────────────────────
 C_RESET  = "\033[0m"
@@ -61,19 +62,22 @@ def log(msg, color=C_RESET):
         pass
 
 def load_model():
-    """Load the trained Iron Oracle brain from the isolated sandbox copy."""
-    from core.hydra import build_kraken
-    from data.preprocess import build_feature_cols
+    """Load the trained Iron Oracle brain from the isolated sandbox copy.
+    Uses core.inference so the model's real shape (context_window, timeframe,
+    vocab) comes from the checkpoint's own return_vocab.pkl instead of the
+    hardcoded CTX_WIN/TIMEFRAME constants, which go stale every time the
+    training config changes (this file previously still assumed 15m/120,
+    long after training moved to 1h/30)."""
+    from core.inference import load_trained_model
     model_p = ROOT / "models" / "sandbox_active.keras"
     if not model_p.exists():
         log(f"❌ No sandbox model found at {model_p}", C_RED); sys.exit(1)
-    n_feat = len(build_feature_cols())
-    log(f"🏗️  Re-building Iron Oracle V12.0 ({n_feat} features) | Loading sandbox active brain...")
-    model = build_kraken(n_features=n_feat, context_window=CTX_WIN)
-    model.load_weights(str(model_p))
+    log(f"🏗️  Loading sandbox active brain (real trained shape, dual-input)...")
+    model, vocab = load_trained_model(ROOT / "models", checkpoint_name="sandbox_active.keras")
     mtime = model_p.stat().st_mtime
-    log(f"✅ Sandbox Brain sync complete: sandbox_active.keras (mtime: {mtime})", C_GREEN)
-    return model, mtime
+    log(f"✅ Sandbox Brain sync complete: sandbox_active.keras "
+        f"(timeframe={vocab['timeframe']}, context_window={vocab['context_window']}, mtime: {mtime})", C_GREEN)
+    return model, vocab, mtime
 
 def get_dynamic_min_swing(df_feat) -> float:
     """
@@ -96,50 +100,37 @@ def get_dynamic_min_swing(df_feat) -> float:
     except Exception:
         return MIN_SWING_FLOOR
 
-def get_neural_signal(model):
+def get_neural_signal(model, vocab):
     """
-    Fetch latest 15m market data, engineer features, run inference.
-    FIX #1: Uses Dynamic Local Scaling (DLS) — matching training pipeline.
-    Returns (mean_price_move, certainty_pct, mean_volatility, full_pred_array).
+    Fetch latest market data, engineer features, run inference.
+    Uses core.inference (real dual-input model signature, real trained
+    context_window/timeframe/token-vocab from the checkpoint) instead of the
+    old single-input call and hardcoded CTX_WIN/TIMEFRAME.
+    Returns (mean_price_move, certainty_pct, mean_volatility, reasoning, full_pred_array, close_std, dyn_min_swing).
     """
     try:
-        features = build_feature_cols()
-        n_feats  = len(features)  # 45
+        from core.inference import prepare_window, run_inference
+        ctx_win   = vocab["context_window"]
+        timeframe = vocab["timeframe"]
 
-        # Fetch CTX_WIN + buffer for indicator warm-up
-        df = fetch_live_kat_data(symbol=SYMBOL, n_candles=CTX_WIN + 150, timeframe=TIMEFRAME)
+        df = fetch_live_kat_data(symbol=SYMBOL, n_candles=ctx_win + 150, timeframe=timeframe)
         if df is None or len(df) == 0:
             raise ValueError("fetch_live_kat_data returned empty or None dataframe")
-            
-        df_feat = compute_indicators(df)
-        data    = df_feat[features].values.astype("float32")
 
-        # FIX #1: DLS — scale using the local window stats (strict match to training)
-        x_raw  = data[-CTX_WIN:]
-        x_scaled, l_mean, l_std = apply_dls(x_raw)
-        X_in   = x_scaled[np.newaxis].astype("float32")  # (1, 120, 45)
+        x_scaled, token_ids, l_mean, l_std, t_close = prepare_window(df, len(df), vocab)
+        pred, certainty, reasoning_probs, _ = run_inference(model, x_scaled, token_ids)
+        reasoning = int(np.argmax(reasoning_probs))
 
-        # Iron Oracle returns [prediction_trajectory, certainty_map, reasoning_head]
-        outputs      = model(X_in, training=False)
-        pred         = outputs[0].numpy()[0]   # (16, 3)
-        certainty_2d = outputs[1].numpy()[0]   # (120,) per-step certainty
-        reasoning    = int(np.argmax(outputs[2].numpy()[0]))
-
-        pred_future  = pred[1:]                # (15, 3) — future steps only
+        pred_future  = pred[1:]                # future steps only
         p_anchor     = pred[0, 0]              # Z-score at anchor price
         p_curve      = pred_future[:, 0]       # price trajectory
         v_curve      = pred_future[:, 1]       # volatility
 
         p_change     = p_curve - p_anchor      # Trajectory delta relative to anchor
-
-        # Normalize certainty to 0–100%
-        cert_mean    = float(np.mean(certainty_2d))
-        cert_pct     = cert_mean
-
-        t_close      = features.index('close')
+        cert_pct     = float(np.mean(certainty))
         close_std    = l_std[t_close]
 
-        dyn_min_swing = get_dynamic_min_swing(df_feat)
+        dyn_min_swing = get_dynamic_min_swing(df)
 
         return np.mean(p_change), cert_pct, np.mean(v_curve), reasoning, pred_future, close_std, dyn_min_swing
     except Exception as e:
@@ -152,7 +143,6 @@ def run_pilot():
     from config.sovereign_config import LABELS
     print("="*60)
     print(f"  ⚓ IRON ORACLE V11.0 — [ {SYMBOL} ] LIVE PILOT")
-    print(f"  📡 Timeframe : {TIMEFRAME}")
     print(f"  🎯 Certainty : {CERT_THRESHOLD*100:.0f}%+ required to trade")
     print(f"  💰 Position  : {SIZE} contract(s) | {LEVERAGE}x Leverage")
     print("="*60)
@@ -170,7 +160,9 @@ def run_pilot():
     except Exception as e:
         log(f"⚠️  Could not programmatically set leverage: {e}", C_YELLOW)
 
-    model, last_mtime = load_model()  # FIX #1: DLS — no scaler needed
+    model, vocab, last_mtime = load_model()  # real trained shape/timeframe/vocab, not hardcoded
+    timeframe = vocab["timeframe"]
+    ctx_win   = vocab["context_window"]
 
     last_trade_time = 0
     daily_trades = []  # Keep track of rolling 24-hour trade timestamps
@@ -331,10 +323,10 @@ def run_pilot():
                 log(f"🛑 DAILY CIRCUIT BREAKER ACTIVE ({len(daily_trades)}/{MAX_TRADES_PER_DAY} trades taken in last 24h). Halting new entries.", C_RED)
                 time.sleep(SLEEP_S); continue
 
-            log(f"📡 Polling {SYMBOL} [{TIMEFRAME}] market stream...")
+            log(f"📡 Polling {SYMBOL} [{timeframe}] market stream...")
 
             # ── Inference ────────────────────────────────────────────────────
-            mean_price, cert_raw, mean_vol, reasoning, pred, close_std, atr_min_swing = get_neural_signal(model)
+            mean_price, cert_raw, mean_vol, reasoning, pred, close_std, atr_min_swing = get_neural_signal(model, vocab)
 
             # JSON live_params.json takes precedence over ATR-based swing gate
             dyn_min_swing = json_min_swing if json_min_swing is not None else atr_min_swing
@@ -386,7 +378,7 @@ def run_pilot():
             # ADX < 20 = choppy/ranging market — signals have low follow-through
             try:
                 features = build_feature_cols()
-                df_adx = fetch_live_kat_data(symbol=SYMBOL, n_candles=CTX_WIN + 20, timeframe=TIMEFRAME)
+                df_adx = fetch_live_kat_data(symbol=SYMBOL, n_candles=ctx_win + 20, timeframe=timeframe)
                 df_adx = compute_indicators(df_adx)
                 adx_now = float(df_adx["adx"].iloc[-1])
                 log(f"📊 ADX REGIME     : {adx_now:.1f}  (min: 20 for trending market)")
