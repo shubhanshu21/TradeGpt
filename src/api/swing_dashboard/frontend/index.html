@@ -68,6 +68,22 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
   th { color: var(--muted); font-weight: 500; }
+  #training-overview-table thead th, #trade-log-table thead th {
+    position: sticky; top: 0; background: var(--surface-1); z-index: 1;
+  }
+  .scroll-box {
+    max-height: 420px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 8px;
+    scrollbar-width: thin; scrollbar-color: var(--baseline) transparent;
+  }
+  .scroll-box table { border-collapse: separate; border-spacing: 0; }
+  .scroll-box::-webkit-scrollbar { width: 9px; }
+  .scroll-box::-webkit-scrollbar-track { background: transparent; }
+  .scroll-box::-webkit-scrollbar-thumb {
+    background: var(--baseline); border-radius: 8px; border: 2px solid var(--surface-1);
+  }
+  .scroll-box::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  .scroll-box tbody tr:last-child td { border-bottom: none; }
   tbody tr:hover { background: rgba(128,128,128,0.06); cursor: pointer; }
   .num { font-variant-numeric: tabular-nums; text-align: right; }
   .status-pill {
@@ -121,30 +137,33 @@
     <h2>Training Progress <span class="status-pill"><span class="dot off" id="training-dot"></span><span id="training-status-text">-</span></span></h2>
     <p class="subtitle" id="training-summary" style="margin-bottom:14px;">Loading…</p>
 
-    <table id="training-overview-table">
-      <thead><tr>
-        <th>symbol</th><th>status</th><th class="num">epochs</th>
-        <th class="num">best val acc</th><th class="num">last val acc</th><th>significant edge</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="scroll-box" style="max-height:420px;">
+      <table id="training-overview-table">
+        <thead><tr>
+          <th>Stock</th><th>Status</th><th class="num">Training rounds</th>
+          <th class="num">Best accuracy</th><th class="num">Current accuracy</th><th>Better than a coin flip?</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
 
     <div id="training-detail" style="display:none; margin-top:18px; padding-top:18px; border-top:1px solid var(--border);">
       <div class="row" style="justify-content:space-between;">
         <h3 style="font-size:14px; margin:0;" id="training-detail-title">-</h3>
         <button id="training-detail-close" class="secondary">Close</button>
       </div>
+      <p class="subtitle" style="margin:-4px 0 14px;">"Accuracy" = how often the model correctly guesses whether a stock's price is about to go up or down. 50% is a pure coin flip; anything reliably above that is a real edge.</p>
       <div class="stat-tiles">
-        <div class="tile"><div class="label">Best val accuracy</div><div class="value" id="training-best-acc">-</div></div>
-        <div class="tile"><div class="label">Epoch reached</div><div class="value" id="training-epoch-count">-</div></div>
-        <div class="tile"><div class="label">Statistically significant edge?</div><div class="value" id="training-significant">-</div></div>
+        <div class="tile"><div class="label">Best accuracy so far</div><div class="value" id="training-best-acc">-</div></div>
+        <div class="tile"><div class="label">Training rounds so far</div><div class="value" id="training-epoch-count">-</div></div>
+        <div class="tile"><div class="label">Better than a coin flip?</div><div class="value" id="training-significant">-</div></div>
       </div>
       <canvas id="training-canvas" style="width:100%;height:260px;display:block;"></canvas>
       <div class="legend" style="margin-top:8px;">
-        <div class="item"><span class="swatch" style="background:#2a78d6;"></span>val accuracy</div>
-        <div class="item"><span class="swatch" style="background:rgba(42,120,214,0.18);"></span>95% confidence interval</div>
-        <div class="item"><span class="swatch" style="background:var(--baseline);"></span>50% baseline (coin flip)</div>
-        <div class="item"><span class="swatch" style="background:var(--critical);"></span>val loss (right axis, scaled)</div>
+        <div class="item"><span class="swatch" style="background:#2a78d6;"></span>Accuracy per round</div>
+        <div class="item"><span class="swatch" style="background:rgba(42,120,214,0.18);"></span>Uncertainty range</div>
+        <div class="item"><span class="swatch" style="background:var(--baseline);"></span>Coin-flip line (50%)</div>
+        <div class="item"><span class="swatch" style="background:var(--critical);"></span>Training error (lower = better)</div>
       </div>
     </div>
   </div>
@@ -167,12 +186,41 @@
       <div class="empty" id="backtest-empty">No backtest results yet - click "Run backtest".</div>
       <table id="backtest-table" style="display:none;">
         <thead><tr>
-          <th>strategy</th><th class="num">trades</th><th class="num">win rate %</th>
-          <th class="num">profit factor</th><th class="num">return %</th>
-          <th class="num">net P&amp;L</th><th class="num">max DD %</th><th class="num">sharpe</th>
+          <th>Strategy</th><th class="num">Trades</th><th class="num">Win rate %</th>
+          <th class="num" title="Total money won ÷ total money lost. Above 1 means more was won than lost overall.">Profit factor</th>
+          <th class="num">Return %</th>
+          <th class="num">Net profit/loss</th>
+          <th class="num" title="The biggest drop from a peak to a low point during the test period.">Max drawdown %</th>
+          <th class="num" title="Risk-adjusted return - roughly, how much profit per unit of ups-and-downs. Higher is smoother/better.">Sharpe ratio</th>
         </tr></thead>
         <tbody></tbody>
       </table>
+      <p class="subtitle" id="backtest-drilldown-hint" style="display:none; margin-top:8px;">Click the row above for the equity curve and per-symbol breakdown.</p>
+    </div>
+
+    <div id="backtest-drilldown" style="display:none; margin-top:18px; padding-top:18px; border-top:1px solid var(--border);">
+      <h3 style="font-size:14px; margin:0 0 12px;">Equity curve</h3>
+      <canvas id="equity-canvas" style="width:100%;height:220px;display:block;"></canvas>
+
+      <h3 style="font-size:14px; margin:20px 0 12px;">Per-symbol breakdown</h3>
+      <table id="symbol-breakdown-table">
+        <thead><tr>
+          <th>Stock</th><th class="num">Trades</th><th class="num">Win rate %</th>
+          <th class="num">Net profit/loss</th><th class="num">Avg profit/loss per trade</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3 style="font-size:14px; margin:20px 0 12px;">Trade log <span id="trade-log-count" class="empty" style="padding:0;font-size:12px;"></span></h3>
+      <div class="scroll-box" style="max-height:320px;">
+        <table id="trade-log-table">
+          <thead><tr>
+            <th>Stock</th><th>Bought on</th><th>Sold on</th><th class="num">Buy price</th>
+            <th class="num">Sell price</th><th>Direction</th><th class="num">Profit/Loss</th><th>Why it exited</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -186,16 +234,16 @@
     </div>
 
     <div class="stat-tiles">
-      <div class="tile"><div class="label">Total virtual P&amp;L</div><div class="value" id="paper-total-pnl">-</div></div>
+      <div class="tile"><div class="label">Total virtual profit/loss</div><div class="value" id="paper-total-pnl">-</div></div>
       <div class="tile"><div class="label">Open positions</div><div class="value" id="paper-open-count">-</div></div>
       <div class="tile"><div class="label">Last checked</div><div class="value" id="paper-last-check" style="font-size:14px;">-</div></div>
     </div>
 
     <div id="paper-empty" class="empty">Not running.</div>
     <table id="paper-positions-table" style="display:none;">
-      <thead><tr><th>symbol</th><th>strategy</th><th>side</th><th class="num">qty</th>
-        <th class="num">entry</th><th class="num">stop</th><th class="num">target</th>
-        <th class="num">days held</th></tr></thead>
+      <thead><tr><th>Stock</th><th>Strategy</th><th>Direction</th><th class="num">Quantity</th>
+        <th class="num">Entry price</th><th class="num">Stop-loss</th><th class="num">Target</th>
+        <th class="num">Days held</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -214,9 +262,9 @@
     </div>
     <div id="live-empty" class="empty">No live trades logged yet.</div>
     <table id="live-trades-table" style="display:none;">
-      <thead><tr><th>entry date</th><th>symbol</th><th>strategy</th><th>side</th>
-        <th class="num">qty</th><th class="num">entry</th><th class="num">exit</th>
-        <th class="num">gross P&amp;L</th><th>reason</th></tr></thead>
+      <thead><tr><th>Entry date</th><th>Stock</th><th>Strategy</th><th>Direction</th>
+        <th class="num">Quantity</th><th class="num">Entry price</th><th class="num">Exit price</th>
+        <th class="num">Profit/loss</th><th>Why it exited</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -242,9 +290,9 @@ let TRAINING_STATUS = null;   // last /api/training/status response, cached for 
 let TRAINING_DETAIL_SYMBOL = null;
 
 function statusBadge(row) {
-  if (row.has_checkpoint) return `<span class="status-pill"><span class="dot on"></span>trained</span>`;
-  if (row.in_training_config) return `<span class="status-pill"><span class="dot" style="background:var(--warning);"></span>training…</span>`;
-  return `<span class="status-pill"><span class="dot off"></span>not started</span>`;
+  if (row.has_checkpoint) return `<span class="status-pill"><span class="dot on"></span>Ready to trade</span>`;
+  if (row.in_training_config) return `<span class="status-pill"><span class="dot" style="background:var(--warning);"></span>Learning…</span>`;
+  return `<span class="status-pill"><span class="dot off"></span>Not started yet</span>`;
 }
 
 function renderTrainingTable(rows) {
@@ -285,8 +333,9 @@ async function loadTrainingStatus() {
   dot.className = "dot " + (inProgress > 0 || data.trained_count < data.universe_count ? "on" : "off");
   statusText.textContent = `${data.trained_count}/${data.universe_count} symbols trained`;
   document.getElementById("training-summary").textContent =
-    `${data.trained_count} of ${data.universe_count} universe symbols have a trained checkpoint · ` +
-    `${data.symbols.filter(r => r.in_training_config).length} configured for the current training run.`;
+    `${data.trained_count} of ${data.universe_count} stocks are ready to trade · ` +
+    `${data.symbols.filter(r => r.in_training_config).length} are currently learning. ` +
+    `Each stock has its own model, trained on that stock's own price history.`;
 
   // Refresh the open detail view too, if a symbol is currently shown.
   if (TRAINING_DETAIL_SYMBOL) await showTrainingDetail(TRAINING_DETAIL_SYMBOL, true);
@@ -300,16 +349,17 @@ function refreshBacktestPaperTrainedBadges() {
   const badge = document.getElementById("backtest-trained-badge");
   if (trained_count < universe_count) {
     badge.style.display = "block";
-    badge.textContent = `${trained_count}/${universe_count} symbols have a trained checkpoint - ` +
-      `the other ${universe_count - trained_count} will be skipped automatically (not an error) until trained.`;
+    badge.textContent = `Only ${trained_count} of ${universe_count} stocks are ready to trade so far - ` +
+      `the other ${universe_count - trained_count} will be skipped automatically until their training finishes ` +
+      `(this is expected, not an error).`;
   } else {
     badge.style.display = "none";
   }
   const paperSummary = document.getElementById("paper-symbols-summary");
   if (paperSummary) {
     paperSummary.textContent =
-      `ml_swing strategy, across all ${universe_count} universe symbols · ${trained_count} currently have a ` +
-      `trained checkpoint (the rest are skipped automatically, not an error, until trained).`;
+      `Trades across all ${universe_count} stocks in the universe · ${trained_count} are ready to trade so far ` +
+      `(the rest are skipped automatically until their training finishes - not an error).`;
   }
 }
 
@@ -449,11 +499,12 @@ function renderSharpeChart(rows) {
 function renderBacktestTable(rows) {
   const table = document.getElementById("backtest-table");
   const empty = document.getElementById("backtest-empty");
-  if (!rows.length) { table.style.display = "none"; empty.style.display = "block"; return; }
-  empty.style.display = "none"; table.style.display = "table";
+  const hint = document.getElementById("backtest-drilldown-hint");
+  if (!rows.length) { table.style.display = "none"; empty.style.display = "block"; hint.style.display = "none"; return; }
+  empty.style.display = "none"; table.style.display = "table"; hint.style.display = "block";
   const tbody = table.querySelector("tbody");
   tbody.innerHTML = rows.map(r => `
-    <tr>
+    <tr style="cursor:pointer;">
       <td><span class="swatch" style="display:inline-block;background:${STRATEGY_COLOR};margin-right:6px;"></span>${r.strategy}</td>
       <td class="num">${r.total_trades}</td>
       <td class="num">${fmt(r.win_rate_pct)}</td>
@@ -463,9 +514,7 @@ function renderBacktestTable(rows) {
       <td class="num">${fmt(r.max_drawdown_pct)}</td>
       <td class="num">${fmt(r.sharpe_ratio)}</td>
     </tr>`).join("");
-  tbody.querySelectorAll("tr").forEach(tr => tr.addEventListener("click", () => {
-    window.open(`${API}/api/backtest/trades`, "_blank");
-  }));
+  tbody.querySelectorAll("tr").forEach(tr => tr.addEventListener("click", showBacktestDrilldown));
 }
 
 async function refreshBacktestResults() {
@@ -475,6 +524,108 @@ async function refreshBacktestResults() {
     renderSharpeChart(rows);
     renderBacktestTable(rows);
   } catch (e) { /* no results yet */ }
+}
+
+// ---------------- backtest drilldown: equity curve + per-symbol breakdown ----------------
+function drawEquityCurve(trades) {
+  const canvas = document.getElementById("equity-canvas");
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 800, cssH = 220;
+  canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  if (!trades.length) return;
+
+  let cum = 0;
+  const points = trades.map(t => (cum += Number(t.net_pnl) || 0));
+  const padL = 55, padR = 15, padT = 12, padB = 20;
+  const plotW = cssW - padL - padR, plotH = cssH - padT - padB;
+  const n = points.length;
+  const x = i => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const vMin = Math.min(0, ...points), vMax = Math.max(0, ...points);
+  const y = v => padT + plotH - ((v - vMin) / ((vMax - vMin) || 1)) * plotH;
+
+  // zero line
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--baseline").trim();
+  ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(padL, y(0)); ctx.lineTo(padL + plotW, y(0)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
+  ctx.font = "11px system-ui"; ctx.textAlign = "right";
+  ctx.fillText(fmtMoney(vMax), padL - 6, y(vMax) + 4);
+  ctx.fillText(fmtMoney(vMin), padL - 6, y(vMin) + 4);
+
+  // filled area under curve
+  const finalPositive = points[points.length - 1] >= 0;
+  ctx.fillStyle = finalPositive ? "rgba(12,163,12,0.12)" : "rgba(208,59,59,0.12)";
+  ctx.beginPath(); ctx.moveTo(x(0), y(0));
+  points.forEach((v, i) => ctx.lineTo(x(i), y(v)));
+  ctx.lineTo(x(n-1), y(0)); ctx.closePath(); ctx.fill();
+
+  ctx.strokeStyle = finalPositive ? "var(--good)" : "var(--critical)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  points.forEach((v, i) => { i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v)); });
+  ctx.stroke();
+}
+
+function renderSymbolBreakdown(trades) {
+  const bySymbol = {};
+  trades.forEach(t => {
+    const s = t.symbol;
+    if (!bySymbol[s]) bySymbol[s] = { trades: 0, wins: 0, netPnl: 0 };
+    bySymbol[s].trades += 1;
+    bySymbol[s].netPnl += Number(t.net_pnl) || 0;
+    if (Number(t.net_pnl) > 0) bySymbol[s].wins += 1;
+  });
+  const rows = Object.entries(bySymbol)
+    .map(([symbol, v]) => ({ symbol, ...v, winRate: v.trades ? (v.wins / v.trades * 100) : 0, avgPnl: v.trades ? v.netPnl / v.trades : 0 }))
+    .sort((a, b) => b.netPnl - a.netPnl);
+
+  document.querySelector("#symbol-breakdown-table tbody").innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.symbol}</td>
+      <td class="num">${r.trades}</td>
+      <td class="num">${fmt(r.winRate)}</td>
+      <td class="num"><span class="${r.netPnl > 0 ? 'value good' : r.netPnl < 0 ? 'value bad' : ''}" style="font-size:13px;">${fmtMoney(r.netPnl)}</span></td>
+      <td class="num">${fmtMoney(r.avgPnl)}</td>
+    </tr>`).join("");
+}
+
+function renderTradeLog(trades) {
+  const MAX_ROWS = 200;
+  const sorted = [...trades].sort((a, b) => new Date(b.entry_time) - new Date(a.entry_time));
+  const shown = sorted.slice(0, MAX_ROWS);
+  document.getElementById("trade-log-count").textContent =
+    trades.length > MAX_ROWS ? `(showing ${MAX_ROWS} most recent of ${trades.length})` : `(${trades.length} total)`;
+  document.querySelector("#trade-log-table tbody").innerHTML = shown.map(t => `
+    <tr>
+      <td>${t.symbol}</td>
+      <td>${String(t.entry_time).slice(0,10)}</td>
+      <td>${String(t.exit_time).slice(0,10)}</td>
+      <td class="num">${fmt(t.entry_price)}</td>
+      <td class="num">${fmt(t.exit_price)}</td>
+      <td>${Number(t.direction) === 1 ? "LONG" : "SHORT"}</td>
+      <td class="num"><span class="${Number(t.net_pnl) > 0 ? 'value good' : Number(t.net_pnl) < 0 ? 'value bad' : ''}" style="font-size:13px;">${fmtMoney(t.net_pnl)}</span></td>
+      <td>${t.exit_reason}</td>
+    </tr>`).join("");
+}
+
+async function showBacktestDrilldown() {
+  const drilldown = document.getElementById("backtest-drilldown");
+  try {
+    const trades = await api("/api/backtest/trades");
+    if (!trades.length) { drilldown.style.display = "none"; return; }
+    drilldown.style.display = "block";
+    drilldown.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    drawEquityCurve(trades);
+    renderSymbolBreakdown(trades);
+    renderTradeLog(trades);
+  } catch (e) {
+    alert("Failed to load trade log: " + e.message);
+  }
 }
 
 let backtestPoll = null;
