@@ -8,12 +8,17 @@ docstring for the full context on this conversion.
 - Model: HYDRA (128-wide, 8-block, 32-Expert MoE + SwiGLU), single-input
   (no GPT-style next-token head — see src/core/hydra.py's build_kraken
   docstring for why that was dropped for this smaller dataset).
-- One independent model per symbol (models/<SYMBOL>/hydra_best.keras) -
-  each stock has its own patterns/volatility regime, so this trains and
-  checkpoints a separate model per symbol rather than pooling them into
-  one shared model. See src/data/preprocess.py's build_dataset_streaming
-  docstring for the windowing/DLS-scaling logic (unchanged; just called
-  once per symbol now instead of once across all symbols pooled together).
+- Two-phase training, not from-scratch-per-symbol: (1) PRETRAIN one shared
+  model on ALL universe symbols pooled together - broad general pattern
+  recognition, the same idea as a trader who's watched hundreds of stocks
+  before specializing. (2) FINE-TUNE a separate copy of that pretrained
+  model per symbol (models/<SYMBOL>/hydra_best.keras), starting from the
+  pretrained weights instead of random init, at a lower learning rate.
+  This exists specifically because per-symbol-from-scratch training showed
+  a real overfitting risk (val accuracy peaking at epoch 1, drifting down
+  after) - each symbol alone only has ~5,000 windows, not enough to learn
+  robust patterns unaided; pretraining gives every symbol's fine-tune a
+  running start instead of learning everything from that symbol's data alone.
 - Context: 60 trading days (~3 months) informing a swing entry held for up
   to MAX_HOLDING_DAYS (20 trading days).
 """
@@ -28,12 +33,14 @@ from pathlib import Path
 ROOT     = Path(__file__).parent
 CKPT_DIR = ROOT / "models"
 LOG_DIR  = ROOT / "logs"
+PRETRAIN_DIR = CKPT_DIR / "_pretrained_base"
+PRETRAIN_CKPT = PRETRAIN_DIR / "hydra_pretrained.keras"
 
 import sys
 sys.path.insert(0, str(ROOT / "src"))
 from core.hydra import build_kraken, IS_GPU, init_kraken_hardware, CertaintyMetric, SovereignAccuracy, SovereignLoss, certainty_loss, WarmupCosineDecay
 from data.preprocess import build_dataset_streaming, load_universe_from_cache
-from config.sovereign_config import CONTEXT_WINDOW, FORECAST_STEPS, TRAINING_SYMBOLS
+from config.sovereign_config import CONTEXT_WINDOW, FORECAST_STEPS, TRAINING_SYMBOLS, UNIVERSE_SYMBOLS
 
 
 class CheckpointPruner(keras.callbacks.Callback):
@@ -130,8 +137,17 @@ def train_kraken(args):
 
     print("\n" + "="*60)
     print(f"  {'🚀 GPU MODE' if IS_GPU else '🐌 CPU MODE'} — SOVEREIGN KRAKEN (Equity Swing)")
-    print(f"  {len(symbols)} independent per-symbol models: {', '.join(symbols)}")
+    print(f"  Phase 1: pretrain on all universe symbols pooled (broad experience)")
+    print(f"  Phase 2: fine-tune {len(symbols)} per-symbol specialists: {', '.join(symbols)}")
     print("="*60)
+
+    if not args.skip_pretrain and (args.force_pretrain or not PRETRAIN_CKPT.exists()):
+        pretrain_base_model(args)
+        keras.backend.clear_session()
+        gc.collect()
+    elif not args.skip_pretrain:
+        print(f"\n📦 Reusing existing pretrained base at {PRETRAIN_CKPT} "
+              f"(pass --force_pretrain to redo it)")
 
     for idx, symbol in enumerate(symbols, 1):
         print(f"\n{'#'*60}\n#  [{idx}/{len(symbols)}]  {symbol}\n{'#'*60}")
@@ -143,6 +159,119 @@ def train_kraken(args):
         gc.collect()
 
     print("\n✅ ALL SYMBOLS COMPLETE — Sovereign Alpha-Brain(s) saved.")
+
+
+def _compute_class_weights(ds_info):
+    label_counts = np.maximum(ds_info["label_counts"], 1)
+    total = label_counts.sum()
+    class_weights = {i: min(total / (4 * label_counts[i]), 5.0) for i in range(4)}
+    print(f"   ⚖️  Class weights: Long={class_weights[0]:.2f} Short={class_weights[1]:.2f} "
+          f"FeeTrap={class_weights[2]:.2f} Noise={class_weights[3]:.2f}")
+    return class_weights
+
+
+def _compile_hydra(model, class_weights, epochs, steps_tr, learning_rate, weight_decay):
+    """Shared compile step for both the pretrain and fine-tune phases -
+    same loss/metric setup, only the learning rate/weight decay differ
+    (fine-tuning uses a lower LR - standard transfer-learning practice, so
+    the per-symbol phase adjusts the pretrained weights instead of
+    overwriting what they already learned)."""
+    weights = [class_weights[i] for i in range(4)]
+    weights_tensor = tf.constant(weights, dtype=tf.float32)
+
+    def weighted_reasoning_loss(y_true, y_pred):
+        y_true_int = tf.reshape(tf.cast(y_true, tf.int32), [-1])
+        y_true_one_hot = tf.one_hot(y_true_int, depth=4)
+        unweighted = tf.keras.losses.categorical_crossentropy(
+            y_true_one_hot, y_pred, label_smoothing=0.1
+        )
+        sample_weights = tf.gather(weights_tensor, y_true_int)
+        return unweighted * sample_weights
+
+    lr_schedule = WarmupCosineDecay(
+        initial_learning_rate=learning_rate,
+        decay_steps=max(1, epochs * steps_tr),
+        warmup_steps=steps_tr,
+        alpha=0.1
+    )
+
+    model.compile(
+        optimizer=keras.optimizers.AdamW(
+            learning_rate=lr_schedule,
+            weight_decay=weight_decay,
+            clipnorm=1.0
+        ),
+        loss={
+            "prediction": SovereignLoss(direction_weight=3.0),
+            "certainty":  certainty_loss,
+            "reasoning":  weighted_reasoning_loss,
+        },
+        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0},
+        metrics={
+            "prediction": [SovereignAccuracy()],
+            "certainty":  [CertaintyMetric()],
+        }
+    )
+
+
+def pretrain_base_model(args):
+    """Phase 1: one shared model trained on ALL universe symbols pooled
+    together - broad general pattern recognition across many stocks, the
+    same principle as a trader who's watched hundreds of stocks before
+    specializing in a few. Measured directly on this hardware at ~4,957
+    steps/epoch, ~19h/epoch for the full 38-symbol pool - genuinely slow,
+    but that's an accepted tradeoff here, not an oversight.
+    """
+    PRETRAIN_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    BATCH_S  = args.batch
+    EPOCHS   = args.pretrain_epochs
+    CTX_WIN  = args.context_window if args.context_window else CONTEXT_WINDOW
+    FORECAST = args.forecast_steps if args.forecast_steps else FORECAST_STEPS
+    pretrain_symbols = UNIVERSE_SYMBOLS
+
+    print(f"\n🌐 PRETRAIN: loading all {len(pretrain_symbols)} universe symbols for pooled training...")
+    data_by_symbol = load_universe_from_cache(pretrain_symbols)
+    if not data_by_symbol:
+        print("❌ No data loaded for pretraining - skipping pretrain phase, "
+              "per-symbol fine-tunes will start from random init instead.")
+        return
+
+    ds_info = build_dataset_streaming(data_by_symbol, context_window=CTX_WIN,
+                                       forecast_steps=FORECAST, batch_size=BATCH_S)
+    tr_ds, va_ds = ds_info["tr_ds"], ds_info["va_ds"]
+    steps_tr, steps_va = ds_info["steps_tr"], ds_info["steps_va"]
+    n_feat = ds_info["n_features"]
+    print(f"   ✅ Pooled across {len(data_by_symbol)} symbols: {steps_tr} train steps/epoch | {steps_va} val steps")
+
+    class_weights = _compute_class_weights(ds_info)
+    model = build_kraken(n_features=n_feat, context_window=CTX_WIN, forecast_steps=FORECAST)
+    _compile_hydra(model, class_weights, EPOCHS, steps_tr,
+                    learning_rate=1e-4, weight_decay=0.05)  # pooled data is much larger - the per-symbol 0.15 was specifically to fight per-symbol overfitting
+
+    callbacks = [
+        keras.callbacks.ModelCheckpoint(
+            str(PRETRAIN_CKPT), monitor="val_prediction_dir_acc", mode="max",
+            save_best_only=True, verbose=1),
+        keras.callbacks.EarlyStopping(
+            # Same reasoning as the per-symbol phase's patience=25:
+            # restore_best_weights=True means a generous patience can't make
+            # the result worse, only spend more time looking for a better
+            # epoch - and time isn't the constraint here.
+            monitor="val_prediction_dir_acc", mode="max", patience=25,
+            restore_best_weights=True, verbose=1),
+        EdgeTracker(log_path=LOG_DIR / "edge_tracker__pretrained_base.csv",
+                    n_val_samples=steps_va * BATCH_S * FORECAST),
+    ]
+
+    print(f"\n🚀 IGNITION: pretrain base | {EPOCHS}-Epoch Mission | Batch {BATCH_S} | CTX {CTX_WIN} trading days")
+    model.fit(
+        tr_ds, validation_data=va_ds, epochs=EPOCHS,
+        steps_per_epoch=steps_tr, validation_steps=steps_va,
+        callbacks=callbacks, shuffle=False, verbose=1,
+    )
+    print(f"\n✅ PRETRAIN COMPLETE — base weights saved to {PRETRAIN_CKPT}")
 
 
 def train_one_symbol(symbol: str, args):
@@ -173,12 +302,7 @@ def train_one_symbol(symbol: str, args):
     print(f"   ✅ {steps_tr} train steps/epoch | {steps_va} val steps")
 
     # ── 2b. Reasoning class weights (anti-imbalance) ─────────────────────────
-    print("   📊 Computing reasoning class weights from precomputed label distribution...")
-    label_counts = np.maximum(ds_info["label_counts"], 1)
-    total = label_counts.sum()
-    class_weights = {i: min(total / (4 * label_counts[i]), 5.0) for i in range(4)}
-    print(f"   ⚖️  Class weights: Long={class_weights[0]:.2f} Short={class_weights[1]:.2f} "
-          f"FeeTrap={class_weights[2]:.2f} Noise={class_weights[3]:.2f}")
+    class_weights = _compute_class_weights(ds_info)
 
     # ── 3. Build model ───────────────────────────────────────────────────────
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN, forecast_steps=FORECAST)
@@ -191,57 +315,36 @@ def train_one_symbol(symbol: str, args):
         _pickle.dump({"context_window": CTX_WIN, "forecast_steps": FORECAST,
                       "n_features": n_feat, "symbol": symbol}, _f)
 
-    weights = [class_weights[i] for i in range(4)]
-    weights_tensor = tf.constant(weights, dtype=tf.float32)
-
-    def weighted_reasoning_loss(y_true, y_pred):
-        y_true_int = tf.reshape(tf.cast(y_true, tf.int32), [-1])
-        y_true_one_hot = tf.one_hot(y_true_int, depth=4)
-        unweighted = tf.keras.losses.categorical_crossentropy(
-            y_true_one_hot, y_pred, label_smoothing=0.1
-        )
-        sample_weights = tf.gather(weights_tensor, y_true_int)
-        return unweighted * sample_weights
-
-    # Rebuild LR schedule so cosine decay spans the full training run.
-    full_lr_schedule = WarmupCosineDecay(
-        initial_learning_rate=1e-4,
-        decay_steps=EPOCHS * steps_tr,
-        warmup_steps=steps_tr,
-        alpha=0.1
-    )
-
-    print("   ⚖️  Recompiling model with custom weighted categorical crossentropy...")
-    model.compile(
-        optimizer=keras.optimizers.AdamW(
-            learning_rate=full_lr_schedule,
-            weight_decay=0.15,  # raised from 0.05 - per-symbol training has much less data than pooled
-            clipnorm=1.0
-        ),
-        loss={
-            "prediction": SovereignLoss(direction_weight=3.0),
-            "certainty":  certainty_loss,
-            "reasoning":  weighted_reasoning_loss,
-        },
-        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0},
-        metrics={
-            "prediction": [SovereignAccuracy()],
-            "certainty":  [CertaintyMetric()],
-        }
-    )
-
-    # ── 4. Load weights (resume) ─────────────────────────────────────────────
+    # ── 4. Load starting weights: resume > pretrained base > random init ────
     ckpt_name = "hydra_best.keras" if args.model == "hydra" else f"{args.model}_best.keras"
     prefix = "hydra" if args.model == "hydra" else args.model
     CKPT_BEST = ckpt_dir / ckpt_name
     saved     = sorted(glob.glob(str(ckpt_dir / f"{prefix}_checkpoint_E*.keras")))
 
+    resumed_from_symbol_ckpt = False
     if args.resume and saved:
-        print(f"📦 Loading weights from {os.path.basename(saved[-1])}")
+        print(f"📦 Resuming from this symbol's own checkpoint: {os.path.basename(saved[-1])}")
         model.load_weights(saved[-1])
+        resumed_from_symbol_ckpt = True
     elif args.resume and CKPT_BEST.exists():
-        print(f"📦 Loading weights from {ckpt_name}")
+        print(f"📦 Resuming from this symbol's own checkpoint: {ckpt_name}")
         model.load_weights(str(CKPT_BEST))
+        resumed_from_symbol_ckpt = True
+    elif not args.skip_pretrain and PRETRAIN_CKPT.exists():
+        print(f"📦 Starting from the pretrained base ({PRETRAIN_CKPT.name}) - "
+              f"broad patterns learned across all universe symbols, now specializing on {symbol}")
+        model.load_weights(str(PRETRAIN_CKPT))
+    else:
+        print("📦 No pretrained base available - starting from random initialization")
+
+    # Fine-tuning from a pretrained base uses a lower learning rate than
+    # training from scratch would - standard transfer-learning practice, so
+    # this phase adjusts what the base already learned instead of overwriting
+    # it with the higher LR that made sense for random-init training.
+    learning_rate = args.finetune_lr if (not resumed_from_symbol_ckpt and not args.skip_pretrain and PRETRAIN_CKPT.exists()) else 1e-4
+    print(f"   ⚖️  Recompiling model with custom weighted categorical crossentropy (lr={learning_rate})...")
+    _compile_hydra(model, class_weights, EPOCHS, steps_tr,
+                    learning_rate=learning_rate, weight_decay=0.15)
 
     # ── 5. Callbacks ──────────────────────────────────────────────────────────
     callbacks = [
@@ -311,5 +414,17 @@ if __name__ == "__main__":
     p.add_argument("--forecast_steps", type=int, default=None,
                     help="Override FORECAST_STEPS trading-day count")
     p.add_argument("--resume",    action="store_true")
+    p.add_argument("--pretrain_epochs", type=int, default=300,
+                    help="Epoch ceiling for the phase-1 pooled pretrain - matches --epochs since "
+                         "EarlyStopping+restore_best_weights means a higher ceiling only costs time, "
+                         "never quality, and time isn't the constraint here")
+    p.add_argument("--skip_pretrain", action="store_true",
+                    help="Skip the pooled-pretrain phase entirely - each symbol trains from random init, "
+                         "like before this two-phase approach existed")
+    p.add_argument("--force_pretrain", action="store_true",
+                    help="Redo the pretrain phase even if models/_pretrained_base/hydra_pretrained.keras already exists")
+    p.add_argument("--finetune_lr", type=float, default=3e-5,
+                    help="Learning rate for per-symbol fine-tuning FROM the pretrained base "
+                         "(lower than the 1e-4 used for pretraining/from-scratch - standard transfer-learning practice)")
     args = p.parse_args()
     train_kraken(args)
