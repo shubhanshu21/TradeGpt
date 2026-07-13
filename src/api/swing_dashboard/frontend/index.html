@@ -119,14 +119,21 @@
   <!-- TRAINING PROGRESS -->
   <div class="card">
     <h2>Training Progress <span class="status-pill"><span class="dot off" id="training-dot"></span><span id="training-status-text">-</span></span></h2>
-    <div class="row">
-      <label class="plain">Symbol:
-        <select id="training-symbol-select" style="font:inherit;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);"></select>
-      </label>
-      <button id="training-refresh-btn" class="secondary">Refresh</button>
-    </div>
-    <div id="training-empty" class="empty">No trained symbols yet - one edge_tracker_&lt;SYMBOL&gt;.csv appears per symbol once its first epoch completes.</div>
-    <div id="training-chart-wrap" style="display:none;">
+    <p class="subtitle" id="training-summary" style="margin-bottom:14px;">Loading…</p>
+
+    <table id="training-overview-table">
+      <thead><tr>
+        <th>symbol</th><th>status</th><th class="num">epochs</th>
+        <th class="num">best val acc</th><th class="num">last val acc</th><th>significant edge</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="training-detail" style="display:none; margin-top:18px; padding-top:18px; border-top:1px solid var(--border);">
+      <div class="row" style="justify-content:space-between;">
+        <h3 style="font-size:14px; margin:0;" id="training-detail-title">-</h3>
+        <button id="training-detail-close" class="secondary">Close</button>
+      </div>
       <div class="stat-tiles">
         <div class="tile"><div class="label">Best val accuracy</div><div class="value" id="training-best-acc">-</div></div>
         <div class="tile"><div class="label">Epoch reached</div><div class="value" id="training-epoch-count">-</div></div>
@@ -145,6 +152,7 @@
   <!-- BACKTEST -->
   <div class="card">
     <h2>1. Backtest</h2>
+    <p class="subtitle" id="backtest-trained-badge" style="margin-bottom:14px; display:none;"></p>
     <div class="row">
       <button id="run-backtest-btn">Run backtest</button>
       <label class="plain"><input type="checkbox" id="refresh-data"> force refresh historical data</label>
@@ -230,21 +238,79 @@ const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? "-"
 const fmtMoney = (n) => (n === null || n === undefined) ? "-" : `Rs ${Number(n).toLocaleString("en-IN", {maximumFractionDigits:0})}`;
 
 // ---------------- training progress ----------------
-async function loadTrainingSymbols() {
-  const symbols = await api("/api/training/symbols");
-  const select = document.getElementById("training-symbol-select");
-  const empty = document.getElementById("training-empty");
-  const chartWrap = document.getElementById("training-chart-wrap");
-  if (!symbols.length) {
-    select.innerHTML = "";
-    empty.style.display = "block"; chartWrap.style.display = "none";
-    document.getElementById("training-status-text").textContent = "no symbols yet";
-    return;
+let TRAINING_STATUS = null;   // last /api/training/status response, cached for other cards to read
+let TRAINING_DETAIL_SYMBOL = null;
+
+function statusBadge(row) {
+  if (row.has_checkpoint) return `<span class="status-pill"><span class="dot on"></span>trained</span>`;
+  if (row.in_training_config) return `<span class="status-pill"><span class="dot" style="background:var(--warning);"></span>training…</span>`;
+  return `<span class="status-pill"><span class="dot off"></span>not started</span>`;
+}
+
+function renderTrainingTable(rows) {
+  // Symbols actively training or trained float to the top; rest sorted alphabetically.
+  const sorted = [...rows].sort((a, b) => {
+    const rank = r => r.has_checkpoint ? 0 : r.in_training_config ? 1 : 2;
+    const rd = rank(a) - rank(b);
+    if (rd !== 0) return rd;
+    if (a.has_checkpoint && b.has_checkpoint) return (b.best_val_acc||0) - (a.best_val_acc||0);
+    return a.symbol.localeCompare(b.symbol);
+  });
+  const tbody = document.querySelector("#training-overview-table tbody");
+  tbody.innerHTML = sorted.map(r => `
+    <tr data-symbol="${r.symbol}" style="${r.epochs_logged ? '' : 'opacity:0.55;'}">
+      <td>${r.symbol}</td>
+      <td>${statusBadge(r)}</td>
+      <td class="num">${r.epochs_logged || "-"}</td>
+      <td class="num">${r.best_val_acc != null ? (r.best_val_acc*100).toFixed(2)+"%" : "-"}</td>
+      <td class="num">${r.last_val_acc != null ? (r.last_val_acc*100).toFixed(2)+"%" : "-"}</td>
+      <td>${r.epochs_logged ? (r.significant_edge ? '<span class="value good" style="font-size:13px;">Yes</span>' : "No") : "-"}</td>
+    </tr>`).join("");
+  tbody.querySelectorAll("tr").forEach(tr => {
+    if (tr.dataset.symbol && rows.find(r => r.symbol === tr.dataset.symbol)?.epochs_logged) {
+      tr.style.cursor = "pointer";
+      tr.addEventListener("click", () => showTrainingDetail(tr.dataset.symbol));
+    }
+  });
+}
+
+async function loadTrainingStatus() {
+  const data = await api("/api/training/status");
+  TRAINING_STATUS = data;
+  renderTrainingTable(data.symbols);
+
+  const dot = document.getElementById("training-dot");
+  const statusText = document.getElementById("training-status-text");
+  const inProgress = data.symbols.filter(r => r.in_training_config && !r.has_checkpoint).length;
+  dot.className = "dot " + (inProgress > 0 || data.trained_count < data.universe_count ? "on" : "off");
+  statusText.textContent = `${data.trained_count}/${data.universe_count} symbols trained`;
+  document.getElementById("training-summary").textContent =
+    `${data.trained_count} of ${data.universe_count} universe symbols have a trained checkpoint · ` +
+    `${data.symbols.filter(r => r.in_training_config).length} configured for the current training run.`;
+
+  // Refresh the open detail view too, if a symbol is currently shown.
+  if (TRAINING_DETAIL_SYMBOL) await showTrainingDetail(TRAINING_DETAIL_SYMBOL, true);
+
+  refreshBacktestPaperTrainedBadges();
+}
+
+function refreshBacktestPaperTrainedBadges() {
+  if (!TRAINING_STATUS) return;
+  const { trained_count, universe_count } = TRAINING_STATUS;
+  const badge = document.getElementById("backtest-trained-badge");
+  if (trained_count < universe_count) {
+    badge.style.display = "block";
+    badge.textContent = `${trained_count}/${universe_count} symbols have a trained checkpoint - ` +
+      `the other ${universe_count - trained_count} will be skipped automatically (not an error) until trained.`;
+  } else {
+    badge.style.display = "none";
   }
-  const prev = select.value;
-  select.innerHTML = symbols.map(s => `<option value="${s}">${s}</option>`).join("");
-  if (symbols.includes(prev)) select.value = prev;
-  await loadTrainingProgress();
+  const paperSummary = document.getElementById("paper-symbols-summary");
+  if (paperSummary) {
+    paperSummary.textContent =
+      `ml_swing strategy, across all ${universe_count} universe symbols · ${trained_count} currently have a ` +
+      `trained checkpoint (the rest are skipped automatically, not an error, until trained).`;
+  }
 }
 
 function drawTrainingChart(rows) {
@@ -318,23 +384,15 @@ function drawTrainingChart(rows) {
   rows.forEach((r, i) => { if (i % step === 0 || i === n - 1) ctx.fillText(String(r.epoch), x(i), cssH - 6); });
 }
 
-async function loadTrainingProgress() {
-  const symbol = document.getElementById("training-symbol-select").value;
-  const empty = document.getElementById("training-empty");
-  const chartWrap = document.getElementById("training-chart-wrap");
-  if (!symbol) { empty.style.display = "block"; chartWrap.style.display = "none"; return; }
-
+async function showTrainingDetail(symbol, silentRefresh) {
+  TRAINING_DETAIL_SYMBOL = symbol;
   const rows = await api(`/api/training/progress?symbol=${encodeURIComponent(symbol)}`);
-  const dot = document.getElementById("training-dot");
-  const statusText = document.getElementById("training-status-text");
-  if (!rows.length) {
-    empty.style.display = "block"; chartWrap.style.display = "none";
-    empty.textContent = `${symbol}: training started, first epoch not finished yet.`;
-    dot.className = "dot on"; statusText.textContent = "in progress";
-    return;
-  }
-  empty.style.display = "none"; chartWrap.style.display = "block";
-  dot.className = "dot on"; statusText.textContent = `${rows.length} epoch(s) logged`;
+  const detail = document.getElementById("training-detail");
+  if (!rows.length) { if (!silentRefresh) detail.style.display = "none"; return; }
+
+  detail.style.display = "block";
+  document.getElementById("training-detail-title").textContent = `${symbol} — per-epoch validation performance`;
+  if (!silentRefresh) detail.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
   const best = rows.reduce((a, b) => (b.val_dir_acc > a.val_dir_acc ? b : a));
   document.getElementById("training-best-acc").textContent = `${(best.val_dir_acc*100).toFixed(2)}% (epoch ${best.epoch})`;
@@ -347,8 +405,10 @@ async function loadTrainingProgress() {
   drawTrainingChart(rows);
 }
 
-document.getElementById("training-symbol-select").addEventListener("change", loadTrainingProgress);
-document.getElementById("training-refresh-btn").addEventListener("click", loadTrainingSymbols);
+document.getElementById("training-detail-close").addEventListener("click", () => {
+  TRAINING_DETAIL_SYMBOL = null;
+  document.getElementById("training-detail").style.display = "none";
+});
 
 // ---------------- config ----------------
 let UNIVERSE_SYMBOLS = [];
@@ -358,9 +418,9 @@ async function loadConfig() {
   document.getElementById("config-summary").textContent =
     `Broker: ${cfg.broker.name} · Universe: ${cfg.universe.symbols.length} symbols · ` +
     `Capital: ${fmtMoney(cfg.swing.initial_capital)} · Daily candles, max ${cfg.swing.max_holding_days}-day holds`;
-  document.getElementById("paper-symbols-summary").textContent =
-    `ml_swing strategy, across all ${cfg.universe.symbols.length} universe symbols ` +
-    `(a symbol without a trained checkpoint yet is skipped automatically, not an error).`;
+  // paper-symbols-summary is populated by refreshBacktestPaperTrainedBadges()
+  // (called from loadTrainingStatus, right after this in init()) since it
+  // needs the trained-checkpoint count, which this function doesn't have.
 }
 
 // ---------------- backtest ----------------
@@ -522,12 +582,11 @@ async function safely(fn, label) {
 
 (async function init() {
   await safely(loadConfig, "loadConfig");
-  await safely(loadTrainingSymbols, "loadTrainingSymbols");
+  await safely(loadTrainingStatus, "loadTrainingStatus");
   await safely(refreshBacktestResults, "refreshBacktestResults");
   await safely(pollPaperStatus, "pollPaperStatus");
   await safely(loadLiveStatus, "loadLiveStatus");
-  setInterval(() => safely(loadTrainingProgress, "loadTrainingProgress"), 10000);  // training is live - keep the chart current
-  setInterval(() => safely(loadTrainingSymbols, "loadTrainingSymbols"), 60000);    // pick up newly-started symbols as train.py's loop advances
+  setInterval(() => safely(loadTrainingStatus, "loadTrainingStatus"), 10000);  // training is live - keep the table/chart current
   setInterval(pollPaperStatus, 8000);
   setInterval(loadLiveStatus, 15000);
 })();

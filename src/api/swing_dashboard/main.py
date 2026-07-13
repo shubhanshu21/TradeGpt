@@ -48,6 +48,7 @@ from strategies.swing.ml_strategy import MLSwingStrategy  # noqa: E402
 REPORTS_DIR = ROOT / "reports" / "swing"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR = ROOT / "logs"
+MODELS_DIR = ROOT / "models"
 
 
 def load_config() -> dict:
@@ -163,6 +164,48 @@ def training_progress(symbol: str):
         raise HTTPException(404, f"No training history yet for {symbol}.")
     df = pd.read_csv(path)
     return df.to_dict(orient="records")
+
+
+@app.get("/api/training/status")
+def training_status():
+    """Real per-symbol training status across the WHOLE tradeable universe
+    (not just symbols with some history) - this is what backtest/paper
+    trading actually need to know before running, since a symbol with no
+    checkpoint yet is silently skipped rather than erroring. Without this,
+    there's no way to tell "0 trades" (no signal) apart from "37 of 38
+    symbols were never trained" from the UI alone."""
+    cfg = load_config()
+    universe = cfg["universe"]["symbols"]
+    training_cfg = (cfg.get("training") or {}).get("symbols") or universe
+
+    rows = []
+    for symbol in universe:
+        has_checkpoint = (MODELS_DIR / symbol / "hydra_best.keras").exists()
+        edge_path = LOG_DIR / f"edge_tracker_{symbol}.csv"
+        epochs_logged, best_val_acc, best_epoch, significant_edge, last_val_acc = 0, None, None, False, None
+        if edge_path.exists():
+            df = pd.read_csv(edge_path)
+            if len(df):
+                epochs_logged = len(df)
+                best_row = df.loc[df["val_dir_acc"].idxmax()]
+                best_val_acc = float(best_row["val_dir_acc"])
+                best_epoch = int(best_row["epoch"])
+                last_row = df.iloc[-1]
+                last_val_acc = float(last_row["val_dir_acc"])
+                significant_edge = bool(last_row["significant_edge"])
+        rows.append({
+            "symbol": symbol,
+            "in_training_config": symbol in training_cfg,
+            "has_checkpoint": has_checkpoint,
+            "epochs_logged": epochs_logged,
+            "best_val_acc": best_val_acc,
+            "best_epoch": best_epoch,
+            "last_val_acc": last_val_acc,
+            "significant_edge": significant_edge,
+        })
+
+    trained_count = sum(1 for r in rows if r["has_checkpoint"])
+    return {"symbols": rows, "trained_count": trained_count, "universe_count": len(universe)}
 
 
 # ============================== Paper trading ==============================
