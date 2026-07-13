@@ -1,0 +1,223 @@
+"""API + dashboard server for the equity swing trading pipeline — neural
+network only (ml_swing), no rule-based strategies.
+
+    uvicorn api.swing_dashboard.main:app --reload --port 9000
+
+Then open http://localhost:9000 for the dashboard.
+
+Scope, deliberately:
+  - Backtest: fully controllable via API (safe - no money, no live orders).
+  - Paper trading: fully controllable via API (safe - virtual orders only).
+  - Live trading: READ-ONLY status here. There is intentionally no
+    "start live trading" endpoint - placing real orders from a one-click
+    web button defeats the whole point of the typed-confirmation safety
+    gate in live_trading_swing/executor.py. Start it from a terminal you
+    are actively watching: `python3 main.py live`.
+"""
+import csv
+import sys
+import threading
+from pathlib import Path
+
+import pandas as pd
+import yaml
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+ROOT = Path(__file__).resolve().parent.parent.parent.parent  # kat/
+sys.path.insert(0, str(ROOT / "src"))
+
+from backtest.metrics import compute_metrics  # noqa: E402
+from exchange.brokers.factory import get_broker  # noqa: E402
+from data.fetch_historical import fetch_universe_swing  # noqa: E402
+from swing_backtest.engine import SwingBacktestEngine  # noqa: E402
+from swing_paper_trading.engine import SwingPaperTradingEngine  # noqa: E402
+from strategies.swing.ml_strategy import MLSwingStrategy  # noqa: E402
+
+REPORTS_DIR = ROOT / "reports" / "swing"
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def load_config() -> dict:
+    with open(ROOT / "config" / "settings.yaml") as f:
+        return yaml.safe_load(f)
+
+
+app = FastAPI(title="Equity Swing Trading Pipeline API")
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+)
+
+# ---- in-memory job/session state (single-user, single-process by design) ----
+_lock = threading.Lock()
+_backtest_job = {"running": False, "error": None, "completed_at": None}
+_paper_session = {"engine": None, "thread": None, "stop_event": None}
+
+
+# ============================== General ==============================
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/api/config")
+def get_config():
+    return load_config()
+
+
+# ============================== Backtest ==============================
+
+def _run_backtest_job(refresh: bool):
+    cfg = load_config()
+    try:
+        data = fetch_universe_swing(force_refresh=refresh)
+        if not data:
+            raise RuntimeError("No historical data returned - check broker credentials/config.")
+
+        initial_capital = cfg["swing"]["initial_capital"]
+        strategy = MLSwingStrategy()
+        engine = SwingBacktestEngine(cfg, strategy)
+        trades = engine.run(data)
+        trades.to_csv(REPORTS_DIR / f"trades_{strategy.name}.csv", index=False)
+        metrics = compute_metrics(trades, initial_capital)
+        summary = pd.DataFrame([metrics]).set_index(pd.Index([strategy.name], name="strategy"))
+        summary.to_csv(REPORTS_DIR / "strategy_comparison.csv")
+
+        with _lock:
+            _backtest_job["running"] = False
+            _backtest_job["error"] = None
+            _backtest_job["completed_at"] = pd.Timestamp.now().isoformat()
+    except Exception as exc:
+        with _lock:
+            _backtest_job["running"] = False
+            _backtest_job["error"] = str(exc)
+
+
+@app.post("/api/backtest/run")
+def run_backtest(refresh: bool = False):
+    with _lock:
+        if _backtest_job["running"]:
+            raise HTTPException(409, "A backtest is already running.")
+        _backtest_job["running"] = True
+        _backtest_job["error"] = None
+
+    thread = threading.Thread(target=_run_backtest_job, args=(refresh,), daemon=True)
+    thread.start()
+    return {"started": True}
+
+
+@app.get("/api/backtest/status")
+def backtest_status():
+    with _lock:
+        return dict(_backtest_job)
+
+
+@app.get("/api/backtest/results")
+def backtest_results():
+    path = REPORTS_DIR / "strategy_comparison.csv"
+    if not path.exists():
+        raise HTTPException(404, "No backtest results yet - run a backtest first.")
+    df = pd.read_csv(path)
+    return df.to_dict(orient="records")
+
+
+@app.get("/api/backtest/trades")
+def backtest_trades():
+    path = REPORTS_DIR / "trades_ml_swing.csv"
+    if not path.exists():
+        raise HTTPException(404, "No trade log yet - run a backtest first.")
+    df = pd.read_csv(path)
+    return df.to_dict(orient="records")
+
+
+# ============================== Paper trading ==============================
+
+@app.post("/api/paper/start")
+def paper_start(symbols: list[str] | None = None):
+    cfg = load_config()
+    if cfg["broker"]["name"] == "csv":
+        raise HTTPException(
+            400, "broker.name is 'csv' (backtest-only, static data) in config/settings.yaml. "
+                 "Paper trading needs live prices - set broker.name to zerodha, upstox, or dhan first.")
+
+    with _lock:
+        if _paper_session["engine"] is not None and _paper_session["thread"].is_alive():
+            raise HTTPException(409, "A paper trading session is already running. Stop it first.")
+
+        broker = get_broker(cfg)
+        strategies = [MLSwingStrategy()]
+        target_symbols = symbols or cfg["universe"]["symbols"]
+
+        stop_event = threading.Event()
+        engine = SwingPaperTradingEngine(cfg, strategies, broker, target_symbols, stop_event=stop_event)
+        thread = threading.Thread(target=engine.run_forever, daemon=True)
+
+        _paper_session["engine"] = engine
+        _paper_session["thread"] = thread
+        _paper_session["stop_event"] = stop_event
+        thread.start()
+
+    return {"started": True, "symbols": target_symbols}
+
+
+@app.post("/api/paper/stop")
+def paper_stop():
+    with _lock:
+        if _paper_session["engine"] is None:
+            raise HTTPException(400, "No paper trading session is running.")
+        _paper_session["stop_event"].set()
+    return {"stopping": True}
+
+
+@app.get("/api/paper/status")
+def paper_status():
+    with _lock:
+        engine = _paper_session["engine"]
+        if engine is None:
+            return {"running": False}
+        return engine.get_status()
+
+
+@app.get("/api/paper/trades")
+def paper_trades():
+    path = Path(load_config()["paper_trading"]["swing_log_file"])
+    full_path = path if path.is_absolute() else ROOT / path
+    if not full_path.exists():
+        return []
+    with open(full_path) as f:
+        return list(csv.DictReader(f))
+
+
+# ============================== Live trading ==============================
+
+@app.get("/api/live/status")
+def live_status():
+    """Read-only. Live trading is started/stopped exclusively from the
+    terminal (python3 main.py live) - no start/stop endpoint here, on
+    purpose (see this file's module docstring).
+    """
+    cfg = load_config()
+    path = Path(cfg["live_trading"]["log_file"])
+    full_path = path if path.is_absolute() else ROOT / path
+
+    trades = []
+    if full_path.exists():
+        with open(full_path) as f:
+            trades = list(csv.DictReader(f))
+
+    return {
+        "enabled_in_config": cfg["live_trading"]["enabled"],
+        "note": "Live trading has no API start/stop by design - use "
+                "`python3 main.py live` from a terminal you're actively watching.",
+        "recent_trades": trades[-50:],
+        "total_trades_logged": len(trades),
+    }
+
+
+# ============================== Static frontend ==============================
+
+frontend_dir = Path(__file__).resolve().parent / "frontend"
+if frontend_dir.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")

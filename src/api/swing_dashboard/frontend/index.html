@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swing Trading Dashboard</title>
+<style>
+  :root {
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --muted:          #898781;
+    --grid:           #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --good:           #0ca30c;
+    --warning:        #fab219;
+    --critical:       #d03b3b;
+    --series-1: #2a78d6; /* bollinger_breakout */
+    --series-2: #1baf7a; /* inside_bar_breakout */
+    --series-3: #eda100; /* supertrend */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted:          #898781;
+      --grid:           #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --good:           #0ca30c;
+      --warning:        #fab219;
+      --critical:       #e66767;
+      --series-1: #3987e5;
+      --series-2: #199e70;
+      --series-3: #c98500;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); margin: 0 0 28px; font-size: 13px; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px; margin-bottom: 20px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  button {
+    font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--series-1); color: #fff; cursor: pointer;
+  }
+  button.secondary { background: transparent; color: var(--text-primary); }
+  button.danger { background: var(--critical); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  input[type=checkbox] { font: inherit; }
+  label.check {
+    color: var(--text-primary); font-size: 13px; display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; cursor: pointer;
+  }
+  label.plain { color: var(--text-secondary); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; }
+  tbody tr:hover { background: rgba(128,128,128,0.06); cursor: pointer; }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+    padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot.on { background: var(--good); }
+  .dot.off { background: var(--muted); }
+  .stat-tiles { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tile {
+    flex: 1; min-width: 140px; border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; background: var(--page);
+  }
+  .tile .label { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .tile .value { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .value.good { color: var(--good); }
+  .value.bad { color: var(--critical); }
+  .bar-chart { display: flex; flex-direction: column; gap: 10px; margin-bottom: 6px; }
+  .bar-row { display: grid; grid-template-columns: 150px 1fr 60px; align-items: center; gap: 10px; }
+  .bar-row .name { font-size: 13px; }
+  .bar-track { position: relative; height: 16px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+  .bar-fill {
+    position: absolute; top: 0; bottom: 0; left: 0; border-radius: 4px;
+    min-width: 4px; transition: width 0.3s ease;
+  }
+  .bar-fill[title]:hover::after {
+    content: attr(title);
+    position: absolute; top: -26px; left: 0; background: var(--text-primary); color: var(--surface-1);
+    font-size: 11px; padding: 3px 7px; border-radius: 4px; white-space: nowrap; z-index: 5;
+  }
+  .bar-value { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; font-size: 12px; color: var(--text-secondary); }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+  .banner {
+    border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+    background: var(--page); font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;
+  }
+  code { background: var(--page); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Swing Trading Dashboard</h1>
+  <p class="subtitle" id="config-summary">Loading configuration…</p>
+
+  <!-- BACKTEST -->
+  <div class="card">
+    <h2>1. Backtest</h2>
+    <div class="row">
+      <button id="run-backtest-btn">Run backtest</button>
+      <label class="plain"><input type="checkbox" id="refresh-data"> force refresh historical data</label>
+      <span class="status-pill"><span class="dot off" id="backtest-dot"></span><span id="backtest-status-text">idle</span></span>
+    </div>
+    <div id="backtest-error" class="empty" style="display:none;"></div>
+
+    <div id="chart-legend" class="legend"></div>
+    <div id="sharpe-chart" class="bar-chart"></div>
+
+    <div id="backtest-table-wrap">
+      <div class="empty" id="backtest-empty">No backtest results yet - click "Run backtest".</div>
+      <table id="backtest-table" style="display:none;">
+        <thead><tr>
+          <th>strategy</th><th class="num">trades</th><th class="num">win rate %</th>
+          <th class="num">profit factor</th><th class="num">return %</th>
+          <th class="num">net P&amp;L</th><th class="num">max DD %</th><th class="num">sharpe</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PAPER TRADING -->
+  <div class="card">
+    <h2>2. Paper Trading <span class="status-pill"><span class="dot off" id="paper-dot"></span><span id="paper-status-text">stopped</span></span></h2>
+    <div class="row" id="paper-strategy-checks"></div>
+    <div class="row">
+      <button id="paper-start-btn">Start paper trading</button>
+      <button id="paper-stop-btn" class="danger secondary" disabled>Stop</button>
+    </div>
+
+    <div class="stat-tiles">
+      <div class="tile"><div class="label">Total virtual P&amp;L</div><div class="value" id="paper-total-pnl">-</div></div>
+      <div class="tile"><div class="label">Open positions</div><div class="value" id="paper-open-count">-</div></div>
+      <div class="tile"><div class="label">Last checked</div><div class="value" id="paper-last-check" style="font-size:14px;">-</div></div>
+    </div>
+
+    <div id="paper-empty" class="empty">Not running.</div>
+    <table id="paper-positions-table" style="display:none;">
+      <thead><tr><th>symbol</th><th>strategy</th><th>side</th><th class="num">qty</th>
+        <th class="num">entry</th><th class="num">stop</th><th class="num">target</th>
+        <th class="num">days held</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- LIVE TRADING -->
+  <div class="card">
+    <h2>3. Live Trading</h2>
+    <div class="banner">
+      Live trading is intentionally <strong>not</strong> controllable from this dashboard.
+      Start it from a terminal you're actively watching: <code>python3 main.py live</code>.
+      This panel only shows read-only status of the most recent live session's log.
+    </div>
+    <div class="row">
+      <span class="status-pill"><span class="dot off" id="live-enabled-dot"></span><span id="live-enabled-text">checking config…</span></span>
+      <span id="live-trade-count" class="empty" style="padding:0;"></span>
+    </div>
+    <div id="live-empty" class="empty">No live trades logged yet.</div>
+    <table id="live-trades-table" style="display:none;">
+      <thead><tr><th>entry date</th><th>symbol</th><th>strategy</th><th>side</th>
+        <th class="num">qty</th><th class="num">entry</th><th class="num">exit</th>
+        <th class="num">gross P&amp;L</th><th>reason</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = "";
+const SERIES_COLORS = {
+  bollinger_breakout: "var(--series-1)",
+  inside_bar_breakout: "var(--series-2)",
+  supertrend: "var(--series-3)",
+};
+
+async function api(path, opts) {
+  const res = await fetch(API + path, opts);
+  if (!res.ok) { const t = await res.text(); throw new Error(t); }
+  return res.status === 204 ? null : res.json();
+}
+const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? "-" : Number(n).toFixed(d);
+const fmtMoney = (n) => (n === null || n === undefined) ? "-" : `Rs ${Number(n).toLocaleString("en-IN", {maximumFractionDigits:0})}`;
+
+// ---------------- config ----------------
+async function loadConfig() {
+  const cfg = await api("/api/config");
+  document.getElementById("config-summary").textContent =
+    `Broker: ${cfg.broker.name} · Universe: ${cfg.universe.symbols.length} symbols · ` +
+    `Capital: ${fmtMoney(cfg.swing.initial_capital)} · Daily candles, max ${cfg.swing.max_holding_days}-day holds`;
+}
+
+// ---------------- strategies checkboxes ----------------
+async function loadStrategies() {
+  const strategies = await api("/api/strategies");
+  const wrap = document.getElementById("paper-strategy-checks");
+  wrap.innerHTML = strategies.map(s => `
+    <label class="check">
+      <input type="checkbox" class="strategy-check" value="${s.name}" checked>
+      <span class="swatch" style="background:${SERIES_COLORS[s.name] || 'var(--series-1)'}"></span>
+      ${s.name}
+    </label>`).join("");
+}
+
+function selectedStrategies() {
+  return [...document.querySelectorAll(".strategy-check:checked")].map(el => el.value);
+}
+
+// ---------------- backtest ----------------
+function renderSharpeChart(rows) {
+  const legend = document.getElementById("chart-legend");
+  const chart = document.getElementById("sharpe-chart");
+  if (!rows.length) { legend.innerHTML = ""; chart.innerHTML = ""; return; }
+
+  const maxAbs = Math.max(1, ...rows.map(r => Math.abs(r.sharpe_ratio || 0)));
+  legend.innerHTML = rows.map(r =>
+    `<div class="item"><span class="swatch" style="background:${SERIES_COLORS[r.strategy] || 'var(--series-1)'}"></span>${r.strategy}</div>`
+  ).join("");
+
+  chart.innerHTML = rows.map(r => {
+    const v = r.sharpe_ratio || 0;
+    const widthPct = Math.max(2, Math.abs(v) / maxAbs * 100);
+    const color = v < 0 ? "var(--critical)" : (SERIES_COLORS[r.strategy] || "var(--series-1)");
+    return `<div class="bar-row">
+      <div class="name">${r.strategy}</div>
+      <div class="bar-track"><div class="bar-fill" title="Sharpe ${fmt(v)}" style="width:${widthPct}%; background:${color};"></div></div>
+      <div class="bar-value">${fmt(v)}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderBacktestTable(rows) {
+  const table = document.getElementById("backtest-table");
+  const empty = document.getElementById("backtest-empty");
+  if (!rows.length) { table.style.display = "none"; empty.style.display = "block"; return; }
+  empty.style.display = "none"; table.style.display = "table";
+  const tbody = table.querySelector("tbody");
+  tbody.innerHTML = rows.map(r => `
+    <tr data-strategy="${r.strategy}">
+      <td><span class="swatch" style="display:inline-block;background:${SERIES_COLORS[r.strategy]||'var(--series-1)'};margin-right:6px;"></span>${r.strategy}</td>
+      <td class="num">${r.total_trades}</td>
+      <td class="num">${fmt(r.win_rate_pct)}</td>
+      <td class="num">${fmt(r.profit_factor)}</td>
+      <td class="num">${fmt(r.return_pct)}</td>
+      <td class="num">${fmtMoney(r.total_net_pnl)}</td>
+      <td class="num">${fmt(r.max_drawdown_pct)}</td>
+      <td class="num">${fmt(r.sharpe_ratio)}</td>
+    </tr>`).join("");
+  tbody.querySelectorAll("tr").forEach(tr => tr.addEventListener("click", () => {
+    window.open(`${API}/api/backtest/trades/${tr.dataset.strategy}`, "_blank");
+  }));
+}
+
+async function refreshBacktestResults() {
+  try {
+    const rows = await api("/api/backtest/results");
+    rows.sort((a,b) => (b.sharpe_ratio||0) - (a.sharpe_ratio||0));
+    renderSharpeChart(rows);
+    renderBacktestTable(rows);
+  } catch (e) { /* no results yet */ }
+}
+
+let backtestPoll = null;
+async function pollBacktestStatus() {
+  const s = await api("/api/backtest/status");
+  const dot = document.getElementById("backtest-dot");
+  const text = document.getElementById("backtest-status-text");
+  const errBox = document.getElementById("backtest-error");
+  dot.className = "dot " + (s.running ? "on" : "off");
+  text.textContent = s.running ? "running…" : (s.error ? "failed" : "idle");
+  document.getElementById("run-backtest-btn").disabled = s.running;
+  if (s.error) { errBox.style.display = "block"; errBox.textContent = s.error; }
+  else { errBox.style.display = "none"; }
+  if (!s.running && backtestPoll) {
+    clearInterval(backtestPoll); backtestPoll = null;
+    refreshBacktestResults();
+  }
+}
+
+document.getElementById("run-backtest-btn").addEventListener("click", async () => {
+  const refresh = document.getElementById("refresh-data").checked;
+  try {
+    await api("/api/backtest/run", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({refresh}) });
+    if (!backtestPoll) backtestPoll = setInterval(pollBacktestStatus, 2000);
+    pollBacktestStatus();
+  } catch (e) { alert("Failed to start backtest: " + e.message); }
+});
+
+// ---------------- paper trading ----------------
+function renderPaperStatus(s) {
+  const dot = document.getElementById("paper-dot");
+  const text = document.getElementById("paper-status-text");
+  dot.className = "dot " + (s.running ? "on" : "off");
+  text.textContent = s.running ? `running (${(s.strategies||[]).join(", ")})` : "stopped";
+  document.getElementById("paper-start-btn").disabled = !!s.running;
+  document.getElementById("paper-stop-btn").disabled = !s.running;
+  document.getElementById("paper-last-check").textContent = s.last_check_date || "not yet";
+
+  const total = s.total_realized_pnl ?? null;
+  const totalEl = document.getElementById("paper-total-pnl");
+  totalEl.textContent = fmtMoney(total); totalEl.className = "value " + (total > 0 ? "good" : total < 0 ? "bad" : "");
+  document.getElementById("paper-open-count").textContent = s.positions ? s.positions.length : "-";
+
+  const table = document.getElementById("paper-positions-table");
+  const empty = document.getElementById("paper-empty");
+  const positions = s.positions || [];
+  if (!positions.length) { table.style.display = "none"; empty.style.display = "block"; empty.textContent = s.running ? "Running — no open positions right now." : "Not running."; return; }
+  empty.style.display = "none"; table.style.display = "table";
+  table.querySelector("tbody").innerHTML = positions.map(p => `
+    <tr><td>${p.symbol}</td><td>${p.strategy || "-"}</td><td>${p.direction === 1 ? "LONG" : "SHORT"}</td>
+    <td class="num">${p.quantity}</td><td class="num">${fmt(p.entry_price)}</td>
+    <td class="num">${fmt(p.stop_price)}</td><td class="num">${fmt(p.target_price)}</td>
+    <td class="num">${p.bars_held ?? 0}</td></tr>`).join("");
+}
+
+let paperPoll = null;
+async function pollPaperStatus() {
+  const s = await api("/api/paper/status");
+  renderPaperStatus(s);
+}
+
+document.getElementById("paper-start-btn").addEventListener("click", async () => {
+  const strategies = selectedStrategies();
+  if (!strategies.length) { alert("Select at least one strategy."); return; }
+  try {
+    await api("/api/paper/start", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({strategies}) });
+    if (!paperPoll) paperPoll = setInterval(pollPaperStatus, 5000);
+    pollPaperStatus();
+  } catch (e) { alert("Failed to start paper trading: " + e.message); }
+});
+document.getElementById("paper-stop-btn").addEventListener("click", async () => {
+  try { await api("/api/paper/stop", { method: "POST" }); pollPaperStatus(); }
+  catch (e) { alert("Failed to stop: " + e.message); }
+});
+
+// ---------------- live trading (read-only) ----------------
+async function loadLiveStatus() {
+  const s = await api("/api/live/status");
+  document.getElementById("live-trade-count").textContent = `${s.total_trades_logged} trade(s) logged`;
+  const dot = document.getElementById("live-enabled-dot");
+  const text = document.getElementById("live-enabled-text");
+  dot.className = "dot " + (s.enabled_in_config ? "on" : "off");
+  text.textContent = s.enabled_in_config
+    ? "live_trading.enabled = true in config" : "live_trading.enabled = false in config (safe default)";
+
+  const table = document.getElementById("live-trades-table");
+  const empty = document.getElementById("live-empty");
+  if (!s.recent_trades.length) { table.style.display = "none"; empty.style.display = "block"; return; }
+  empty.style.display = "none"; table.style.display = "table";
+  table.querySelector("tbody").innerHTML = s.recent_trades.slice().reverse().map(t => `
+    <tr><td>${t.entry_date}</td><td>${t.symbol}</td><td>${t.strategy}</td>
+    <td>${t.direction === "1" ? "LONG" : "SHORT"}</td>
+    <td class="num">${t.quantity}</td><td class="num">${fmt(t.entry_price)}</td>
+    <td class="num">${fmt(t.exit_price)}</td><td class="num">${fmtMoney(t.gross_pnl)}</td>
+    <td>${t.exit_reason}</td></tr>`).join("");
+}
+
+// ---------------- init ----------------
+(async function init() {
+  await loadConfig();
+  await loadStrategies();
+  await refreshBacktestResults();
+  await pollPaperStatus();
+  await loadLiveStatus();
+  setInterval(pollPaperStatus, 8000);
+  setInterval(loadLiveStatus, 15000);
+})();
+</script>
+</body>
+</html>

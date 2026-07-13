@@ -553,32 +553,25 @@ class SovereignAccuracy(keras.metrics.Metric):
 # ── Model Builder ─────────────────────────────────────────────────────────────
 
 def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FORECAST_STEPS,
-                 dropout_rate=0.15, noise_stddev=0.02, vocab_size=128):
+                 dropout_rate=0.15, noise_stddev=0.02):
     """
-    Build Phase 3 Deep-Predator V12.5.
+    Equity swing edition — Deep Predator, single-input.
 
-    Improvements over V10.6:
-      - Gaussian Input Noise layer (noise_stddev=0.02) for augmentation
-      - 8x HydraBlock with Dropout(0.1)
-      - MLALayer with RoPE positional encoding
-      - SovereignLoss with volatility weighting
-      - Label smoothing on reasoning head
-      - Cosine LR Decay 5e-6 → 5e-7 with gradient clipping
-      - Genuine GPT-style next-candle-token prediction: a discrete return-bucket
-        vocabulary embedded alongside the continuous features, with a per-position
-        classification head trained the way real language models train — every
-        position predicts its own next token, not just the last one.
+    Converted from the crypto version's dual-input (market + return-token)
+    design: dropped the GPT-style next-candle-token head and its token
+    embedding entirely. That auxiliary task showed marginal value even on
+    crypto's larger single-asset hourly dataset; equity's pooled multi-symbol
+    daily dataset is smaller, and simplifying to a single input avoids taxing
+    that capacity on a task that wasn't clearly paying for itself. Everything
+    else (causal softmax attention, QK-Norm, RoPE, MoE-32 with shared expert,
+    SwiGLU, Dropout, the certainty-consensus mechanism) is unchanged from the
+    crypto version — none of it is asset-class specific.
     """
     inputs = layers.Input(shape=(context_window, n_features), name="market_input")
-    token_inputs = layers.Input(shape=(context_window,), dtype="int32", name="token_input")
 
     # Input Noise Augmentation (only active during training)
     x = layers.GaussianNoise(noise_stddev)(inputs)
-
-    # Embed to d_model — continuous features + discrete return-token embedding,
-    # summed like GPT sums token and positional embeddings.
-    token_embed = layers.Embedding(vocab_size, 128, name="token_embedding")(token_inputs)
-    x = RMSNorm()(layers.Dense(128)(x) + token_embed)
+    x = RMSNorm()(layers.Dense(128)(x))
 
     # 8x HydraBlock with dropout
     all_consensus = []
@@ -608,15 +601,9 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     # Label smoothing(0.1) on reasoning to prevent overconfidence
     reasoning = layers.Dense(4, activation="softmax", name="reasoning")(last_step)
 
-    # Genuine next-token head: applied at EVERY position (not just the last),
-    # so every one of the 120 context positions is its own training example —
-    # this is the actual causal-LM training signal GPT uses, predicting token
-    # t+1 from positions 0..t via the causal attention mask already in place.
-    next_token = layers.Dense(vocab_size, activation="softmax", name="next_token")(normed_x)
-
     model = keras.Model(
-        [inputs, token_inputs], [preds, avg_consensus, reasoning, next_token],
-        name="sovereign_kraken_v11_0")
+        inputs, [preds, avg_consensus, reasoning],
+        name="sovereign_kraken_equity_v1")
 
     # Linear warmup (500 steps) into Cosine Decay LR: 1e-4 -> 1e-5 over 10,000 steps.
     # Research on training transformers from scratch typically finds 1e-4 to 5e-4
@@ -646,140 +633,11 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
             "prediction": SovereignLoss(direction_weight=3.0),
             "certainty":  certainty_loss,
             "reasoning":  SovereignReasoningLoss(label_smoothing=0.1),
-            "next_token": keras.losses.SparseCategoricalCrossentropy(),
         },
-        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0, "next_token": 2.0},
+        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0},
         metrics={
             "prediction": [SovereignAccuracy()],
             "certainty":  [CertaintyMetric()],
-            "next_token": [keras.metrics.SparseCategoricalAccuracy(name="token_acc")],
         }
     )
     return model
-
-
-def _sample_from_probs(probs, temperature=1.0, top_k=0, top_p=1.0, rng=None):
-    """
-    Temperature + top-k/top-p (nucleus) filtered sampling from a probability
-    vector — ported from Kronos's sample_from_logits/top_k_top_p_filtering.
-    temperature<1 sharpens the distribution (more confident/greedy),
-    temperature>1 flattens it (more exploratory). top_k/top_p restrict
-    sampling to the most plausible tokens instead of the full vocabulary.
-    """
-    rng = rng or np.random.default_rng()
-    probs = np.asarray(probs, dtype="float64")
-
-    if temperature != 1.0:
-        logits = np.log(np.clip(probs, 1e-12, None)) / max(temperature, 1e-6)
-        probs = np.exp(logits - logits.max())
-        probs = probs / probs.sum()
-
-    if top_k and top_k > 0:
-        keep = np.argsort(probs)[::-1][:top_k]
-        mask = np.zeros_like(probs, dtype=bool)
-        mask[keep] = True
-        probs = np.where(mask, probs, 0.0)
-        probs = probs / probs.sum()
-
-    if top_p and top_p < 1.0:
-        order = np.argsort(probs)[::-1]
-        cum = np.cumsum(probs[order])
-        cutoff = np.searchsorted(cum, top_p) + 1
-        keep = order[:cutoff]
-        mask = np.zeros_like(probs, dtype=bool)
-        mask[keep] = True
-        probs = np.where(mask, probs, 0.0)
-        probs = probs / probs.sum()
-
-    return int(rng.choice(len(probs), p=probs))
-
-
-def generate_future_tokens(model, x_context, tok_context, n_steps, bin_centers,
-                            local_mean, local_std, t_close_idx,
-                            temperature=0.0, top_k=0, top_p=1.0, rng=None):
-    """
-    Genuine autoregressive generation: predict one next-candle token, convert it
-    back into an approximate price, append it to the window, and repeat — the
-    actual GPT generation loop (predict -> append -> predict again), as opposed
-    to the 'prediction' head's one-shot forecast of all future steps at once.
-
-    x_context   : (context_window, n_features) most recent DLS-scaled feature window
-    tok_context : (context_window,) most recent real return-token sequence
-    bin_centers : (vocab_size,) representative raw return per token, from fit_return_vocab
-    local_mean/local_std : the DLS stats used to scale x_context (from apply_dls),
-                            reused to convert generated raw returns back into the
-                            same Z-scored space the model expects as input.
-    temperature : 0.0 (default) = greedy argmax, deterministic single path.
-                  >0.0 = sample from the (optionally top-k/top-p filtered)
-                  distribution instead — use with generate_with_confidence()
-                  to produce multiple diverse plausible futures.
-    Returns: list of dicts with token id, predicted raw return, and predicted raw close.
-    """
-    x   = x_context.copy()
-    tok = tok_context.copy()
-    results = []
-
-    raw_close = float(x[-1, t_close_idx] * local_std[t_close_idx] + local_mean[t_close_idx])
-
-    for _ in range(n_steps):
-        X_in   = x[np.newaxis].astype("float32")
-        Tok_in = tok[np.newaxis].astype("int32")
-        outputs = model([X_in, Tok_in], training=False)
-        next_token_probs = outputs[3].numpy()[0, -1]   # last position's next-token distribution
-
-        if temperature and temperature > 0:
-            token_id = _sample_from_probs(next_token_probs, temperature, top_k, top_p, rng)
-        else:
-            token_id = int(np.argmax(next_token_probs))
-
-        predicted_return = float(bin_centers[token_id])
-
-        raw_close = raw_close * (1.0 + predicted_return)
-        results.append({"token": token_id, "return": predicted_return, "close": raw_close})
-
-        # Reconstruct the synthetic next candle in the same DLS-scaled space,
-        # carrying forward the other (non-price) features from the last real candle.
-        new_row = x[-1].copy()
-        new_row[t_close_idx] = (raw_close - local_mean[t_close_idx]) / (local_std[t_close_idx] + 1e-9)
-
-        x   = np.concatenate([x[1:], new_row[np.newaxis]], axis=0)
-        tok = np.concatenate([tok[1:], [token_id]], axis=0)
-
-    return results
-
-
-def generate_with_confidence(model, x_context, tok_context, n_steps, bin_centers,
-                              local_mean, local_std, t_close_idx,
-                              n_samples=5, temperature=1.0, top_k=0, top_p=0.9, seed=None):
-    """
-    Generate several independent sampled future paths and measure how much they
-    agree — a genuine, principled confidence signal (Kronos-style multi-sample
-    generation), instead of relying solely on a separately-trained certainty
-    head that isn't directly tied to the prediction itself. High agreement
-    across independently-sampled futures means real confidence; a split vote
-    means honest uncertainty, measured directly from what the model predicts.
-    """
-    rng = np.random.default_rng(seed)
-    paths = [
-        generate_future_tokens(model, x_context, tok_context, n_steps, bin_centers,
-                                local_mean, local_std, t_close_idx,
-                                temperature=temperature, top_k=top_k, top_p=top_p, rng=rng)
-        for _ in range(n_samples)
-    ]
-
-    entry_close  = float(x_context[-1, t_close_idx] * local_std[t_close_idx] + local_mean[t_close_idx])
-    final_closes = np.array([p[-1]["close"] for p in paths])
-    directions   = np.sign(final_closes - entry_close)
-
-    up_frac   = float(np.mean(directions > 0))
-    down_frac = float(np.mean(directions < 0))
-
-    return {
-        "paths": paths,
-        "up_fraction": up_frac,
-        "down_fraction": down_frac,
-        "agreement": max(up_frac, down_frac),   # 1.0 = unanimous, ~0.5 = split/no confidence
-        "majority_direction": "UP" if up_frac >= down_frac else "DOWN",
-        "mean_final_close": float(final_closes.mean()),
-        "std_final_close": float(final_closes.std()),
-    }

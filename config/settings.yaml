@@ -1,0 +1,165 @@
+# Central configuration. No secrets here - those go in .env.
+#
+# Trading logic here is the trained neural network (src/strategies/swing/
+# ml_strategy.py) only - no rule-based strategies. This config governs the
+# broker/backtest/paper/live infrastructure the model plugs into; the
+# model's own training config (context window, universe, cost approximation
+# for labels) lives in src/config/sovereign_config.py, which reads several
+# values (universe.symbols, swing.*) from THIS file so there's one source
+# of truth, not two that can drift out of sync.
+
+mode: backtest   # backtest | paper | live
+
+broker:
+  name: upstox     # zerodha | upstox | dhan | csv - switching is config-only, see src/exchange/brokers/
+                   # csv = backtest-only, reads cache/kaggle/<SYMBOL>.csv (see src/data/import_kaggle_data.py)
+                   #       no live prices/orders - switch to a real broker for paper trading
+
+universe:
+  # Nifty 50 large caps, liquid only, grouped by sector for balanced
+  # cross-sector coverage (a pooled model trained on 6 banks and nothing
+  # else would just learn "bank patterns", not general market structure).
+  # Trim/extend this list freely - more symbols = slower backtests.
+  symbols:
+    # Banking & Financial Services
+    - HDFCBANK
+    - ICICIBANK
+    - KOTAKBANK
+    - SBIN
+    - AXISBANK
+    - BAJFINANCE
+    - BAJAJFINSV
+    - HDFCLIFE
+    # IT Services
+    - INFY
+    - TCS
+    - HCLTECH
+    - WIPRO
+    - TECHM
+    # FMCG & Consumer
+    - ITC
+    - HINDUNILVR
+    - NESTLEIND
+    - BRITANNIA
+    - TITAN
+    - ASIANPAINT
+    # Auto
+    - MARUTI
+    - M&M
+    - BAJAJ-AUTO
+    - EICHERMOT
+    # Pharma
+    - SUNPHARMA
+    - DRREDDY
+    - CIPLA
+    # Energy, Oil & Gas, Power
+    - RELIANCE
+    - ONGC
+    - NTPC
+    - POWERGRID
+    # Metals & Mining
+    - TATASTEEL
+    - JSWSTEEL
+    - HINDALCO
+    # Cement
+    - ULTRACEMCO
+    - GRASIM
+    # Infra / Capital Goods / Ports
+    - LT
+    - ADANIPORTS
+    # Telecom
+    - BHARTIARTL
+
+training:
+  # Which symbols an actual `python3 train.py` run pools together. Separate
+  # from universe.symbols (which is the full tradeable universe backtest/
+  # paper/live pull data for) because CPU-only training of all of them in
+  # one pooled run takes a very long time (~19h/epoch on a 4-core box at
+  # the current 38-symbol size) - trim this list to train on a faster
+  # subset, then widen it once a full run is actually needed.
+  # null/omitted = use the full universe.symbols list. Defaulted here to one
+  # symbol per sector (still cross-sector diverse, ~10/38 of the compute) so
+  # a CPU-only run finishes in hours, not most of a day - widen this list
+  # once faster hardware is available or a longer run is worth the wait.
+  symbols:
+    - HDFCBANK      # Banking & Financial Services
+    - INFY          # IT Services
+    - HINDUNILVR    # FMCG & Consumer
+    - MARUTI        # Auto
+    - SUNPHARMA     # Pharma
+    - RELIANCE      # Energy, Oil & Gas, Power
+    - TATASTEEL     # Metals & Mining
+    - ULTRACEMCO    # Cement
+    - LT            # Infra / Capital Goods / Ports
+    - BHARTIARTL    # Telecom
+
+swing:
+  # Positional/swing trading: daily candles, multi-day holds, no same-day
+  # square-off. This is the mode actually built end-to-end (data, model,
+  # backtest, paper, live) - see intraday: below for the reserved config
+  # slot of the not-yet-built next mode.
+  interval: "day"             # canonical interval string, see src/exchange/brokers/base.py
+  start_date: "1990-01-01"   # deliberately before NSE's earliest electronic
+                              # trading records - the broker returns whatever
+                              # actually exists per symbol (confirmed RELIANCE
+                              # goes back to 2000-01-03), so this maximizes real
+                              # per-stock history instead of guessing a cutoff
+  end_date: "2025-12-31"
+  initial_capital: 200000
+  capital_per_trade: 20000
+  max_concurrent_positions: 5
+  max_holding_days: 20        # force-exit if neither stop nor target hit within N trading days
+  hard_stop_loss_pct: 0.05    # swing needs more room to breathe than intraday would
+  hard_target_pct: 0.10
+  max_total_loss_pct: 0.10    # live only: cumulative realized loss kill switch, % of initial_capital
+  costs:
+    # Zerodha DELIVERY (CNC) charges - zero brokerage but STT on both legs
+    # and a per-sell DP charge; see src/backtest/delivery_costs.py docstring.
+    stt_pct: 0.001              # 0.1% - both buy AND sell for delivery
+    exchange_txn_pct: 0.0000297
+    sebi_pct: 0.0000010
+    stamp_duty_buy_pct: 0.00015  # buy side only, delivery rate
+    dp_charge_flat: 15.93        # ~Rs 13.5 + 18% GST, charged per sell, per scrip, per day
+    gst_pct: 0.18
+
+# Reserved for the intraday mode requested alongside swing - broker/resample
+# layers already support "60minute" (src/exchange/resample.py,
+# src/exchange/brokers/*), but no intraday data/train/backtest/paper/live
+# pipeline has been built yet (swing is being built and validated first).
+# These values are placeholders to be wired up when that work starts, not
+# read by any code today.
+intraday:
+  interval: "60minute"
+  start_date: "2023-01-01"    # brokers only retain ~a few years of minute-level history
+  end_date: "2025-12-31"
+  initial_capital: 200000
+  capital_per_trade: 20000
+  max_concurrent_positions: 5
+  max_holding_bars: 6         # force square-off within N 60-minute bars (same trading day)
+  hard_stop_loss_pct: 0.01
+  hard_target_pct: 0.02
+  square_off_time: "15:15"    # IST - MIS positions must close before exchange auto-square-off
+  costs:
+    # Zerodha INTRADAY (MIS) charges differ from delivery: brokerage applies
+    # (unlike CNC), STT only on the sell leg, no DP charge. Not yet used by
+    # any code - src/backtest/delivery_costs.py only implements delivery
+    # costs today.
+    brokerage_pct: 0.0003       # 0.03% or Rs 20/order, whichever is lower (approximated as pct here)
+    brokerage_flat_cap: 20.0
+    stt_pct: 0.00025            # 0.025% - sell side only, intraday
+    exchange_txn_pct: 0.0000297
+    sebi_pct: 0.0000010
+    stamp_duty_buy_pct: 0.00003 # buy side only, intraday rate (lower than delivery)
+    gst_pct: 0.18
+
+paper_trading:
+  swing_log_file: "logs/swing_paper_trades.csv"
+
+live_trading:
+  enabled: false             # must be manually flipped to true - safety gate
+  confirm_each_order: true
+  log_file: "logs/swing_live_trades.csv"
+  product: "CNC"             # equity delivery product (not intraday MIS)
+  use_broker_stop_loss: true # attempt a broker-side GTT/OCO after entry (Zerodha only for now -
+                             # see src/exchange/brokers/zerodha_broker.py:place_gtt_oco); always ALSO
+                             # falls back to this process polling regardless of broker support
