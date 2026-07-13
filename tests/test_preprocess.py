@@ -7,8 +7,7 @@ import numpy as np
 import pytest
 
 from data.preprocess import (
-    apply_dls, fit_return_vocab, tokenize_returns,
-    _hits_tp_before_sl, build_feature_cols,
+    apply_dls, _hits_target_before_stop, build_feature_cols,
 )
 
 
@@ -42,45 +41,25 @@ def test_apply_dls_std_floor_prevents_division_explosion():
     np.testing.assert_allclose(x_scaled, 0.0)
 
 
-def test_return_vocab_roundtrip():
-    rng = np.random.default_rng(1)
-    returns = rng.normal(0, 0.001, size=5000)
-    vocab_size = 16
-
-    bin_edges, bin_centers = fit_return_vocab(returns, vocab_size=vocab_size)
-
-    assert len(bin_edges) == vocab_size - 1
-    assert np.all(np.diff(bin_edges) >= 0), "bin edges must be monotonically increasing"
-    assert len(bin_centers) == vocab_size
-
-    tokens = tokenize_returns(returns, bin_edges)
-    assert tokens.dtype == np.int32
-    assert tokens.min() >= 0
-    assert tokens.max() < vocab_size
-
-    # Quantile-based binning should spread tokens roughly evenly, not dump
-    # everything into one bucket.
-    counts = np.bincount(tokens, minlength=vocab_size)
-    assert counts.max() < len(returns) * 0.5
-
-
-@pytest.mark.parametrize("direction,path,expect_tp", [
-    (1, [101, 102, 103], True),    # long: price rises straight to TP
-    (1, [99, 98, 97], False),      # long: price falls straight to SL
-    (-1, [99, 98, 97], True),      # short: price falls straight to TP
-    (-1, [101, 102, 103], False),  # short: price rises straight to SL
+@pytest.mark.parametrize("direction,high_path,low_path,expect_tp", [
+    (1, [101, 102, 103], [100.5, 101, 102], True),    # long: high reaches TP before low reaches SL
+    (1, [100.5, 100.2, 100.1], [99, 98, 97], False),  # long: low hits SL first
+    (-1, [100.5, 100.2, 100.1], [99, 98, 97], True),  # short: low reaches TP before high reaches SL
+    (-1, [101, 102, 103], [100.5, 101, 102], False),  # short: high hits SL first
 ])
-def test_hits_tp_before_sl_directional(direction, path, expect_tp):
+def test_hits_target_before_stop_directional(direction, high_path, low_path, expect_tp):
     entry = 100.0
-    result = _hits_tp_before_sl(
-        entry, np.array(path, dtype="float32"),
-        tp_level=2.0, sl_level=2.0, direction=direction,
+    tp_price = entry * (1 + 0.02) if direction == 1 else entry * (1 - 0.02)
+    sl_price = entry * (1 - 0.02) if direction == 1 else entry * (1 + 0.02)
+    result = _hits_target_before_stop(
+        np.array(high_path, dtype="float32"), np.array(low_path, dtype="float32"),
+        tp_price, sl_price, direction,
     )
     assert result is expect_tp
 
 
-def test_hits_tp_before_sl_neither_hit_returns_false():
-    entry = 100.0
-    path = np.array([100.5, 100.8, 100.3], dtype="float32")
-    result = _hits_tp_before_sl(entry, path, tp_level=5.0, sl_level=5.0, direction=1)
+def test_hits_target_before_stop_neither_hit_returns_false():
+    high_path = np.array([100.5, 100.8, 100.3], dtype="float32")
+    low_path = np.array([99.8, 99.9, 99.7], dtype="float32")
+    result = _hits_target_before_stop(high_path, low_path, tp_price=110.0, sl_price=90.0, direction=1)
     assert result is False

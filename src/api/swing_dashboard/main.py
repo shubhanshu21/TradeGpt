@@ -12,12 +12,22 @@ Scope, deliberately:
     "start live trading" endpoint - placing real orders from a one-click
     web button defeats the whole point of the typed-confirmation safety
     gate in live_trading_swing/executor.py. Start it from a terminal you
-    are actively watching: `python3 main.py live`.
+    are actively watching: `python3 auto_run.py live`.
 """
 import csv
 import sys
 import threading
 from pathlib import Path
+
+# kiteconnect (Zerodha) must be imported before tensorflow ever loads in
+# this process - importing them in the opposite order segfaults (verified:
+# a native-library conflict, not a Python-level error). This process is
+# long-lived and can serve a backtest request (which lazy-loads tensorflow
+# via MLSwingStrategy) and a paper/live-trading request (which can lazy-load
+# kiteconnect via get_broker, if broker.name=zerodha) in either order across
+# its lifetime, so the only safe fix is forcing kiteconnect first, always -
+# harmless even when broker.name isn't zerodha.
+import kiteconnect  # noqa: F401,E402
 
 import pandas as pd
 import yaml
@@ -37,6 +47,7 @@ from strategies.swing.ml_strategy import MLSwingStrategy  # noqa: E402
 
 REPORTS_DIR = ROOT / "reports" / "swing"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR = ROOT / "logs"
 
 
 def load_config() -> dict:
@@ -132,6 +143,28 @@ def backtest_trades():
     return df.to_dict(orient="records")
 
 
+# ============================== Training progress ==============================
+
+@app.get("/api/training/symbols")
+def training_symbols():
+    """Which symbols have per-epoch training history logged so far (see
+    train.py's EdgeTracker callback) - one edge_tracker_<SYMBOL>.csv per
+    symbol, written as that symbol's training run progresses."""
+    return sorted(
+        p.stem.removeprefix("edge_tracker_")
+        for p in LOG_DIR.glob("edge_tracker_*.csv")
+    )
+
+
+@app.get("/api/training/progress")
+def training_progress(symbol: str):
+    path = LOG_DIR / f"edge_tracker_{symbol}.csv"
+    if not path.exists():
+        raise HTTPException(404, f"No training history yet for {symbol}.")
+    df = pd.read_csv(path)
+    return df.to_dict(orient="records")
+
+
 # ============================== Paper trading ==============================
 
 @app.post("/api/paper/start")
@@ -195,7 +228,7 @@ def paper_trades():
 @app.get("/api/live/status")
 def live_status():
     """Read-only. Live trading is started/stopped exclusively from the
-    terminal (python3 main.py live) - no start/stop endpoint here, on
+    terminal (python3 auto_run.py live) - no start/stop endpoint here, on
     purpose (see this file's module docstring).
     """
     cfg = load_config()
@@ -210,7 +243,7 @@ def live_status():
     return {
         "enabled_in_config": cfg["live_trading"]["enabled"],
         "note": "Live trading has no API start/stop by design - use "
-                "`python3 main.py live` from a terminal you're actively watching.",
+                "`python3 auto_run.py live` from a terminal you're actively watching.",
         "recent_trades": trades[-50:],
         "total_trades_logged": len(trades),
     }

@@ -2,8 +2,10 @@
 HYDRA SOVEREIGN KRAKEN (V12.5) - DEEP PREDATOR PHASE 3 ⚓🚀⚡
 =================================================================
 Architecture: causal softmax attention (QK-Norm + RoPE, latent KV bottleneck)
-+ MoE-256 (top-4 routed + shared expert) + DLS + expanded SwiGLU + Dropout.
-V12.5 changes over V10.7:
++ MoE-32 (top-4 routed + shared expert) + DLS + expanded SwiGLU + Dropout.
+Equity swing edition: 60-day context window, single input (see build_kraken's
+docstring for why there's no next-token head), one model trained per symbol.
+V12.5 changes over V10.7 (numbering kept for history; all still apply here):
   1. Real causal softmax attention — replaces the earlier ELU+1 linear-attention
      approximation. Softmax is what GPT/DeepSeek actually use; linear attention
      trades sharpness for O(T) cost, which isn't needed at this 120-step window.
@@ -34,8 +36,8 @@ except ImportError:
     try:
         from src.config.sovereign_config import CONTEXT_WINDOW, FORECAST_STEPS
     except ImportError:
-        CONTEXT_WINDOW = 120
-        FORECAST_STEPS = 15
+        CONTEXT_WINDOW = 60
+        FORECAST_STEPS = 20
 
 # ── Hardware ──────────────────────────────────────────────────────────────────
 IS_GPU = len(tf.config.list_physical_devices('GPU')) > 0
@@ -397,7 +399,7 @@ class HydraBlock(layers.Layer):
 
     def build(self, input_shape):
         self.norm1   = RMSNorm()
-        self.attn    = MLALayer(d_model=self.d_model, n_heads=self.n_heads)
+        self.attn    = MLALayer(d_model=self.d_model, n_heads=self.n_heads, dropout_rate=self.dropout_rate)
         self.tq      = TurboQuant(d_model=self.d_model)
         self.swiglu  = SwiGLU()
         self.norm2   = RMSNorm()
@@ -527,7 +529,7 @@ class CertaintyMetric(keras.metrics.Metric):
 
 @keras.saving.register_keras_serializable(package="KAT")
 class SovereignAccuracy(keras.metrics.Metric):
-    """Directional accuracy: did we call the 15m move correctly?"""
+    """Directional accuracy: did we call the direction of the price move correctly?"""
     def __init__(self, name="dir_acc", **kwargs):
         super().__init__(name=name, **kwargs)
         self.total = self.add_weight(name="total", initializer="zeros")
@@ -553,7 +555,7 @@ class SovereignAccuracy(keras.metrics.Metric):
 # ── Model Builder ─────────────────────────────────────────────────────────────
 
 def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FORECAST_STEPS,
-                 dropout_rate=0.15, noise_stddev=0.02):
+                 dropout_rate=0.30, noise_stddev=0.05):
     """
     Equity swing edition — Deep Predator, single-input.
 
@@ -566,6 +568,15 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     else (causal softmax attention, QK-Norm, RoPE, MoE-32 with shared expert,
     SwiGLU, Dropout, the certainty-consensus mechanism) is unchanged from the
     crypto version — none of it is asset-class specific.
+
+    dropout_rate/noise_stddev raised from the crypto defaults (0.15/0.02) to
+    0.30/0.05 for per-symbol training - one stock alone has only ~4-6k
+    overlapping (heavily autocorrelated) 60-day windows for a 7.3M-param
+    model, a real overfitting risk (observed directly: HDFCBANK's val
+    accuracy peaked at epoch 1 and drifted down for several epochs after).
+    Neither of these touches the architecture's topology (block count,
+    d_model, expert count) - just how hard the existing Dropout/GaussianNoise
+    layers regularize.
     """
     inputs = layers.Input(shape=(context_window, n_features), name="market_input")
 

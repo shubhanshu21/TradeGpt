@@ -8,9 +8,64 @@
 
 A neural network (transformer + Mixture-of-Experts, the same architectural family as GPT/DeepSeek) trained to trade Indian equities on a swing-trading basis: it looks at 60 trading days of a stock's history and predicts whether a position entered tomorrow would be profitable within a 20-trading-day hold, using a 5% stop-loss / 10% target matching real, validated swing-trading parameters.
 
-**This system was converted from an earlier crypto (BTC perpetual futures) version** — the model architecture, training discipline, and evaluation rigor carried over; the market, data, features, and execution infrastructure did not (equities have no order book microstructure, no funding rate, no 24/7 trading — none of that applies here). It was also merged with a separate, already-validated equity trading pipeline (broker integration, realistic cost model, backtest/paper/live engines) so this project is fully self-contained — no dependency on any other project.
+This is a fully self-contained system — data fetching, broker integration, a realistic cost model, and the backtest/paper/live engines all live in this one project, with no dependency on anything external.
 
-**There are no rule-based technical-indicator strategies in this system.** An earlier version of the underlying pipeline had 3 validated rule-based strategies (Bollinger breakout, inside-bar breakout, Supertrend) — these were deliberately removed. The only trading logic here is the trained neural network.
+**There are no rule-based technical-indicator strategies in this system.** The only trading logic here is the trained neural network — no Bollinger breakout, no inside-bar breakout, no Supertrend crossover rules.
+
+**Every symbol gets its own independently-trained model** (`models/<SYMBOL>/hydra_best.keras`), not one model pooled/shared across stocks — different stocks have different volatility regimes and price behavior, and a per-stock model can specialize on that instead of averaging it away.
+
+---
+
+## 🔄 Pipeline
+
+```
+config/settings.yaml (universe, training.symbols, swing params, costs)
+        │
+        ▼
+┌───────────────────┐        ┌──────────────────────────────┐
+│  Broker adapter    │──────▶│  cache/historical/*.csv        │
+│  (zerodha/upstox/  │ fetch  │  one CSV per symbol + NIFTY    │
+│   dhan/csv)        │        │  (benchmark index, see below)  │
+└───────────────────┘        └───────────────┬───────────────┘
+                                              │ load_universe_from_cache()
+                                              ▼
+                              ┌───────────────────────────────┐
+                              │  preprocess.py                 │
+                              │  compute_indicators()          │
+                              │  → 30 features/day, incl.      │
+                              │    rel_strength_20d vs NIFTY   │
+                              │  apply_dls() per 60-day window │
+                              └───────────────┬───────────────┘
+                                              │
+                    ┌─────────────────────────┼─────────────────────────┐
+                    ▼                         ▼                         ▼
+            train.py loops one symbol at a time — one HYDRA model each
+                    │                         │                         │
+                    ▼                         ▼                         ▼
+        models/HDFCBANK/           models/RELIANCE/           models/<...>/
+        hydra_best.keras           hydra_best.keras           hydra_best.keras
+        model_shape.pkl            model_shape.pkl            model_shape.pkl
+                    │                         │                         │
+                    └─────────────────────────┼─────────────────────────┘
+                                              ▼
+                          strategies/swing/ml_strategy.py
+                          MLSwingStrategy — lazy-loads the RIGHT
+                          per-symbol model when generate_signals(df, symbol=...)
+                          is called; batched inference over all windows
+                                              │
+                    ┌─────────────────────────┼─────────────────────────┐
+                    ▼                         ▼                         ▼
+          swing_backtest/            swing_paper_trading/      live_trading_swing/
+          real Zerodha CNC costs,    virtual orders, real      real orders, kill-switch +
+          no-lookahead simulation    broker prices, once/day   confirmation gate, once/day
+                    │                         │                         │
+                    └─────────────────────────┼─────────────────────────┘
+                                              ▼
+                          api/swing_dashboard/  (FastAPI + static frontend, port 9000)
+                          backtest/paper fully controllable here; live is read-only status
+```
+
+A symbol without a trained checkpoint yet is skipped (with a one-time warning), not a crash — backtest/paper/live all tolerate a partially-trained universe.
 
 ---
 
@@ -30,11 +85,13 @@ kat/
 ├── cache/
 │   ├── historical/                 ← Cached daily candles per symbol (real Upstox data)
 │   └── kaggle/                     ← Optional free CSV-based backtest data (see below)
-├── models/                         ← Created by training
-│   ├── hydra_best.keras            ← Best checkpoint (by val_prediction_dir_acc)
-│   └── model_shape.pkl             ← Exact trained shape (context_window/forecast_steps/
-│                                      n_features/symbols) — read by any inference code
-├── logs/                           ← Training logs, edge_tracker.csv, paper/live trade logs
+├── models/                         ← Created by training - one subdirectory PER SYMBOL
+│   └── <SYMBOL>/
+│       ├── hydra_best.keras        ← That symbol's best checkpoint (by val_prediction_dir_acc)
+│       └── model_shape.pkl         ← Exact trained shape (context_window/forecast_steps/
+│                                      n_features/symbol) — read by MLSwingStrategy at load time
+├── logs/                           ← train.log, edge_tracker_<SYMBOL>.csv (one per symbol),
+│                                      paper/live trade logs
 ├── reports/swing/                  ← Backtest output (trade logs, strategy_comparison.csv)
 ├── scripts/
 │   ├── equity_login_zerodha.py     ← Daily Zerodha token refresh (Kite Connect)
@@ -46,9 +103,10 @@ kat/
     ├── core/
     │   └── hydra.py                ← Neural model architecture (HYDRA, single-input)
     ├── data/
-    │   ├── preprocess.py           ← 29-feature equity pipeline, pooled multi-symbol
-    │   │                              dataset builder, real swing-outcome labeling
-    │   ├── fetch_historical.py     ← Cached daily-candle downloader (via configured broker)
+    │   ├── preprocess.py           ← 30-feature equity pipeline, per-symbol dataset builder,
+    │   │                              real swing-outcome labeling, Nifty 50 relative strength
+    │   ├── fetch_historical.py     ← Cached daily-candle downloader (via configured broker),
+    │   │                              also fetches NIFTY as a benchmark reference
     │   └── import_kaggle_data.py   ← Free CSV-based backtest data path (no broker needed)
     ├── exchange/
     │   ├── brokers/                ← Broker abstraction: base.py + zerodha/upstox/dhan/csv
@@ -71,9 +129,9 @@ kat/
 ## 🏗️ Neural Architecture (HYDRA)
 
 ```
-Market Input (60 trading days × 29 features)
+Market Input (60 trading days × 30 features)  ← ONE model per symbol, trained only on that symbol's own history
         │
-   [GaussianNoise(0.02)]
+   [GaussianNoise(0.05)]
         │
    [Dense → 128]
         │
@@ -87,8 +145,8 @@ Market Input (60 trading days × 29 features)
    │  │ TurboQuant         │    │  ← INT8-sim quantization stabilizer
    │  │ GatedMoE-32        │    │  ← 32 routed experts (top-4) + shared expert path
    │  │ SwiGLU (2x expand) │    │  ← Gated FFN, real hidden-dim expansion
-   │  │ Dropout(0.15)      │    │  ← Prevents expert memorization
-   │  └────────────────────┘    │
+   │  │ Dropout(0.30)      │    │  ← Raised from 0.15 - per-symbol data is much smaller
+   │  └────────────────────┘    │     than a pooled set, so overfitting risk is higher
    └─────────────────────────────┘
         │
    RMSNorm (full sequence)
@@ -99,7 +157,9 @@ Market Input (60 trading days × 29 features)
  (21×3 traj)  (60 scores) (4 classes: LONG/SHORT/FEE_TRAP/NOISE)
 ```
 
-**No GPT-style next-token head** — the crypto version of this project had one (predicting the next candle's return-bucket as an auxiliary task); it was dropped for this conversion. That task showed marginal value even on a larger single-asset dataset, and this project's pooled multi-symbol dataset (~33K windows across 14 usable symbols) is smaller — not worth taxing model capacity on a task that wasn't clearly paying for itself. This is also why the model takes a **single input** (just the feature window), not the dual market+token input the crypto version used.
+**No GPT-style next-token head.** An auxiliary next-candle-token prediction task was evaluated and dropped — it showed only marginal value, and one symbol's own daily history (~4-6K windows) isn't enough to justify taxing model capacity on a task that wasn't clearly paying for itself. This is also why the model takes a **single input** (just the feature window), not a dual market+token input.
+
+**Why per-symbol, not pooled across the universe:** each stock has ~4,000–6,500 real historical windows on its own — genuinely limited for a 7.3M-parameter model, and pooling multiple symbols was the original design specifically to compensate for that. It was switched to one-model-per-symbol on the reasoning that different stocks have different volatility regimes and behavior a shared model would average away. The tradeoff is real: less data per model means a higher overfitting risk, which is why dropout/noise/weight-decay were all raised and `EarlyStopping` uses a generous patience (25) with `restore_best_weights=True` — the final checkpoint is always whichever epoch had the best validation score, regardless of how long training continued past it.
 
 ### Key Components
 | Component | Description |
@@ -114,9 +174,9 @@ Market Input (60 trading days × 29 features)
 
 ---
 
-## 📊 29 Input Features
+## 📊 30 Input Features
 
-All ratio-based or bounded — no raw price level fed directly without local normalization — since training pools data across 14 stocks with very different absolute price levels (₹400 ITC vs. ₹2,400 RELIANCE). Dynamic Local Scaling (`apply_dls`) additionally z-scores every window against its own local mean/std before it reaches the model.
+All ratio-based or bounded — no raw price level fed directly without local normalization — since each stock's own price level varies wildly over its history (and, if ever pooled again, across stocks too — ₹400 ITC vs. ₹2,400 RELIANCE). Dynamic Local Scaling (`apply_dls`) additionally z-scores every window against its own local mean/std before it reaches the model.
 
 | Category | Features |
 |---|---|
@@ -127,10 +187,11 @@ All ratio-based or bounded — no raw price level fed directly without local nor
 | **Momentum** | `rsi`, `macd`, `macd_signal`, `macd_hist`, `adx` |
 | **Volatility** | `atr_pct`, `bb_width`, `bb_position`, `volatility_20d` |
 | **Volume** | `volume_ratio` |
-| **Range position** | `hl_position_20`, `hl_position_252` (52-week) |
-| **Trend structure** | `supertrend_dir`, `donchian_position` |
+| **Range position** | `hl_position_20` (20-day), `hl_position_252` (52-week) |
+| **Trend structure** | `supertrend_dir`, `donchian_position` (10-day short-term breakout — deliberately a *different* window than `hl_position_20`'s 20-day one, since using the same window would make it a literal duplicate feature) |
+| **Market context** | `rel_strength_20d` — this stock's 20-day return minus the Nifty 50 index's 20-day return over the same period, i.e. is it actually beating the market or just moving with it. Every other feature only looks at the stock in isolation; this is the one signal that gives the model market context. |
 
-No order-book/microstructure features (funding rate, taker flow, order-book imbalance) — none of that exists for NSE cash equity; this is a genuinely different feature set from the crypto version, not a relabeled copy.
+No order-book/microstructure features (funding rate, taker flow, order-book imbalance) — none of that exists for NSE cash equity, so the feature set is built entirely from real daily OHLCV and derived technical/trend indicators.
 
 ---
 
@@ -153,15 +214,17 @@ The model only fires a trade when it says LONG or SHORT *and* is confident enoug
 
 | Parameter | Value | Reason |
 |---|---|---|
-| **Universe** | 14 usable symbols (Nifty50 slice — see `config/settings.yaml`) | TMCV excluded automatically (only 35 rows since its 2024 ticker rename) |
-| **Data** | ~2,475 daily candles/symbol, 2016–2025, pooled | ~33K total training windows |
+| **Tradeable universe** | 38 symbols, sector-balanced (banking, IT, FMCG, auto, pharma, energy, metals, cement, infra, telecom — see `config/settings.yaml` → `universe.symbols`) | Backtest/paper/live pull data for all of these; a pooled model trained on 6 banks and nothing else would just learn "bank patterns" |
+| **Training subset** | 10 symbols by default (`config/settings.yaml` → `training.symbols`), one independent model each | Training all 38 sequentially on CPU is slow; trim/widen this list freely — every symbol not in it is simply skipped (with a warning) by backtest/paper/live until it's trained |
+| **Data per symbol** | ~4,000–6,500 real daily candles (earliest available per symbol, not a fixed cutoff — e.g. RELIANCE back to 2000, most others to 2003) | ~4,400–6,400 usable training windows per symbol, depending on history length |
 | **Context Window** | 60 trading days (~3 months) | |
 | **Forecast Steps** | 20 trading days | Matches `max_holding_days` |
 | **Batch Size** | 32 | |
-| **Epochs** | 300 (EarlyStopping patience=20) | Auto-stops and restores best weights if 20 rounds pass with no improvement |
-| **Optimizer** | AdamW (lr=1e-4→1e-5 cosine decay, weight_decay=0.05, clipnorm=1.0) | |
-| **Train/val split** | Chronological **by date**, across all pooled symbols | No symbol's future data can leak into another symbol's training window |
-| **Epoch time (CPU, no GPU)** | ~3.5 hours | Larger pooled dataset + 20-step forecast horizon than the crypto version |
+| **Epochs** | 300 (EarlyStopping patience=25, `restore_best_weights=True`) | Patience only controls how long training keeps looking for a better epoch before stopping — it can never produce a worse final model than the actual best epoch seen, so it's kept generous rather than tight |
+| **Regularization** | Dropout 0.30, GaussianNoise 0.05, AdamW weight_decay=0.15 | Raised from an initial 0.15/0.02/0.05 — per-symbol data is limited, so overfitting risk is real (observed directly: an early run's val accuracy peaked at epoch 1 and drifted down every epoch after, before these were raised) |
+| **Optimizer** | AdamW (lr=1e-4→1e-5 cosine decay, clipnorm=1.0) | |
+| **Train/val split** | Chronological **by date**, per symbol | No lookahead — a window's end-date always precedes every validation window's end-date |
+| **Epoch time (CPU, no GPU)** | ~30 min for a ~4,500-window symbol at ~14s/step; scales with that symbol's own history length | Per-symbol training is inherently faster per model than the old pooled approach was overall, since each run only processes one symbol's data |
 
 ---
 
@@ -170,8 +233,9 @@ The model only fires a trade when it says LONG or SHORT *and* is confident enoug
 ### 1. Setup
 ```bash
 cd /var/www/html/ML/kat
-pip3 install -r pyproject.toml   # or: pip install -e .
+pip install -e .
 ```
+Note: stable `tensorflow` has no wheel for Python ≥3.14 yet — on 3.14+, `pyproject.toml` falls back to `tf-nightly` automatically (verified working). On Python 3.11–3.13, the stable `tensorflow` package is used.
 Pick a broker in `config/settings.yaml` (`broker.name: zerodha|upstox|dhan|csv`) and fill in that broker's section of `.env`. Zerodha/Upstox tokens expire **daily** — run the matching login script each trading morning before paper/live trading:
 ```bash
 python3 scripts/equity_login_zerodha.py
@@ -184,11 +248,13 @@ No broker account yet? Set `broker.name: csv` and use free Kaggle Nifty50 data i
 python auto_run.py train --epochs 300
 # or directly:
 python train.py --epochs 300 --batch 32
+# train only specific symbols (overrides config/settings.yaml -> training.symbols):
+python train.py --symbols RELIANCE HDFCBANK INFY
 ```
-Saves `models/hydra_best.keras` + `models/model_shape.pkl`. Monitor with:
+Loops through the configured symbols one at a time, training and saving an independent model per symbol: `models/<SYMBOL>/hydra_best.keras` + `models/<SYMBOL>/model_shape.pkl`. Monitor with:
 ```bash
-tail -f logs/hydra_train_*.log
-tail -f logs/edge_tracker.csv   # per-epoch Wilson 95% CI significance verdict
+tail -f logs/train.log
+tail -f logs/edge_tracker_<SYMBOL>.csv   # per-epoch Wilson 95% CI significance verdict, one file per symbol
 ```
 
 ### 3. Backtest
@@ -196,7 +262,7 @@ tail -f logs/edge_tracker.csv   # per-epoch Wilson 95% CI significance verdict
 python auto_run.py backtest
 python auto_run.py backtest --refresh   # force re-download historical data
 ```
-Real Zerodha delivery costs, no lookahead (entries fill at next day's open), portfolio-level position limits. Requires a trained checkpoint — fails with a clear message if `models/hydra_best.keras` doesn't exist yet.
+Real Zerodha delivery costs, no lookahead (entries fill at next day's open), portfolio-level position limits. Any symbol without a trained checkpoint yet (`models/<SYMBOL>/hydra_best.keras`) is skipped with a warning, not a crash — the backtest still runs against whichever symbols do have one.
 
 ### 4. Paper Trade
 ```bash
@@ -224,21 +290,24 @@ Open `http://<server-ip>:9000`. Backtest and paper trading are fully controllabl
 - **Risk manager kill switch**: cumulative realized loss ≥ `max_total_loss_pct` of initial capital halts all new entries.
 - **Broker-side stop-loss (GTT/OCO)**: attempted after every entry so the stop/target lives on the broker's own servers, not just this process's memory — important since a swing position stays open for days to weeks. Currently only implemented for Zerodha; Upstox/Dhan fall back to this process polling prices once a day.
 - **No lookahead**: a signal on day *i* only uses information available up to and including day *i*; the backtest engine fills at day *i+1*'s open.
+- **kiteconnect/tensorflow import order**: importing `tensorflow` before `kiteconnect` in the same process segfaults (verified — a native-library conflict, not a Python error). `api/swing_dashboard/main.py` forces `kiteconnect` to import first, since that one long-lived process can hit both an ML backtest and a Zerodha paper/live session across its lifetime. Relevant if you add new entry points that touch both.
 
 ---
 
-## ⚠️ Honest Status (as of this conversion)
+## ⚠️ Honest Status
 
 **Verified via real execution:**
-- Data pipeline, model, and training loop (real training runs cleanly)
-- Backtest engine + real cost model (produces correct, real results)
+- Data pipeline, model, and per-symbol training loop (real training runs cleanly end-to-end)
+- A real trained checkpoint (`models/HDFCBANK/hydra_best.keras`) exists and was validated: epoch 1 reached `val_dir_acc=53.70%`, 95% CI `[52.77%, 54.64%]` — statistically significant (lower bound > 50%), per the Wilson-interval `EdgeTracker`
+- `ml_swing` strategy running real batched inference against that checkpoint, feeding into the real backtest engine with real Zerodha delivery costs — produces correct, real results (0 trades in the tested window, which is expected: certainty threshold 0.85 is strict and that model was only a few epochs into training)
 - API dashboard (actually starts, serves real responses)
-- Broker connection code (constructs correct requests; error handling verified against a real 401)
+- Broker connection code (constructs correct requests; error handling verified against a real 401; NIFTY 50 index history fetched and cached successfully)
 
 **Not yet verified:**
-- `ml_swing` strategy against an actual trained checkpoint (training has not yet completed a full epoch)
+- A checkpoint trained to actual convergence / EarlyStopping completion for any symbol (all runs so far were interrupted partway through by further fixes — regularization, feature corrections — each of which required restarting from epoch 0)
 - Paper trading's real-time loop (needs a fresh, non-expired broker token)
 - Live trading (deliberately not casually tested — code was carefully read, not executed, given real money is involved)
+- Whether per-symbol models actually find a real, tradeable edge once fully trained — 53.70% at epoch 1 is a real but weak signal, not a conclusion
 
 ---
 

@@ -17,9 +17,7 @@
     --good:           #0ca30c;
     --warning:        #fab219;
     --critical:       #d03b3b;
-    --series-1: #2a78d6; /* bollinger_breakout */
-    --series-2: #1baf7a; /* inside_bar_breakout */
-    --series-3: #eda100; /* supertrend */
+    --series-1: #2a78d6; /* ml_swing */
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -118,6 +116,32 @@
   <h1>Swing Trading Dashboard</h1>
   <p class="subtitle" id="config-summary">Loading configuration…</p>
 
+  <!-- TRAINING PROGRESS -->
+  <div class="card">
+    <h2>Training Progress <span class="status-pill"><span class="dot off" id="training-dot"></span><span id="training-status-text">-</span></span></h2>
+    <div class="row">
+      <label class="plain">Symbol:
+        <select id="training-symbol-select" style="font:inherit;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);"></select>
+      </label>
+      <button id="training-refresh-btn" class="secondary">Refresh</button>
+    </div>
+    <div id="training-empty" class="empty">No trained symbols yet - one edge_tracker_&lt;SYMBOL&gt;.csv appears per symbol once its first epoch completes.</div>
+    <div id="training-chart-wrap" style="display:none;">
+      <div class="stat-tiles">
+        <div class="tile"><div class="label">Best val accuracy</div><div class="value" id="training-best-acc">-</div></div>
+        <div class="tile"><div class="label">Epoch reached</div><div class="value" id="training-epoch-count">-</div></div>
+        <div class="tile"><div class="label">Statistically significant edge?</div><div class="value" id="training-significant">-</div></div>
+      </div>
+      <canvas id="training-canvas" style="width:100%;height:260px;display:block;"></canvas>
+      <div class="legend" style="margin-top:8px;">
+        <div class="item"><span class="swatch" style="background:#2a78d6;"></span>val accuracy</div>
+        <div class="item"><span class="swatch" style="background:rgba(42,120,214,0.18);"></span>95% confidence interval</div>
+        <div class="item"><span class="swatch" style="background:var(--baseline);"></span>50% baseline (coin flip)</div>
+        <div class="item"><span class="swatch" style="background:var(--critical);"></span>val loss (right axis, scaled)</div>
+      </div>
+    </div>
+  </div>
+
   <!-- BACKTEST -->
   <div class="card">
     <h2>1. Backtest</h2>
@@ -147,7 +171,7 @@
   <!-- PAPER TRADING -->
   <div class="card">
     <h2>2. Paper Trading <span class="status-pill"><span class="dot off" id="paper-dot"></span><span id="paper-status-text">stopped</span></span></h2>
-    <div class="row" id="paper-strategy-checks"></div>
+    <p class="subtitle" id="paper-symbols-summary" style="margin-bottom:14px;">Loading universe…</p>
     <div class="row">
       <button id="paper-start-btn">Start paper trading</button>
       <button id="paper-stop-btn" class="danger secondary" disabled>Stop</button>
@@ -173,7 +197,7 @@
     <h2>3. Live Trading</h2>
     <div class="banner">
       Live trading is intentionally <strong>not</strong> controllable from this dashboard.
-      Start it from a terminal you're actively watching: <code>python3 main.py live</code>.
+      Start it from a terminal you're actively watching: <code>python3 auto_run.py live</code>.
       This panel only shows read-only status of the most recent live session's log.
     </div>
     <div class="row">
@@ -192,11 +216,10 @@
 
 <script>
 const API = "";
-const SERIES_COLORS = {
-  bollinger_breakout: "var(--series-1)",
-  inside_bar_breakout: "var(--series-2)",
-  supertrend: "var(--series-3)",
-};
+// Only one strategy exists (ml_swing - one trained model per symbol, no
+// rule-based strategies), so there's nothing to color-code or select
+// between - a single fixed color is all that's needed.
+const STRATEGY_COLOR = "var(--series-1)";
 
 async function api(path, opts) {
   const res = await fetch(API + path, opts);
@@ -206,28 +229,138 @@ async function api(path, opts) {
 const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? "-" : Number(n).toFixed(d);
 const fmtMoney = (n) => (n === null || n === undefined) ? "-" : `Rs ${Number(n).toLocaleString("en-IN", {maximumFractionDigits:0})}`;
 
+// ---------------- training progress ----------------
+async function loadTrainingSymbols() {
+  const symbols = await api("/api/training/symbols");
+  const select = document.getElementById("training-symbol-select");
+  const empty = document.getElementById("training-empty");
+  const chartWrap = document.getElementById("training-chart-wrap");
+  if (!symbols.length) {
+    select.innerHTML = "";
+    empty.style.display = "block"; chartWrap.style.display = "none";
+    document.getElementById("training-status-text").textContent = "no symbols yet";
+    return;
+  }
+  const prev = select.value;
+  select.innerHTML = symbols.map(s => `<option value="${s}">${s}</option>`).join("");
+  if (symbols.includes(prev)) select.value = prev;
+  await loadTrainingProgress();
+}
+
+function drawTrainingChart(rows) {
+  const canvas = document.getElementById("training-canvas");
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 800, cssH = 260;
+  canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  if (!rows.length) return;
+
+  const padL = 40, padR = 40, padT = 10, padB = 24;
+  const plotW = cssW - padL - padR, plotH = cssH - padT - padB;
+  const n = rows.length;
+  const x = i => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+
+  // Accuracy axis: fixed 0.35-0.65 range - centers the 50% baseline and
+  // keeps small real differences (53% vs 51%) visually readable, since
+  // directional accuracy for this task realistically never nears 0/100%.
+  const accMin = 0.35, accMax = 0.65;
+  const yAcc = v => padT + plotH - ((v - accMin) / (accMax - accMin)) * plotH;
+
+  const losses = rows.map(r => r.val_loss).filter(v => Number.isFinite(v));
+  const lossMin = Math.min(...losses, 0), lossMax = Math.max(...losses, 1);
+  const yLoss = v => padT + plotH - ((v - lossMin) / (lossMax - lossMin || 1)) * plotH;
+
+  // Gridlines + baseline
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--grid").trim();
+  ctx.lineWidth = 1;
+  [0.4, 0.5, 0.6].forEach(v => {
+    ctx.beginPath(); ctx.moveTo(padL, yAcc(v)); ctx.lineTo(padL + plotW, yAcc(v)); ctx.stroke();
+  });
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
+  ctx.font = "11px system-ui"; ctx.textAlign = "right";
+  [0.4, 0.5, 0.6].forEach(v => ctx.fillText((v*100).toFixed(0)+"%", padL - 6, yAcc(v) + 4));
+
+  // 50% baseline, emphasized
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--baseline").trim();
+  ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(padL, yAcc(0.5)); ctx.lineTo(padL + plotW, yAcc(0.5)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // CI band
+  ctx.fillStyle = "rgba(42,120,214,0.18)";
+  ctx.beginPath();
+  rows.forEach((r, i) => { const px = x(i), py = yAcc(Math.min(accMax, r.ci_high_95)); i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py); });
+  for (let i = n - 1; i >= 0; i--) { const px = x(i), py = yAcc(Math.max(accMin, rows[i].ci_low_95)); ctx.lineTo(px, py); }
+  ctx.closePath(); ctx.fill();
+
+  // val_loss line (secondary axis, dashed, muted)
+  ctx.strokeStyle = "var(--critical)"; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.55; ctx.setLineDash([2, 3]);
+  ctx.beginPath();
+  rows.forEach((r, i) => { const px = x(i), py = yLoss(r.val_loss); i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py); });
+  ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+  // val_dir_acc line
+  ctx.strokeStyle = "#2a78d6"; ctx.lineWidth = 2;
+  ctx.beginPath();
+  rows.forEach((r, i) => { const px = x(i), py = yAcc(r.val_dir_acc); i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py); });
+  ctx.stroke();
+  rows.forEach((r, i) => {
+    ctx.fillStyle = r.significant_edge ? "#0ca30c" : "#2a78d6";
+    ctx.beginPath(); ctx.arc(x(i), yAcc(r.val_dir_acc), 2.5, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // x-axis epoch labels (thin out if too many)
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
+  ctx.textAlign = "center"; ctx.font = "10px system-ui";
+  const step = Math.max(1, Math.ceil(n / 12));
+  rows.forEach((r, i) => { if (i % step === 0 || i === n - 1) ctx.fillText(String(r.epoch), x(i), cssH - 6); });
+}
+
+async function loadTrainingProgress() {
+  const symbol = document.getElementById("training-symbol-select").value;
+  const empty = document.getElementById("training-empty");
+  const chartWrap = document.getElementById("training-chart-wrap");
+  if (!symbol) { empty.style.display = "block"; chartWrap.style.display = "none"; return; }
+
+  const rows = await api(`/api/training/progress?symbol=${encodeURIComponent(symbol)}`);
+  const dot = document.getElementById("training-dot");
+  const statusText = document.getElementById("training-status-text");
+  if (!rows.length) {
+    empty.style.display = "block"; chartWrap.style.display = "none";
+    empty.textContent = `${symbol}: training started, first epoch not finished yet.`;
+    dot.className = "dot on"; statusText.textContent = "in progress";
+    return;
+  }
+  empty.style.display = "none"; chartWrap.style.display = "block";
+  dot.className = "dot on"; statusText.textContent = `${rows.length} epoch(s) logged`;
+
+  const best = rows.reduce((a, b) => (b.val_dir_acc > a.val_dir_acc ? b : a));
+  document.getElementById("training-best-acc").textContent = `${(best.val_dir_acc*100).toFixed(2)}% (epoch ${best.epoch})`;
+  document.getElementById("training-epoch-count").textContent = rows[rows.length-1].epoch;
+  const last = rows[rows.length-1];
+  const sigEl = document.getElementById("training-significant");
+  sigEl.textContent = last.significant_edge ? "Yes" : "Not yet";
+  sigEl.className = "value " + (last.significant_edge ? "good" : "");
+
+  drawTrainingChart(rows);
+}
+
+document.getElementById("training-symbol-select").addEventListener("change", loadTrainingProgress);
+document.getElementById("training-refresh-btn").addEventListener("click", loadTrainingSymbols);
+
 // ---------------- config ----------------
+let UNIVERSE_SYMBOLS = [];
 async function loadConfig() {
   const cfg = await api("/api/config");
+  UNIVERSE_SYMBOLS = cfg.universe.symbols;
   document.getElementById("config-summary").textContent =
     `Broker: ${cfg.broker.name} · Universe: ${cfg.universe.symbols.length} symbols · ` +
     `Capital: ${fmtMoney(cfg.swing.initial_capital)} · Daily candles, max ${cfg.swing.max_holding_days}-day holds`;
-}
-
-// ---------------- strategies checkboxes ----------------
-async function loadStrategies() {
-  const strategies = await api("/api/strategies");
-  const wrap = document.getElementById("paper-strategy-checks");
-  wrap.innerHTML = strategies.map(s => `
-    <label class="check">
-      <input type="checkbox" class="strategy-check" value="${s.name}" checked>
-      <span class="swatch" style="background:${SERIES_COLORS[s.name] || 'var(--series-1)'}"></span>
-      ${s.name}
-    </label>`).join("");
-}
-
-function selectedStrategies() {
-  return [...document.querySelectorAll(".strategy-check:checked")].map(el => el.value);
+  document.getElementById("paper-symbols-summary").textContent =
+    `ml_swing strategy, across all ${cfg.universe.symbols.length} universe symbols ` +
+    `(a symbol without a trained checkpoint yet is skipped automatically, not an error).`;
 }
 
 // ---------------- backtest ----------------
@@ -238,13 +371,13 @@ function renderSharpeChart(rows) {
 
   const maxAbs = Math.max(1, ...rows.map(r => Math.abs(r.sharpe_ratio || 0)));
   legend.innerHTML = rows.map(r =>
-    `<div class="item"><span class="swatch" style="background:${SERIES_COLORS[r.strategy] || 'var(--series-1)'}"></span>${r.strategy}</div>`
+    `<div class="item"><span class="swatch" style="background:${STRATEGY_COLOR}"></span>${r.strategy}</div>`
   ).join("");
 
   chart.innerHTML = rows.map(r => {
     const v = r.sharpe_ratio || 0;
     const widthPct = Math.max(2, Math.abs(v) / maxAbs * 100);
-    const color = v < 0 ? "var(--critical)" : (SERIES_COLORS[r.strategy] || "var(--series-1)");
+    const color = v < 0 ? "var(--critical)" : STRATEGY_COLOR;
     return `<div class="bar-row">
       <div class="name">${r.strategy}</div>
       <div class="bar-track"><div class="bar-fill" title="Sharpe ${fmt(v)}" style="width:${widthPct}%; background:${color};"></div></div>
@@ -260,8 +393,8 @@ function renderBacktestTable(rows) {
   empty.style.display = "none"; table.style.display = "table";
   const tbody = table.querySelector("tbody");
   tbody.innerHTML = rows.map(r => `
-    <tr data-strategy="${r.strategy}">
-      <td><span class="swatch" style="display:inline-block;background:${SERIES_COLORS[r.strategy]||'var(--series-1)'};margin-right:6px;"></span>${r.strategy}</td>
+    <tr>
+      <td><span class="swatch" style="display:inline-block;background:${STRATEGY_COLOR};margin-right:6px;"></span>${r.strategy}</td>
       <td class="num">${r.total_trades}</td>
       <td class="num">${fmt(r.win_rate_pct)}</td>
       <td class="num">${fmt(r.profit_factor)}</td>
@@ -271,7 +404,7 @@ function renderBacktestTable(rows) {
       <td class="num">${fmt(r.sharpe_ratio)}</td>
     </tr>`).join("");
   tbody.querySelectorAll("tr").forEach(tr => tr.addEventListener("click", () => {
-    window.open(`${API}/api/backtest/trades/${tr.dataset.strategy}`, "_blank");
+    window.open(`${API}/api/backtest/trades`, "_blank");
   }));
 }
 
@@ -344,10 +477,10 @@ async function pollPaperStatus() {
 }
 
 document.getElementById("paper-start-btn").addEventListener("click", async () => {
-  const strategies = selectedStrategies();
-  if (!strategies.length) { alert("Select at least one strategy."); return; }
   try {
-    await api("/api/paper/start", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({strategies}) });
+    // Backend expects the raw body to be a JSON list of symbols (or null
+    // for "use the full universe") - NOT an object wrapper.
+    await api("/api/paper/start", { method: "POST", headers: {"Content-Type":"application/json"}, body: "null" });
     if (!paperPoll) paperPoll = setInterval(pollPaperStatus, 5000);
     pollPaperStatus();
   } catch (e) { alert("Failed to start paper trading: " + e.message); }
@@ -380,12 +513,21 @@ async function loadLiveStatus() {
 }
 
 // ---------------- init ----------------
+// Each step wrapped independently - one failing call (e.g. no backtest
+// results yet) must not stop the rest of the dashboard from loading.
+async function safely(fn, label) {
+  try { await fn(); }
+  catch (e) { console.error(`[dashboard] ${label} failed:`, e); }
+}
+
 (async function init() {
-  await loadConfig();
-  await loadStrategies();
-  await refreshBacktestResults();
-  await pollPaperStatus();
-  await loadLiveStatus();
+  await safely(loadConfig, "loadConfig");
+  await safely(loadTrainingSymbols, "loadTrainingSymbols");
+  await safely(refreshBacktestResults, "refreshBacktestResults");
+  await safely(pollPaperStatus, "pollPaperStatus");
+  await safely(loadLiveStatus, "loadLiveStatus");
+  setInterval(() => safely(loadTrainingProgress, "loadTrainingProgress"), 10000);  // training is live - keep the chart current
+  setInterval(() => safely(loadTrainingSymbols, "loadTrainingSymbols"), 60000);    // pick up newly-started symbols as train.py's loop advances
   setInterval(pollPaperStatus, 8000);
   setInterval(loadLiveStatus, 15000);
 })();

@@ -8,7 +8,7 @@ module docstring for the full context). Neural-network only — no rule-based
 strategies.
 
 Modes:
-  train    → train the HYDRA model on pooled multi-symbol equity data
+  train    → train one HYDRA model per symbol on real equity data
   backtest → backtest the trained model with real Zerodha delivery costs
   paper    → paper trade (no real orders) — needs a real broker (not csv)
   live     → LIVE trade — REAL orders, REAL money. Gated, requires typed confirmation.
@@ -80,7 +80,7 @@ def main():
     )
     sub = parser.add_subparsers(dest="mode", required=True)
 
-    p_train = sub.add_parser("train", help="Train the HYDRA model on pooled equity data")
+    p_train = sub.add_parser("train", help="Train one HYDRA model per symbol")
     p_train.add_argument("--epochs", type=int, default=300)
     p_train.add_argument("--batch",  type=int, default=32)
     p_train.add_argument("--symbols", nargs="+", default=None)

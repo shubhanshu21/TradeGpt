@@ -55,7 +55,14 @@ class UpstoxBroker(Broker):
         for inst in self._instruments():
             if inst.get("trading_symbol") == symbol and inst.get("segment") == exchange:
                 return inst["instrument_key"]
-        raise ValueError(f"Symbol {symbol} not found in Upstox instrument master ({exchange})")
+        # Fall back to the index segment - lets callers pass a benchmark
+        # symbol (e.g. "NIFTY") without needing a separate code path, since
+        # index tickers never collide with real NSE_EQ tradingsymbols.
+        if exchange != "NSE_INDEX":
+            for inst in self._instruments():
+                if inst.get("trading_symbol") == symbol and inst.get("segment") == "NSE_INDEX":
+                    return inst["instrument_key"]
+        raise ValueError(f"Symbol {symbol} not found in Upstox instrument master ({exchange} or NSE_INDEX)")
 
     def historical_candles(self, symbol: str, interval: str, start, end) -> pd.DataFrame:
         instrument_key = self._instrument_key(symbol)

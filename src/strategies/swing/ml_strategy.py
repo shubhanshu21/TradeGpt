@@ -27,6 +27,7 @@ class MLSwingStrategy(SwingStrategy):
         self._checkpoint_name = checkpoint_name
         self._models = {}   # symbol -> loaded keras model
         self._shapes = {}   # symbol -> model_shape.pkl contents
+        self._benchmark = "unloaded"  # lazy-loaded once, shared across all symbols (see generate_signals)
 
     def _load(self, symbol: str):
         """Lazy load per symbol - so importing this module doesn't require
@@ -58,8 +59,8 @@ class MLSwingStrategy(SwingStrategy):
         self._models[symbol] = model
         self._shapes[symbol] = shape
 
-    def generate_signals(self, df: pd.DataFrame, symbol: str = None) -> pd.DataFrame:
-        from data.preprocess import compute_indicators, build_feature_cols, apply_dls
+    def generate_signals(self, df: pd.DataFrame, symbol: str = None, batch_size: int = 32) -> pd.DataFrame:
+        from data.preprocess import compute_indicators, build_feature_cols, apply_dls, load_benchmark_index
 
         if symbol is None:
             raise ValueError("MLSwingStrategy.generate_signals requires symbol= (one model per symbol)")
@@ -67,40 +68,58 @@ class MLSwingStrategy(SwingStrategy):
         model = self._models[symbol]
         ctx = self._shapes[symbol]["context_window"]
 
+        if self._benchmark == "unloaded":
+            self._benchmark = load_benchmark_index()
+
         df = df.copy()
         df["signal"] = 0
         if len(df) <= ctx + 5:
             return df
 
-        df_feat = compute_indicators(df)
+        df_feat = compute_indicators(df, benchmark_df=self._benchmark)
         features = build_feature_cols()
         data = df_feat[features].values.astype("float32")
 
         n = len(data)
-        for i in range(ctx, n):
-            # Window ending at row i-1 (inclusive) - only information
-            # available up to and including "today" (row i-1), matching the
-            # base class's no-lookahead contract (a signal at row i-1 fills
-            # at row i's open).
-            x_raw = data[i - ctx: i]
-            x_scaled, _, _ = apply_dls(x_raw)
-            X_in = x_scaled[np.newaxis].astype("float32")
+        # Window ending at row i-1 (inclusive) - only information available up
+        # to and including "today" (row i-1), matching the base class's
+        # no-lookahead contract (a signal at row i-1 fills at row i's open).
+        idxs = list(range(ctx, n))
+        if not idxs:
+            return df
 
-            pred, certainty, reasoning = model(X_in, training=False)
-            cert = float(np.mean(certainty.numpy()[0]))
-            reasoning_cls = int(np.argmax(reasoning.numpy()[0]))  # 0=LONG 1=SHORT 2=FEE_TRAP 3=NOISE
+        # Precompute every window's DLS-scaled tensor up front, then run the
+        # model in batches instead of one day at a time - thousands of
+        # single-example calls (each paying full Python/graph-dispatch
+        # overhead) made a full-history backtest impractically slow.
+        windows = np.stack([apply_dls(data[i - ctx: i])[0] for i in idxs]).astype("float32")
 
-            if cert < self.cert_threshold or reasoning_cls not in (0, 1):
-                continue
+        all_pred, all_cert, all_reason = [], [], []
+        for start in range(0, len(windows), batch_size):
+            batch = windows[start: start + batch_size]
+            pred, certainty, reasoning = model(batch, training=False)
+            all_pred.append(pred.numpy())
+            all_cert.append(certainty.numpy())
+            all_reason.append(reasoning.numpy())
+        pred = np.concatenate(all_pred, axis=0)
+        certainty = np.concatenate(all_cert, axis=0)
+        reasoning = np.concatenate(all_reason, axis=0)
 
-            p = pred.numpy()[0]
-            p_anchor = p[0, 0]
-            mean_move = float(np.mean(p[1:, 0] - p_anchor))
-            price_dir = 1 if mean_move > 0 else (-1 if mean_move < 0 else 0)
-            reasoning_dir = 1 if reasoning_cls == 0 else -1
-            if price_dir != reasoning_dir:
-                continue
+        cert = certainty.mean(axis=1)                       # (n_windows,)
+        reasoning_cls = np.argmax(reasoning, axis=1)         # 0=LONG 1=SHORT 2=FEE_TRAP 3=NOISE
+        mean_move = pred[:, 1:, 0].mean(axis=1) - pred[:, 0, 0]
+        price_dir = np.where(mean_move > 0, 1, np.where(mean_move < 0, -1, 0))
+        reasoning_dir = np.where(reasoning_cls == 0, 1, -1)
 
-            df.loc[df.index[i - 1], "signal"] = reasoning_dir
+        fire = (
+            (cert >= self.cert_threshold)
+            & np.isin(reasoning_cls, (0, 1))
+            & (price_dir == reasoning_dir)
+        )
+
+        signal_arr = np.zeros(n, dtype="int64")
+        target_rows = np.array(idxs) - 1   # signal at row i-1, matching the no-lookahead contract above
+        signal_arr[target_rows[fire]] = reasoning_dir[fire]
+        df["signal"] = signal_arr
 
         return df

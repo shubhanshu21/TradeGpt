@@ -38,8 +38,11 @@ def delivery_leg_cost(turnover: float, side: str, cfg: dict) -> DeliveryLegCost:
     exchange_txn = turnover * c["exchange_txn_pct"]
     sebi = turnover * c["sebi_pct"]
     stamp_duty = turnover * c["stamp_duty_buy_pct"] if side == "buy" else 0.0
+    # dp_charge_flat (config/settings.yaml) is already GST-inclusive (~Rs 13.5 + 18% GST
+    # = 15.93) - it must NOT be included in the gst base below, or GST gets charged on
+    # top of an amount that already has GST baked into it.
     dp_charge = c["dp_charge_flat"] if side == "sell" else 0.0
-    gst = (brokerage + exchange_txn + sebi + dp_charge) * c["gst_pct"]
+    gst = (brokerage + exchange_txn + sebi) * c["gst_pct"]
 
     return DeliveryLegCost(brokerage, stt, exchange_txn, sebi, stamp_duty, dp_charge, gst)
 

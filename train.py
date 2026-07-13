@@ -215,7 +215,7 @@ def train_one_symbol(symbol: str, args):
     model.compile(
         optimizer=keras.optimizers.AdamW(
             learning_rate=full_lr_schedule,
-            weight_decay=0.05,
+            weight_decay=0.15,  # raised from 0.05 - per-symbol training has much less data than pooled
             clipnorm=1.0
         ),
         loss={
@@ -250,7 +250,14 @@ def train_one_symbol(symbol: str, args):
             save_best_only=True, verbose=1),
         EpochCheckpointSaver(ckpt_dir=ckpt_dir, model_name=args.model, freq=10),
         keras.callbacks.EarlyStopping(
-            monitor="val_prediction_dir_acc", mode="max", patience=20,
+            # restore_best_weights=True means the FINAL saved model is always
+            # whichever epoch had the best val score, regardless of patience -
+            # patience only controls how long we keep looking for a better
+            # epoch before giving up, it can't make the result worse. A low
+            # patience risks quitting before a real (later) peak shows up;
+            # the only cost of a generous patience is extra compute time,
+            # which is fine here - so keep this generous rather than tight.
+            monitor="val_prediction_dir_acc", mode="max", patience=25,
             restore_best_weights=True, verbose=1),
         CheckpointPruner(ckpt_dir=ckpt_dir, model_name=args.model, keep_n=3),
         EdgeTracker(log_path=LOG_DIR / f"edge_tracker_{symbol}.csv",
