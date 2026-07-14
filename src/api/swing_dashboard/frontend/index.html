@@ -125,12 +125,55 @@
     background: var(--page); font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;
   }
   code { background: var(--page); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  select {
+    font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary);
+  }
+  .signal-badge {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600;
+    padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+  }
+  .signal-badge.buy   { background: rgba(12,163,12,0.12); color: var(--good); }
+  .signal-badge.sell  { background: rgba(208,59,59,0.12); color: var(--critical); }
+  .signal-badge.wait  { background: rgba(250,178,25,0.12); color: var(--warning); }
+  .signal-badge.flat  { background: var(--page); color: var(--text-secondary); }
+  .pattern-chip {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 12px;
+    padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); margin: 2px;
+  }
+  .pattern-chip.bullish { color: var(--good); }
+  .pattern-chip.bearish { color: var(--critical); }
+  .snapshot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 16px 0; }
+  /* Mobile: single column, no horizontal cramping, tap targets stay usable. */
+  @media (max-width: 640px) {
+    .wrap { padding: 16px 12px 48px; }
+    .row { gap: 8px; }
+    .stat-tiles, .snapshot-grid { grid-template-columns: 1fr; display: grid; }
+    .tile { min-width: 0; }
+    .card { padding: 14px; }
+    table { font-size: 12px; }
+    th, td { padding: 6px 7px; }
+    button, select { width: 100%; }
+    .row button, .row select, .row label.check { width: auto; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Swing Trading Dashboard</h1>
   <p class="subtitle" id="config-summary">Loading configuration…</p>
+
+  <!-- TODAY'S MARKET VIEW -->
+  <div class="card">
+    <h2>🔮 Today's Market View</h2>
+    <p class="subtitle" style="margin-bottom:14px;">What the model actually thinks about a stock right now, in plain words - not a trading action, just information.</p>
+    <div class="row">
+      <select id="snapshot-symbol"></select>
+      <button id="snapshot-refresh-btn" class="secondary">Refresh</button>
+      <span id="snapshot-asof" class="empty" style="padding:0;"></span>
+    </div>
+    <div id="snapshot-body"><p class="empty">Pick a stock above.</p></div>
+  </div>
 
   <!-- TRAINING PROGRESS -->
   <div class="card">
@@ -471,7 +514,75 @@ async function loadConfig() {
   // paper-symbols-summary is populated by refreshBacktestPaperTrainedBadges()
   // (called from loadTrainingStatus, right after this in init()) since it
   // needs the trained-checkpoint count, which this function doesn't have.
+
+  // Only symbols in training.symbols ever get a fine-tuned per-symbol
+  // checkpoint (see train.py) - the rest of the universe never has one to
+  // show a snapshot for, so the dropdown only offers the ones that can.
+  const snapshotSymbols = (cfg.training && cfg.training.symbols) || cfg.universe.symbols;
+  const sel = document.getElementById("snapshot-symbol");
+  sel.innerHTML = snapshotSymbols.map(s => `<option value="${s}">${s}</option>`).join("");
 }
+
+// ---------------- today's market view ----------------
+function renderSnapshot(s) {
+  const body = document.getElementById("snapshot-body");
+  const asof = document.getElementById("snapshot-asof");
+  if (!s.available) {
+    asof.textContent = "";
+    body.innerHTML = `<p class="empty">${s.reason || "Not available yet."}</p>`;
+    return;
+  }
+  asof.textContent = `as of ${s.as_of_date}`;
+
+  const badgeClass = s.signal_label.includes("BUY") ? "buy" : s.signal_label.includes("SELL") ? "sell"
+    : s.signal_label.includes("Choppy") ? "wait" : "flat";
+  const arrow = v => (v === null || v === undefined) ? "" : (v > 0 ? "▲ " : v < 0 ? "▼ " : "· ");
+
+  const patternsHtml = s.candlestick_patterns.length
+    ? s.candlestick_patterns.map(p =>
+        `<span class="pattern-chip ${p.bias.toLowerCase()}">${p.bias === "Bullish" ? "▲" : "▼"} ${p.name}</span>`).join("")
+    : `<span class="empty" style="padding:0;">No notable candle patterns detected today.</span>`;
+
+  body.innerHTML = `
+    <div class="row" style="margin-bottom:4px;">
+      <span class="signal-badge ${badgeClass}">${s.signal_label}</span>
+      <span class="empty" style="padding:0;max-width:420px;">${s.signal_explanation}</span>
+    </div>
+    <p class="subtitle" style="margin:2px 0 0;">
+      ${s.meets_trade_threshold
+        ? '<span class="value good" style="font-size:13px;">✓ Confident enough to trade</span>'
+        : '<span style="color:var(--muted);">Below the confidence bar needed to actually trade</span>'}
+    </p>
+    <div class="snapshot-grid">
+      <div class="tile"><div class="label">Last close</div><div class="value">${fmtMoney(s.last_close)}</div></div>
+      <div class="tile"><div class="label">Model's confidence</div><div class="value">${fmt(s.certainty_pct,1)}%</div></div>
+      <div class="tile"><div class="label">Expected move (holding period)</div>
+        <div class="value ${s.expected_move_over_holding_period_pct > 0 ? 'good' : s.expected_move_over_holding_period_pct < 0 ? 'bad' : ''}">${arrow(s.expected_move_over_holding_period_pct)}${fmt(Math.abs(s.expected_move_over_holding_period_pct),2)}%</div></div>
+      <div class="tile"><div class="label">Expected move (tomorrow)</div>
+        <div class="value ${s.next_day_expected_move_pct > 0 ? 'good' : s.next_day_expected_move_pct < 0 ? 'bad' : ''}">${s.next_day_expected_move_pct == null ? '-' : arrow(s.next_day_expected_move_pct) + fmt(Math.abs(s.next_day_expected_move_pct),2) + '%'}</div></div>
+      <div class="tile"><div class="label">Market mood</div><div class="value" style="font-size:14px;">${s.market_mood}</div></div>
+      <div class="tile"><div class="label">Vs. Nifty 50 (20 days)</div>
+        <div class="value ${s.relative_strength_20d_pct > 0 ? 'good' : s.relative_strength_20d_pct < 0 ? 'bad' : ''}">${arrow(s.relative_strength_20d_pct)}${fmt(Math.abs(s.relative_strength_20d_pct),2)}%</div></div>
+    </div>
+    <div class="label" style="margin-bottom:4px;">Candlestick patterns spotted today</div>
+    <div>${patternsHtml}</div>
+  `;
+}
+
+async function loadSnapshot() {
+  const symbol = document.getElementById("snapshot-symbol").value;
+  if (!symbol) return;
+  const body = document.getElementById("snapshot-body");
+  body.innerHTML = `<p class="empty">Loading…</p>`;
+  try {
+    const s = await api(`/api/predict/snapshot?symbol=${encodeURIComponent(symbol)}`);
+    renderSnapshot(s);
+  } catch (e) {
+    body.innerHTML = `<p class="empty">Couldn't load a snapshot for ${symbol}: ${e.message}</p>`;
+  }
+}
+document.getElementById("snapshot-symbol").addEventListener("change", loadSnapshot);
+document.getElementById("snapshot-refresh-btn").addEventListener("click", loadSnapshot);
 
 // ---------------- backtest ----------------
 function renderSharpeChart(rows) {
@@ -733,6 +844,7 @@ async function safely(fn, label) {
 
 (async function init() {
   await safely(loadConfig, "loadConfig");
+  await safely(loadSnapshot, "loadSnapshot");
   await safely(loadTrainingStatus, "loadTrainingStatus");
   await safely(refreshBacktestResults, "refreshBacktestResults");
   await safely(pollPaperStatus, "pollPaperStatus");
@@ -740,6 +852,7 @@ async function safely(fn, label) {
   setInterval(() => safely(loadTrainingStatus, "loadTrainingStatus"), 10000);  // training is live - keep the table/chart current
   setInterval(pollPaperStatus, 8000);
   setInterval(loadLiveStatus, 15000);
+  setInterval(() => safely(loadSnapshot, "loadSnapshot"), 60000);  // refresh once a minute - cheap, not worth polling faster
 })();
 </script>
 </body>

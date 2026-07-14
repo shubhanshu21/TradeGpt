@@ -41,6 +41,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from backtest.metrics import compute_metrics  # noqa: E402
 from exchange.brokers.factory import get_broker  # noqa: E402
 from data.fetch_historical import fetch_universe_swing  # noqa: E402
+from data.preprocess import load_universe_from_cache  # noqa: E402
 from swing_backtest.engine import SwingBacktestEngine  # noqa: E402
 from swing_paper_trading.engine import SwingPaperTradingEngine  # noqa: E402
 from strategies.swing.ml_strategy import MLSwingStrategy  # noqa: E402
@@ -77,6 +78,28 @@ def health():
 @app.get("/api/config")
 def get_config():
     return load_config()
+
+
+# ============================== Today's Market View ==============================
+# Reuses the SAME trained checkpoints backtest/paper/live trade on - this is
+# read-only "what does the model think right now", not a trading action, so
+# it's safe to expose without any confirmation gate (unlike live trading).
+_snapshot_strategy = MLSwingStrategy()
+
+
+@app.get("/api/predict/snapshot")
+def predict_snapshot(symbol: str):
+    cfg = load_config()
+    if symbol not in cfg["universe"]["symbols"]:
+        raise HTTPException(404, f"{symbol} is not in the configured universe.")
+
+    data = load_universe_from_cache([symbol])
+    if symbol not in data:
+        return {"available": False, "symbol": symbol,
+                "reason": "No cached price history for this stock yet - run a backtest "
+                          "once (it fetches and caches historical data) or wait for the next data refresh."}
+
+    return _snapshot_strategy.explain_latest(data[symbol], symbol)
 
 
 # ============================== Backtest ==============================
