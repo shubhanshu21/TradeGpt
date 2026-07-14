@@ -28,6 +28,7 @@ class MLSwingStrategy(SwingStrategy):
         self._models = {}   # symbol -> loaded keras model
         self._shapes = {}   # symbol -> model_shape.pkl contents
         self._benchmark = "unloaded"  # lazy-loaded once, shared across all symbols (see generate_signals)
+        self._vix = "unloaded"  # lazy-loaded once, shared across all symbols (see generate_signals)
 
     def _load(self, symbol: str):
         """Lazy load per symbol - so importing this module doesn't require
@@ -60,7 +61,7 @@ class MLSwingStrategy(SwingStrategy):
         self._shapes[symbol] = shape
 
     def generate_signals(self, df: pd.DataFrame, symbol: str = None, batch_size: int = 32) -> pd.DataFrame:
-        from data.preprocess import compute_indicators, build_feature_cols, apply_dls, load_benchmark_index
+        from data.preprocess import compute_indicators, build_feature_cols, apply_dls, load_benchmark_index, load_vix_index
 
         if symbol is None:
             raise ValueError("MLSwingStrategy.generate_signals requires symbol= (one model per symbol)")
@@ -70,13 +71,15 @@ class MLSwingStrategy(SwingStrategy):
 
         if self._benchmark == "unloaded":
             self._benchmark = load_benchmark_index()
+        if self._vix == "unloaded":
+            self._vix = load_vix_index()
 
         df = df.copy()
         df["signal"] = 0
         if len(df) <= ctx + 5:
             return df
 
-        df_feat = compute_indicators(df, benchmark_df=self._benchmark)
+        df_feat = compute_indicators(df, benchmark_df=self._benchmark, vix_df=self._vix)
         features = build_feature_cols()
         data = df_feat[features].values.astype("float32")
 
