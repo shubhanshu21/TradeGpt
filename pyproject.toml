@@ -17,6 +17,7 @@ dependencies = [
     "kiteconnect",           # Zerodha broker adapter (exchange/brokers/zerodha_broker.py)
     "fastapi",                # dashboard API (api/swing_dashboard/main.py)
     "uvicorn",                 # ASGI server to run the dashboard
+    "pandas-ta-classic",       # 62 candlestick pattern features (data/preprocess.py) - pure Python, no TA-Lib C dependency
 ]
 
 [project.optional-dependencies]

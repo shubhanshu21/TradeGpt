@@ -3,10 +3,10 @@ and implements the same SwingStrategy interface as the 3 rule-based
 strategies, so it plugs into the same backtest engine, paper trading, and
 live trading.
 
-Signal logic mirrors the certainty threshold + reasoning class + direction
-agreement gating philosophy used throughout this project's live trading
-path, so a signal fired here means the same thing it would mean anywhere
-else in the system.
+Signal logic requires the certainty threshold, the reasoning class, the
+predicted price trajectory's direction, AND the GPT-style next-candle
+head's implied direction to all agree - three independent heads reading
+the same 60-day window, not just one head's opinion.
 """
 import numpy as np
 import pandas as pd
@@ -94,16 +94,18 @@ class MLSwingStrategy(SwingStrategy):
         # overhead) made a full-history backtest impractically slow.
         windows = np.stack([apply_dls(data[i - ctx: i])[0] for i in idxs]).astype("float32")
 
-        all_pred, all_cert, all_reason = [], [], []
+        all_pred, all_cert, all_reason, all_next_tok = [], [], [], []
         for start in range(0, len(windows), batch_size):
             batch = windows[start: start + batch_size]
-            pred, certainty, reasoning = model(batch, training=False)
+            pred, certainty, reasoning, next_candle = model(batch, training=False)
             all_pred.append(pred.numpy())
             all_cert.append(certainty.numpy())
             all_reason.append(reasoning.numpy())
+            all_next_tok.append(next_candle.numpy())
         pred = np.concatenate(all_pred, axis=0)
         certainty = np.concatenate(all_cert, axis=0)
         reasoning = np.concatenate(all_reason, axis=0)
+        next_candle = np.concatenate(all_next_tok, axis=0)
 
         cert = certainty.mean(axis=1)                       # (n_windows,)
         reasoning_cls = np.argmax(reasoning, axis=1)         # 0=LONG 1=SHORT 2=FEE_TRAP 3=NOISE
@@ -111,10 +113,25 @@ class MLSwingStrategy(SwingStrategy):
         price_dir = np.where(mean_move > 0, 1, np.where(mean_move < 0, -1, 0))
         reasoning_dir = np.where(reasoning_cls == 0, 1, -1)
 
+        # GPT-style next-candle head: decode the predicted token back into an
+        # implied direction (bin_centers[token] > 0 = up, < 0 = down) using
+        # THIS symbol's own vocabulary from training, and require it to also
+        # agree - a third independent confirmation on top of the trajectory
+        # and reasoning heads, not a replacement for either.
+        bin_centers = self._shapes[symbol].get("bin_centers")
+        if bin_centers is not None and len(bin_centers) > 0:
+            next_tok_id = np.argmax(next_candle, axis=1)
+            next_tok_id = np.clip(next_tok_id, 0, len(bin_centers) - 1)
+            next_candle_return = bin_centers[next_tok_id]
+            next_candle_dir = np.where(next_candle_return > 0, 1, np.where(next_candle_return < 0, -1, 0))
+        else:
+            next_candle_dir = reasoning_dir  # no vocabulary saved (older checkpoint) - don't gate on it
+
         fire = (
             (cert >= self.cert_threshold)
             & np.isin(reasoning_cls, (0, 1))
             & (price_dir == reasoning_dir)
+            & (next_candle_dir == reasoning_dir)
         )
 
         signal_arr = np.zeros(n, dtype="int64")

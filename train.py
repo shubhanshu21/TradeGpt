@@ -205,11 +205,20 @@ def _compile_hydra(model, class_weights, epochs, steps_tr, learning_rate, weight
             "prediction": SovereignLoss(direction_weight=3.0),
             "certainty":  certainty_loss,
             "reasoning":  weighted_reasoning_loss,
+            # Real next-token cross-entropy, same loss GPT training uses -
+            # y_true here is an integer token ID (not one-hot), so sparse.
+            "next_candle": keras.losses.SparseCategoricalCrossentropy(),
         },
-        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0},
+        # next_candle weighted lower than the actual trade-decision heads -
+        # it's a genuine auxiliary task (real next-token prediction, GPT-
+        # style), not the thing the trading logic gates on. Keeping its
+        # weight modest stops it from competing for gradient signal against
+        # prediction/reasoning, which are what ml_strategy.py actually acts on.
+        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0, "next_candle": 0.5},
         metrics={
             "prediction": [SovereignAccuracy()],
             "certainty":  [CertaintyMetric()],
+            "next_candle": [keras.metrics.SparseCategoricalAccuracy(name="next_candle_acc")],
         }
     )
 
@@ -309,11 +318,18 @@ def train_one_symbol(symbol: str, args):
 
     # Save the exact shape this checkpoint was trained with — any inference
     # code that rebuilds the model to load these weights needs to match
-    # exactly or the layer shapes won't align.
+    # exactly or the layer shapes won't align. bin_edges/bin_centers are the
+    # next-candle vocabulary THIS symbol's own data produced (build_kraken's
+    # next_candle Dense layer is always a fixed 32-wide, regardless of how
+    # many distinct tokens actually appear - see fit_return_vocab's
+    # docstring - so this never causes a load_weights shape mismatch against
+    # the pretrained base; bin_edges/bin_centers are only needed to DECODE
+    # a predicted token back into an implied direction at inference time).
     import pickle as _pickle
     with open(ckpt_dir / "model_shape.pkl", "wb") as _f:
         _pickle.dump({"context_window": CTX_WIN, "forecast_steps": FORECAST,
-                      "n_features": n_feat, "symbol": symbol}, _f)
+                      "n_features": n_feat, "symbol": symbol,
+                      "bin_edges": ds_info["bin_edges"], "bin_centers": ds_info["bin_centers"]}, _f)
 
     # ── 4. Load starting weights: resume > pretrained base > random init ────
     ckpt_name = "hydra_best.keras" if args.model == "hydra" else f"{args.model}_best.keras"

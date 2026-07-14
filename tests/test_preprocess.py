@@ -8,6 +8,7 @@ import pytest
 
 from data.preprocess import (
     apply_dls, _hits_target_before_stop, build_feature_cols,
+    fit_return_vocab, tokenize_returns,
 )
 
 
@@ -63,3 +64,47 @@ def test_hits_target_before_stop_neither_hit_returns_false():
     low_path = np.array([99.8, 99.9, 99.7], dtype="float32")
     result = _hits_target_before_stop(high_path, low_path, tp_price=110.0, sl_price=90.0, direction=1)
     assert result is False
+
+
+def test_return_vocab_roundtrip():
+    # GPT-style next-candle vocabulary: quantile-bin real returns, then
+    # confirm every value tokenizes into a valid, in-range token ID.
+    rng = np.random.default_rng(1)
+    returns = rng.normal(0, 0.01, size=5000).astype("float32")
+
+    bin_edges, bin_centers, vocab_size = fit_return_vocab(returns, vocab_size=32)
+
+    assert vocab_size <= 32  # can be fewer if quantile edges collapse, never more
+    assert len(bin_centers) == vocab_size
+    assert np.all(np.diff(bin_edges) >= 0), "bin edges must be monotonically increasing"
+
+    tokens = tokenize_returns(returns, bin_edges)
+    assert tokens.dtype == np.int32
+    assert tokens.min() >= 0
+    assert tokens.max() < vocab_size
+
+    # Quantile-based binning should spread tokens roughly evenly, not dump
+    # everything into one bucket - that's the whole point over equal-width bins.
+    counts = np.bincount(tokens, minlength=vocab_size)
+    assert counts.max() < len(returns) * 0.5
+
+
+def test_return_vocab_bin_centers_reflect_sign_of_their_bucket():
+    # A token with a positive bin_center should correspond to actually-positive
+    # returns, and vice versa - this is what ml_strategy.py relies on to decode
+    # a predicted token back into an implied up/down direction.
+    rng = np.random.default_rng(2)
+    returns = np.concatenate([
+        rng.uniform(-0.05, -0.01, size=1000),  # clearly negative days
+        rng.uniform(0.01, 0.05, size=1000),    # clearly positive days
+    ]).astype("float32")
+
+    bin_edges, bin_centers, vocab_size = fit_return_vocab(returns, vocab_size=16)
+    tokens = tokenize_returns(returns, bin_edges)
+
+    for tok in np.unique(tokens):
+        actual_returns_in_bucket = returns[tokens == tok]
+        if len(actual_returns_in_bucket) == 0:
+            continue
+        # bin_center's sign should match the actual data in that bucket
+        assert np.sign(bin_centers[tok]) == np.sign(np.median(actual_returns_in_bucket)) or bin_centers[tok] == 0

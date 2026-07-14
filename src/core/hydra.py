@@ -433,20 +433,24 @@ class HydraBlock(layers.Layer):
 class SovereignLoss(keras.losses.Loss):
     """
     V10.7: Volatility-Weighted Directional Loss.
-    - MSE on price trajectory.
+    - MSE on price trajectory (close, the channel the direction term and
+      every trading-decision site actually key on) + a lower-weighted MSE
+      on the open/high/low channels (a real full-candle forecast, not
+      informing the trade-direction gate itself).
     - Direction loss (sign match) weighted by local volatility.
     - High-volatility moves incur a LARGER penalty when predicted wrong.
     """
-    def __init__(self, direction_weight=10.0, **kwargs):
+    def __init__(self, direction_weight=10.0, ohl_weight=0.5, **kwargs):
         super().__init__(**kwargs)
         self.direction_weight = direction_weight
+        self.ohl_weight = ohl_weight
 
     def call(self, y_true, y_pred):
         p_true = y_true[:, :, 0]
         p_pred = y_pred[:, :, 0]
         v_true = y_true[:, :, 1]  # Volatility channel
 
-        # Base MSE
+        # Base MSE (close)
         mse = ops.mean(ops.square(p_true - p_pred))
 
         # Direction loss
@@ -459,11 +463,16 @@ class SovereignLoss(keras.losses.Loss):
         vol_weight = ops.abs(v_true[:, 1:]) + 1.0
         weighted_dir = ops.mean(dir_loss * vol_weight)
 
-        return mse + (self.direction_weight * weighted_dir)
+        # Open/High/Low MSE (channels 3,4,5) - a real full-candle forecast,
+        # weighted lower than close since nothing downstream trades on it
+        # directly, but it's a genuine trained target, not a dead output.
+        ohl_mse = ops.mean(ops.square(y_true[:, :, 3:6] - y_pred[:, :, 3:6]))
+
+        return mse + (self.direction_weight * weighted_dir) + (self.ohl_weight * ohl_mse)
 
     def get_config(self):
         config = super().get_config()
-        config.update({"direction_weight": self.direction_weight})
+        config.update({"direction_weight": self.direction_weight, "ohl_weight": self.ohl_weight})
         return config
 
 
@@ -555,19 +564,20 @@ class SovereignAccuracy(keras.metrics.Metric):
 # ── Model Builder ─────────────────────────────────────────────────────────────
 
 def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FORECAST_STEPS,
-                 dropout_rate=0.30, noise_stddev=0.05):
+                 dropout_rate=0.30, noise_stddev=0.05, vocab_size=32):
     """
-    Equity swing edition — Deep Predator, single-input.
+    Equity swing edition — Deep Predator, single-input, four outputs.
 
-    Converted from the crypto version's dual-input (market + return-token)
-    design: dropped the GPT-style next-candle-token head and its token
-    embedding entirely. That auxiliary task showed marginal value even on
-    crypto's larger single-asset hourly dataset; equity's pooled multi-symbol
-    daily dataset is smaller, and simplifying to a single input avoids taxing
-    that capacity on a task that wasn't clearly paying for itself. Everything
-    else (causal softmax attention, QK-Norm, RoPE, MoE-32 with shared expert,
-    SwiGLU, Dropout, the certainty-consensus mechanism) is unchanged from the
-    crypto version — none of it is asset-class specific.
+    Single INPUT still (no dual market+token input like the old crypto
+    version needed) - the next-candle head reads from the same shared
+    backbone as prediction/certainty/reasoning, it doesn't need its own
+    separate token-embedding input pathway. What it DOES have is a genuine
+    next-token classification OUTPUT (see "next_candle" below) - real
+    next-token prediction, GPT-style, just single-step (predict tomorrow's
+    token once) rather than chained autoregressive generation (sample a
+    token, feed it back in as input, repeat for N days) - that generation
+    loop is where numeric time series compound errors badly (no grammar-like
+    structure to self-correct, unlike text), so it's deliberately not here.
 
     dropout_rate/noise_stddev raised from the crypto defaults (0.15/0.02) to
     0.30/0.05 for per-symbol training - one stock alone has only ~4-6k
@@ -605,15 +615,26 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     normed_x  = RMSNorm()(x)
     last_step = layers.Lambda(lambda t: t[:, -1, :])(normed_x)
 
+    # 6 channels: [close, volatility, volume, open, high, low] - a real full
+    # candle forecast (not just close), close stays channel 0 since
+    # SovereignLoss's direction term and every inference site key on that
+    # specific position.
     preds = layers.Reshape(
-        (forecast_steps + 1, 3), name="prediction")(
-        layers.Dense((forecast_steps + 1) * 3)(last_step))
+        (forecast_steps + 1, 6), name="prediction")(
+        layers.Dense((forecast_steps + 1) * 6)(last_step))
 
     # Label smoothing(0.1) on reasoning to prevent overconfidence
     reasoning = layers.Dense(4, activation="softmax", name="reasoning")(last_step)
 
+    # GPT-style next-candle token head: real next-token classification over
+    # a quantile-binned return vocabulary (see preprocess.py's
+    # fit_return_vocab/tokenize_returns) - single-step prediction of
+    # tomorrow's discretized return bucket, trained with next-token
+    # cross-entropy same as a language model, from the same shared backbone.
+    next_candle = layers.Dense(vocab_size, activation="softmax", name="next_candle")(last_step)
+
     model = keras.Model(
-        inputs, [preds, avg_consensus, reasoning],
+        inputs, [preds, avg_consensus, reasoning, next_candle],
         name="sovereign_kraken_equity_v1")
 
     # Linear warmup (500 steps) into Cosine Decay LR: 1e-4 -> 1e-5 over 10,000 steps.
@@ -644,8 +665,9 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
             "prediction": SovereignLoss(direction_weight=3.0),
             "certainty":  certainty_loss,
             "reasoning":  SovereignReasoningLoss(label_smoothing=0.1),
+            "next_candle": keras.losses.SparseCategoricalCrossentropy(),
         },
-        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0},
+        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0, "next_candle": 1.0},
         metrics={
             "prediction": [SovereignAccuracy()],
             "certainty":  [CertaintyMetric()],

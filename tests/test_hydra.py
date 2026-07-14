@@ -16,6 +16,7 @@ N_FEATURES  = 6
 CONTEXT_WIN = 4
 FORECAST    = 2
 BATCH       = 2
+VOCAB_SIZE  = 8
 
 init_kraken_hardware()
 
@@ -26,6 +27,7 @@ def tiny_model():
         n_features=N_FEATURES,
         context_window=CONTEXT_WIN,
         forecast_steps=FORECAST,
+        vocab_size=VOCAB_SIZE,
     )
 
 
@@ -33,21 +35,27 @@ def test_build_kraken_single_input_output_shapes(tiny_model):
     rng = np.random.default_rng(0)
     market_input = rng.normal(size=(BATCH, CONTEXT_WIN, N_FEATURES)).astype("float32")
 
-    preds, certainty, reasoning = tiny_model(market_input, training=False)
+    preds, certainty, reasoning, next_candle = tiny_model(market_input, training=False)
 
-    assert preds.shape == (BATCH, FORECAST + 1, 3)
+    # 6 channels: close, volatility, volume, open, high, low - a real full-candle forecast.
+    assert preds.shape == (BATCH, FORECAST + 1, 6)
     assert certainty.shape == (BATCH, CONTEXT_WIN)
     assert reasoning.shape == (BATCH, 4)
+    assert next_candle.shape == (BATCH, VOCAB_SIZE)
 
-    # certainty is sigmoid-calibrated, reasoning is softmax — both bounded [0,1].
+    # certainty is sigmoid-calibrated, reasoning/next_candle are softmax — all bounded [0,1].
     assert np.all(certainty.numpy() >= 0.0) and np.all(certainty.numpy() <= 1.0)
     np.testing.assert_allclose(reasoning.numpy().sum(axis=-1), 1.0, atol=1e-5)
+    np.testing.assert_allclose(next_candle.numpy().sum(axis=-1), 1.0, atol=1e-5)
 
 
-def test_build_kraken_has_no_next_token_head(tiny_model):
-    # Equity edition deliberately dropped the GPT-style next-token head from
-    # the model - exactly 3 outputs (prediction, certainty, reasoning), not 4.
-    assert len(tiny_model.outputs) == 3
+def test_build_kraken_has_single_step_next_candle_head_not_generation(tiny_model):
+    # Single INPUT still (no dual market+token input like the old crypto
+    # version's autoregressive-generation design needed) - real next-token
+    # classification OUTPUT, but single-step (predict once), not chained
+    # generation. Exactly 4 outputs: prediction, certainty, reasoning, next_candle.
+    assert len(tiny_model.inputs) == 1
+    assert len(tiny_model.outputs) == 4
 
 
 def test_hydra_block_attention_dropout_matches_block_dropout(tiny_model):
