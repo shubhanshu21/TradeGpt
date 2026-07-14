@@ -110,12 +110,14 @@ kat/
     ├── core/
     │   └── hydra.py                ← Neural model architecture (HYDRA, single-input)
     ├── data/
-    │   ├── preprocess.py           ← 92-feature equity pipeline (30 technical/trend +
-    │   │                              62 candlestick patterns), dataset builder, real
-    │   │                              swing-outcome labeling, GPT-style next-candle
+    │   ├── preprocess.py           ← 95-feature equity pipeline (33 technical/trend/
+    │   │                              volume/regime features (incl. OBV, VWAP-distance,
+    │   │                              India VIX z-score) + 62 candlestick patterns),
+    │   │                              dataset builder, real swing-outcome labeling,
+    │   │                              GPT-style next-candle
     │   │                              vocabulary (fit_return_vocab/tokenize_returns)
     │   ├── fetch_historical.py     ← Cached daily-candle downloader (via configured broker),
-    │   │                              also fetches NIFTY as a benchmark reference
+    │   │                              also fetches NIFTY and India VIX as benchmark/regime references
     │   └── import_kaggle_data.py   ← Free CSV-based backtest data path (no broker needed)
     ├── exchange/
     │   ├── brokers/                ← Broker abstraction: base.py + zerodha/upstox/dhan/csv
@@ -138,7 +140,7 @@ kat/
 ## 🏗️ Neural Architecture (HYDRA)
 
 ```
-Market Input (60 trading days × 92 features)
+Market Input (60 trading days × 95 features)
         │
    [GaussianNoise(0.05)]
         │
@@ -323,13 +325,14 @@ Open `http://<server-ip>:9000`. Backtest and paper trading are fully controllabl
 
 **Verified via real execution:**
 - Data pipeline, model, and the full two-phase pretrain→fine-tune→inference chain — a complete smoke test (tiny data, 1 epoch each) ran phase 1, phase 2 (weight-loading from the pretrained base, no shape mismatch), and real batched inference through `ml_strategy.py` end-to-end with zero errors, including correctly decoding the next-candle head's token back into a direction and using it as a real gating signal
-- An earlier, now-superseded architecture (pre-candlestick-features, pre-OHLC-prediction, pre-next-candle-head) did produce one real trained checkpoint that reached `val_dir_acc=53.70%` at epoch 1, 95% CI `[52.77%, 54.64%]` — statistically significant per the Wilson-interval `EdgeTracker`. That confirms the pipeline mechanics work; it does not carry forward as a result for the current architecture, which has since changed materially (92 features vs. 30, 4 output heads vs. 3, pretrain-then-finetune vs. from-scratch)
+- An earlier, now-superseded architecture (pre-candlestick-features, pre-OHLC-prediction, pre-next-candle-head, pre-OBV/VWAP/VIX) did produce one real trained checkpoint that reached `val_dir_acc=53.70%` at epoch 1, 95% CI `[52.77%, 54.64%]` — statistically significant per the Wilson-interval `EdgeTracker`. That confirms the pipeline mechanics work; it does not carry forward as a result for the current architecture, which has since changed materially (95 features vs. 30, 4 output heads vs. 3, pretrain-then-finetune vs. from-scratch)
 - API dashboard (actually starts, serves real responses, live training-progress chart verified against real and synthetic data)
-- Broker connection code (constructs correct requests; error handling verified against a real 401; NIFTY 50 index history fetched and cached successfully)
+- Broker connection code (constructs correct requests; error handling verified against a real 401; NIFTY 50 and India VIX index history fetched and cached successfully)
 - `pandas-ta-classic`'s 62 candlestick patterns verified directly against real HDFCBANK data — all compute cleanly, no NaN, genuine nonzero pattern detections (not a silent no-op)
+- OBV distance, VWAP-distance, and India VIX z-score verified directly against real HDFCBANK data — all compute cleanly, no NaN, bounded/finite ranges, correctly wired through both the training pipeline (`build_dataset_streaming`) and live inference (`ml_strategy.py`)
 
 **Not yet verified:**
-- A full real training run (not a smoke test) completing under the current architecture — 92 features, 4 output heads, pretrain-then-finetune — is in progress as of this writing; no epoch has finished yet at real (non-toy) data scale
+- A full real training run (not a smoke test) completing under the current architecture — 95 features, 4 output heads, pretrain-then-finetune — is in progress as of this writing; no epoch has finished yet at real (non-toy) data scale
 - Whether the pretrain-then-finetune approach actually beats from-scratch training on real per-symbol results (the honest test is comparing a fine-tuned symbol's peak accuracy/stability against the superseded from-scratch baseline above, once both exist under the same feature set)
 - Whether the candlestick patterns and next-candle head measurably help, versus just adding parameters - the model has 3 independent gates now (reasoning, prediction-trajectory, next-candle direction) instead of 2, which should make it fire *fewer, more conservative* signals; whether that's a net improvement is an open question until real backtest trades exist
 - Paper trading's real-time loop (needs a fresh, non-expired broker token)

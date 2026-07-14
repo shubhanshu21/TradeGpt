@@ -5,9 +5,10 @@ Converted from a single-asset crypto orchestrator to a per-symbol Indian
 equity swing-trading one. See src/config/sovereign_config.py's module
 docstring for the full context on this conversion.
 
-- Model: HYDRA (128-wide, 8-block, 32-Expert MoE + SwiGLU), single-input
-  (no GPT-style next-token head — see src/core/hydra.py's build_kraken
-  docstring for why that was dropped for this smaller dataset).
+- Model: HYDRA (128-wide, 8-block, 32-Expert MoE + SwiGLU), single-input,
+  4 outputs (prediction/certainty/reasoning/next_candle) — includes a
+  GPT-style single-step next-candle token head, see src/core/hydra.py's
+  build_kraken docstring for the single-step-not-generation design.
 - Two-phase training, not from-scratch-per-symbol: (1) PRETRAIN one shared
   model on ALL universe symbols pooled together - broad general pattern
   recognition, the same idea as a trader who's watched hundreds of stocks
