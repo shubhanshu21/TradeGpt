@@ -171,12 +171,28 @@ def _compute_class_weights(ds_info):
     return class_weights
 
 
-def _compile_hydra(model, class_weights, epochs, steps_tr, learning_rate, weight_decay):
+def _compile_hydra(model, class_weights, lr_decay_epochs, steps_tr, learning_rate, weight_decay):
     """Shared compile step for both the pretrain and fine-tune phases -
     same loss/metric setup, only the learning rate/weight decay differ
     (fine-tuning uses a lower LR - standard transfer-learning practice, so
     the per-symbol phase adjusts the pretrained weights instead of
-    overwriting what they already learned)."""
+    overwriting what they already learned).
+
+    lr_decay_epochs is the REALISTIC expected training length, NOT the
+    --epochs/--pretrain_epochs ceiling passed to model.fit(). Those
+    ceilings (default 300) are essentially unbounded in practice -
+    EarlyStopping(patience=25) is what actually decides when training
+    stops, usually far short of 300. A real bug found by watching this
+    session's own pretrain run: decay_steps was computed from the 300-epoch
+    ceiling, so CosineDecay's schedule barely moved off its initial LR for
+    the entire realistic training window (measured: still 98.3% of peak LR
+    at epoch 27, the point patience=25 would actually trigger a stop from
+    the epoch-2 peak observed live). The model trained at ~full LR for its
+    whole real run instead of annealing down late, which is standard
+    practice specifically to stabilize convergence and reduce exactly the
+    kind of train/val divergence (train acc climbing to 73% while val acc
+    fell for 4 straight epochs) observed in that run.
+    """
     weights = [class_weights[i] for i in range(4)]
     weights_tensor = tf.constant(weights, dtype=tf.float32)
 
@@ -191,7 +207,7 @@ def _compile_hydra(model, class_weights, epochs, steps_tr, learning_rate, weight
 
     lr_schedule = WarmupCosineDecay(
         initial_learning_rate=learning_rate,
-        decay_steps=max(1, epochs * steps_tr),
+        decay_steps=max(1, lr_decay_epochs * steps_tr),
         warmup_steps=steps_tr,
         alpha=0.1
     )
@@ -257,7 +273,7 @@ def pretrain_base_model(args):
 
     class_weights = _compute_class_weights(ds_info)
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN, forecast_steps=FORECAST)
-    _compile_hydra(model, class_weights, EPOCHS, steps_tr,
+    _compile_hydra(model, class_weights, args.lr_decay_epochs, steps_tr,
                     learning_rate=1e-4, weight_decay=0.05)  # pooled data is much larger - the per-symbol 0.15 was specifically to fight per-symbol overfitting
 
     callbacks = [
@@ -360,7 +376,7 @@ def train_one_symbol(symbol: str, args):
     # it with the higher LR that made sense for random-init training.
     learning_rate = args.finetune_lr if (not resumed_from_symbol_ckpt and not args.skip_pretrain and PRETRAIN_CKPT.exists()) else 1e-4
     print(f"   ⚖️  Recompiling model with custom weighted categorical crossentropy (lr={learning_rate})...")
-    _compile_hydra(model, class_weights, EPOCHS, steps_tr,
+    _compile_hydra(model, class_weights, args.lr_decay_epochs, steps_tr,
                     learning_rate=learning_rate, weight_decay=0.15)
 
     # ── 5. Callbacks ──────────────────────────────────────────────────────────
@@ -443,5 +459,15 @@ if __name__ == "__main__":
     p.add_argument("--finetune_lr", type=float, default=3e-5,
                     help="Learning rate for per-symbol fine-tuning FROM the pretrained base "
                          "(lower than the 1e-4 used for pretraining/from-scratch - standard transfer-learning practice)")
+    p.add_argument("--lr_decay_epochs", type=int, default=40,
+                    help="REALISTIC expected training length for the cosine LR decay schedule - "
+                         "deliberately NOT the same as --epochs/--pretrain_epochs (300), which is just "
+                         "a ceiling EarlyStopping(patience=25) almost always stops well short of. Using "
+                         "the 300-ceiling here was a real bug: it made the LR schedule barely decay at "
+                         "all during any realistic run (measured: still over 98 percent of peak LR by the time "
+                         "patience=25 would trigger a stop), so the model trained at ~full LR the whole "
+                         "time instead of annealing down late as intended. 40 comfortably covers "
+                         "'best found a few epochs in, then 25 more without improvement' while still "
+                         "letting the schedule actually reach its floor (alpha=0.1) within a real run.")
     args = p.parse_args()
     train_kraken(args)
