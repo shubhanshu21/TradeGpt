@@ -3,8 +3,10 @@ HYDRA SOVEREIGN KRAKEN (V12.5) - DEEP PREDATOR PHASE 3 ⚓🚀⚡
 =================================================================
 Architecture: causal softmax attention (QK-Norm + RoPE, latent KV bottleneck)
 + MoE-32 (top-4 routed + shared expert) + DLS + expanded SwiGLU + Dropout.
-Equity swing edition: 60-day context window, single input (see build_kraken's
-docstring for why there's no next-token head), one model trained per symbol.
+Equity swing edition: 60-day context window, single input, 4 outputs
+(prediction/certainty/reasoning/next_candle - see build_kraken's docstring
+for the single-step-not-generation design of the next_candle head), one
+model trained per symbol.
 V12.5 changes over V10.7 (numbering kept for history; all still apply here):
   1. Real causal softmax attention — replaces the earlier ELU+1 linear-attention
      approximation. Softmax is what GPT/DeepSeek actually use; linear attention
@@ -318,10 +320,19 @@ class GatedMoE(layers.Layer):
     Fewer experts means each one actually gets enough real examples to
     specialize on, instead of spreading the same data thin across 256 slots.
     """
-    def __init__(self, d_model=128, n_experts=32, **kwargs):
+    def __init__(self, d_model=128, n_experts=32, expert_dropout_rate=0.4, **kwargs):
         super().__init__(**kwargs)
         self.d_model   = d_model
         self.n_experts = n_experts
+        # Sparse/routed capacity is more overfitting-prone than dense layers
+        # (each expert only ever sees a fraction of tokens, so it gets less
+        # real gradient signal to generalize from) - well-documented practice
+        # for MoE architectures is a HIGHER dropout on the sparse/expert path
+        # than on the surrounding dense layers, not the same uniform rate
+        # everywhere. Applied only to the routed-expert output below, not the
+        # always-active shared-expert path, which behaves like a normal dense
+        # layer and is already covered by HydraBlock's own dropout.
+        self.expert_dropout_rate = expert_dropout_rate
 
     def build(self, input_shape):
         self.gate = layers.Dense(self.n_experts, activation="softmax")
@@ -329,11 +340,12 @@ class GatedMoE(layers.Layer):
             shape=(self.n_experts, self.d_model, self.d_model),
             initializer="glorot_uniform", name="expert_weights")
         self.swiglu = SwiGLU()
+        self.expert_dropout = layers.Dropout(self.expert_dropout_rate)
         # Shared expert: always active for every token, no routing.
         self.shared_dense  = layers.Dense(self.d_model)
         self.shared_swiglu = SwiGLU()
 
-    def call(self, x, context=None):
+    def call(self, x, context=None, training=None):
         route_input = context if context is not None else x
         if len(ops.shape(route_input)) == 2:
             route_input = ops.repeat(
@@ -354,7 +366,7 @@ class GatedMoE(layers.Layer):
 
         # Weighted average of active expert outputs before SwiGLU
         weighted_inputs = ops.sum(expert_outputs * ops.expand_dims(top_k_weights, axis=-1), axis=2)
-        routed_out = self.swiglu(weighted_inputs)
+        routed_out = self.expert_dropout(self.swiglu(weighted_inputs), training=training)
 
         # Shared expert path — always active, adds common-pattern capacity
         # that doesn't have to compete for routing gradient.
@@ -381,7 +393,8 @@ class GatedMoE(layers.Layer):
 
     def get_config(self):
         config = super().get_config()
-        config.update({"d_model": self.d_model, "n_experts": self.n_experts})
+        config.update({"d_model": self.d_model, "n_experts": self.n_experts,
+                        "expert_dropout_rate": self.expert_dropout_rate})
         return config
 
 
@@ -403,7 +416,13 @@ class HydraBlock(layers.Layer):
         self.tq      = TurboQuant(d_model=self.d_model)
         self.swiglu  = SwiGLU()
         self.norm2   = RMSNorm()
-        self.moe     = GatedMoE(d_model=self.d_model, n_experts=32)
+        # Routed/sparse expert capacity gets a HIGHER dropout than the
+        # block's own dense-layer rate (~1.5x, capped at 0.5) - standard
+        # practice for MoE architectures, since each expert only ever sees a
+        # fraction of tokens and is more prone to overfitting than the
+        # always-active dense/shared paths around it.
+        self.moe     = GatedMoE(d_model=self.d_model, n_experts=32,
+                                 expert_dropout_rate=min(0.5, self.dropout_rate * 1.5))
         self.dropout = layers.Dropout(self.dropout_rate)
 
     def call(self, x, training=None, context=None):
@@ -412,7 +431,7 @@ class HydraBlock(layers.Layer):
         x = x + self.swiglu(attn_out)
 
         # MoE path with dropout regularization
-        moe_out, consensus = self.moe(self.norm2(x), context=context)
+        moe_out, consensus = self.moe(self.norm2(x), context=context, training=training)
         x = x + self.dropout(moe_out, training=training)
 
         return x, consensus
@@ -637,40 +656,16 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
         inputs, [preds, avg_consensus, reasoning, next_candle],
         name="sovereign_kraken_equity_v1")
 
-    # Linear warmup (500 steps) into Cosine Decay LR: 1e-4 -> 1e-5 over 10,000 steps.
-    # Research on training transformers from scratch typically finds 1e-4 to 5e-4
-    # effective; the previous 5e-6 was 20-100x below that range and produced the
-    # "near-horizontal, noise-dominated" progress that's the textbook symptom of
-    # too-low a learning rate. Warmup + Pre-Norm + gradient clipping (clipnorm,
-    # set at compile time below) are the existing stability guards that make this
-    # increase safe despite MoE routing's known early-training sensitivity.
-    lr_schedule = WarmupCosineDecay(
-        initial_learning_rate=1e-4,
-        decay_steps=10000,
-        warmup_steps=500,
-        alpha=0.1   # floor = 1e-5
-    )
-
-    model.compile(
-        optimizer=keras.optimizers.AdamW(
-            learning_rate=lr_schedule,
-            weight_decay=0.05,  # raised from 0.01 — train/val gap showed real overfitting signal
-            clipnorm=1.0       # raised from 0.5 — that value was calibrated for the old 5e-6 LR;
-                               # left unchanged after the 20x LR increase, it would clip far more
-                               # aggressively than intended and quietly cap the larger steps the
-                               # LR fix was meant to enable. 1.0 sits at the low end of the
-                               # standard 1.0-5.0 range for gradient-clip thresholds.
-        ),
-        loss={
-            "prediction": SovereignLoss(direction_weight=3.0),
-            "certainty":  certainty_loss,
-            "reasoning":  SovereignReasoningLoss(label_smoothing=0.1),
-            "next_candle": keras.losses.SparseCategoricalCrossentropy(),
-        },
-        loss_weights={"prediction": 6.0, "certainty": 1.0, "reasoning": 1.0, "next_candle": 1.0},
-        metrics={
-            "prediction": [SovereignAccuracy()],
-            "certainty":  [CertaintyMetric()],
-        }
-    )
+    # Deliberately UNCOMPILED here. train.py's _compile_hydra() is the one real
+    # compile step for both the pretrain and fine-tune phases (LR schedule,
+    # class-weighted reasoning loss, loss_weights - all tuned per-phase there).
+    # An earlier version of this function also called model.compile() with
+    # its own, different hyperparameters (a fixed 1e-4/10,000-step schedule,
+    # unweighted reasoning loss, next_candle loss_weight 1.0 vs train.py's
+    # 0.5) - since train.py always immediately recompiles anyway, that block
+    # was dead code that just documented a stale, inconsistent config anyone
+    # reading this file could mistake for what's actually used. Removed
+    # rather than fixed in place, so there's exactly one source of truth for
+    # how this model is compiled. Inference-only callers (ml_strategy.py,
+    # tests) don't need a compiled model either - only .fit()/.evaluate() do.
     return model

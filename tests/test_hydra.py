@@ -66,3 +66,13 @@ def test_hydra_block_attention_dropout_matches_block_dropout(tiny_model):
     for layer in tiny_model.layers:
         if hasattr(layer, "attn") and hasattr(layer, "dropout_rate"):
             assert layer.attn.dropout_rate == layer.dropout_rate
+
+
+def test_moe_expert_dropout_is_higher_than_block_dropout(tiny_model):
+    # MoE's routed/sparse expert path should get a HIGHER dropout than the
+    # block's own dense-layer rate (standard practice - sparse capacity is
+    # more overfitting-prone since each expert only sees a fraction of
+    # tokens), not silently share the same rate or default to 0.
+    for layer in tiny_model.layers:
+        if hasattr(layer, "moe") and hasattr(layer, "dropout_rate"):
+            assert layer.moe.expert_dropout_rate > layer.dropout_rate

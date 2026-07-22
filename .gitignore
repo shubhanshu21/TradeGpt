@@ -51,3 +51,6 @@ tensorboard/
 .ipynb_checkpoints/
 *.swp
 *.swo
+
+# 🤖 Claude Code project instructions (local guidance, not shared via git)
+CLAUDE.md

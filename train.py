@@ -165,7 +165,18 @@ def train_kraken(args):
 def _compute_class_weights(ds_info):
     label_counts = np.maximum(ds_info["label_counts"], 1)
     total = label_counts.sum()
-    class_weights = {i: min(total / (4 * label_counts[i]), 5.0) for i in range(4)}
+    # Cap at 3.0, not 5.0. NOISE is real-data-verified extremely rare
+    # (~0.3% of pooled training windows) - its RAW inverse-frequency weight
+    # would be ~87x before any cap. Even the previous 5x cap meant roughly
+    # 1 in 11 batches contained a single NOISE window whose loss got
+    # amplified 5x relative to everything else in that batch - a real
+    # source of high-variance gradient updates. High-variance gradients are
+    # a known contributor to poor generalization (the optimizer gets
+    # yanked around by rare, heavily-weighted examples instead of settling
+    # into a stable minimum), and this was live during the run where
+    # validation accuracy declined while training accuracy climbed - a
+    # plausible contributor worth taming, on top of the LR schedule fix.
+    class_weights = {i: min(total / (4 * label_counts[i]), 3.0) for i in range(4)}
     print(f"   ⚖️  Class weights: Long={class_weights[0]:.2f} Short={class_weights[1]:.2f} "
           f"FeeTrap={class_weights[2]:.2f} Noise={class_weights[3]:.2f}")
     return class_weights

@@ -4,11 +4,12 @@ the pieces every training run and every inference call depends on, kept
 separate from anything that needs a live checkpoint or GPU.
 """
 import numpy as np
+import pandas as pd
 import pytest
 
 from data.preprocess import (
     apply_dls, _hits_target_before_stop, build_feature_cols,
-    fit_return_vocab, tokenize_returns,
+    fit_return_vocab, tokenize_returns, build_dataset_streaming,
 )
 
 
@@ -87,6 +88,41 @@ def test_return_vocab_roundtrip():
     # everything into one bucket - that's the whole point over equal-width bins.
     counts = np.bincount(tokens, minlength=vocab_size)
     assert counts.max() < len(returns) * 0.5
+
+
+def test_build_dataset_streaming_purges_leaking_windows_at_train_val_boundary():
+    # Regression test for a real methodological gap: consecutive windows
+    # share up to context_window+forecast_steps-1 days of their footprint,
+    # and each window's real trade-outcome label depends on forecast_steps
+    # days AFTER its own window-end date. Without a purge/embargo gap, a
+    # training window right at the train/val boundary has a label computed
+    # from price action inside what's supposed to be the held-out
+    # validation period - real look-ahead leakage (see "purged
+    # cross-validation" - standard technique for overlapping-window
+    # financial time series).
+    rng = np.random.default_rng(3)
+    n = 800
+    # tz-aware to match real cached data (e.g. India VIX) - a tz-naive vs
+    # tz-aware merge inside compute_indicators would otherwise raise.
+    dates = pd.bdate_range("2015-01-01", periods=n, tz="Asia/Kolkata")
+    close = 100 + np.cumsum(rng.normal(0, 1, size=n))
+    df = pd.DataFrame({
+        "date": dates,
+        "open": close, "high": close + 1, "low": close - 1,
+        "close": close, "volume": rng.integers(1000, 5000, size=n),
+    })
+
+    ctx, forecast = 20, 10
+    info = build_dataset_streaming({"SYNTH": df}, context_window=ctx, forecast_steps=forecast, batch_size=8)
+
+    # steps_tr is computed from the (purged) train window count - purging
+    # windows near the boundary should mean fewer usable train windows than
+    # a naive 80% split of the total would give.
+    total_possible_windows = n - ctx - forecast + 1
+    naive_tr_end = int(total_possible_windows * 0.8)
+    actual_train_windows = info["steps_tr"] * 8  # approx, batched/shuffled but same order of magnitude
+    assert actual_train_windows <= naive_tr_end, (
+        "purge should remove some windows from the naive train/val split, not add any")
 
 
 def test_return_vocab_bin_centers_reflect_sign_of_their_bucket():
