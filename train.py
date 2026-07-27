@@ -100,14 +100,19 @@ class EdgeTracker(keras.callbacks.Callback):
         self.n = max(1, n_val_samples)
         self.best_acc = 0.5
         self.best_epoch = 0
+        self.history = []   # raw per-epoch dicts, fed to training_diagnostics each epoch
         if not self.log_path.exists():
             with open(self.log_path, "w") as f:
                 f.write("epoch,val_dir_acc,ci_low_95,ci_high_95,significant_edge,"
-                        "epochs_since_best,val_loss,train_dir_acc\n")
+                        "epochs_since_best,val_loss,train_dir_acc,train_val_gap,"
+                        "overfitting_risk,lost_edge_risk,numerical_instability,not_learning_risk\n")
 
     def on_epoch_end(self, epoch, logs=None):
+        from core.training_diagnostics import annotate_training_health
+
         logs = logs or {}
         p = float(logs.get("val_prediction_dir_acc", 0.5))
+        train_acc = float(logs.get("prediction_dir_acc", 0.5))
 
         z = 1.959964  # 95% two-sided
         denom  = 1.0 + (z * z) / self.n
@@ -120,15 +125,37 @@ class EdgeTracker(keras.callbacks.Callback):
             self.best_acc, self.best_epoch = p, epoch + 1
         epochs_since_best = (epoch + 1) - self.best_epoch
 
+        self.history.append({
+            "val_dir_acc": p, "train_dir_acc": train_acc,
+            "epochs_since_best": epochs_since_best,
+            "val_loss": logs.get("val_loss", 0.0),
+            "significant_edge": significant,
+        })
+        # Real, multi-signal health check, not just eyeballing epoch-to-epoch
+        # numbers - see src/core/training_diagnostics.py. Recomputed over
+        # the FULL history each epoch (cheap at this scale) so train.py and
+        # the dashboard share one exact definition, not two that could drift.
+        annotated = annotate_training_health(self.history)[-1]
+        gap = annotated["train_val_gap"]
+        issues = annotated["issues"]
+
+        if issues:
+            print(f"\n🚨🚨🚨 TRAINING HEALTH WARNING: {'; '.join(issues)}. "
+                  f"The final model will still only keep the best epoch seen "
+                  f"(restore_best_weights=True), but this is worth a look if it "
+                  f"keeps going. 🚨🚨🚨")
+
         with open(self.log_path, "a") as f:
             f.write(f"{epoch+1},{p:.4f},{ci_low:.4f},{ci_high:.4f},{significant},"
                     f"{epochs_since_best},{logs.get('val_loss', 0.0):.4f},"
-                    f"{logs.get('prediction_dir_acc', 0.0):.4f}\n")
+                    f"{train_acc:.4f},{gap:.4f},{annotated['overfitting_risk']},"
+                    f"{annotated['lost_edge_risk']},{annotated['numerical_instability']},"
+                    f"{annotated['not_learning_risk']}\n")
 
         verdict = "✅ STATISTICALLY SIGNIFICANT EDGE" if significant else "— not significant yet (could be noise)"
         print(f"\n📐 EDGE CHECK | val_dir_acc={p*100:.2f}%  95% CI=[{ci_low*100:.2f}%, {ci_high*100:.2f}%]  "
               f"{verdict}  | best={self.best_acc*100:.2f}% @ epoch {self.best_epoch} "
-              f"({epochs_since_best} epochs since best)")
+              f"({epochs_since_best} epochs since best) | train-val gap: {gap*100:+.1f} pts")
 
 
 def train_kraken(args):

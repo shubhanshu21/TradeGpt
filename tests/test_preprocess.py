@@ -90,6 +90,42 @@ def test_return_vocab_roundtrip():
     assert counts.max() < len(returns) * 0.5
 
 
+def test_prediction_target_entry_matches_real_trade_entry_price():
+    # Regression test for a real, previously-unnoticed bug: the prediction
+    # head's "entry" reference (row 0 of its target) used to be TODAY's
+    # close (the context window's last day), while the real reasoning
+    # label's LONG/SHORT/FEE_TRAP/NOISE classification and the real
+    # trade-outcome walk both anchor on the ACTUAL entry day's close (one
+    # trading day later - "enter the day after the window ends"). Two model
+    # heads meant to AGREE on direction (see ml_strategy.py's multi-head
+    # gate) were being trained against direction measured from two
+    # different reference prices, a full day apart. This test builds one
+    # window by hand and confirms the prediction target's un-scaled index-0
+    # close exactly equals the real entry price used for the reasoning
+    # label - not just approximately, an exact match on the same raw value.
+    rng = np.random.default_rng(4)
+    n = 300
+    close = 100 + np.cumsum(rng.normal(0, 1, size=n))
+    ctx, forecast = 60, 20
+    features = build_feature_cols()
+    t_close = features.index("close")
+
+    arr = np.zeros((n, len(features)), dtype="float32")
+    arr[:, t_close] = close  # only the column this test actually checks matters
+
+    i = 50
+    x_raw = arr[i:i + ctx]
+    y_raw = arr[i + ctx: i + ctx + forecast + 1]
+    x_scaled, local_mean, local_std = apply_dls(x_raw)
+    y_scaled = np.clip((y_raw - local_mean) / local_std, -5.0, 5.0)
+
+    entry_idx = i + ctx
+    real_entry_price = arr[entry_idx, t_close]
+    y_row0_unscaled = y_scaled[0, t_close] * local_std[t_close] + local_mean[t_close]
+
+    assert np.isclose(real_entry_price, y_row0_unscaled, atol=1e-4)
+
+
 def test_build_dataset_streaming_purges_leaking_windows_at_train_val_boundary():
     # Regression test for a real methodological gap: consecutive windows
     # share up to context_window+forecast_steps-1 days of their footprint,

@@ -45,6 +45,7 @@ from data.preprocess import load_universe_from_cache  # noqa: E402
 from swing_backtest.engine import SwingBacktestEngine  # noqa: E402
 from swing_paper_trading.engine import SwingPaperTradingEngine  # noqa: E402
 from strategies.swing.ml_strategy import MLSwingStrategy  # noqa: E402
+from core.training_diagnostics import annotate_training_health  # noqa: E402
 
 REPORTS_DIR = ROOT / "reports" / "swing"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -186,7 +187,14 @@ def training_progress(symbol: str):
     if not path.exists():
         raise HTTPException(404, f"No training history yet for {symbol}.")
     df = pd.read_csv(path)
-    return df.to_dict(orient="records")
+    rows = df.to_dict(orient="records")
+    # Older edge_tracker CSVs (from before this health-check feature existed)
+    # won't have train_val_gap/overfitting_risk/etc. columns yet - annotate
+    # them here too so the dashboard works the same way regardless of which
+    # train.py version actually wrote the file.
+    if rows and "train_val_gap" not in rows[0]:
+        rows = annotate_training_health(rows)
+    return rows
 
 
 @app.get("/api/training/status")

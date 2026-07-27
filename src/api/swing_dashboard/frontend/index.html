@@ -196,10 +196,12 @@
         <button id="training-detail-close" class="secondary">Close</button>
       </div>
       <p class="subtitle" style="margin:-4px 0 14px;">"Accuracy" = how often the model correctly guesses whether a stock's price is about to go up or down. 50% is a pure coin flip; anything reliably above that is a real edge.</p>
+      <div id="training-health-warning" class="banner" style="display:none; border-color:var(--critical); background:rgba(208,59,59,0.08); color:var(--critical);"></div>
       <div class="stat-tiles">
         <div class="tile"><div class="label">Best accuracy so far</div><div class="value" id="training-best-acc">-</div></div>
         <div class="tile"><div class="label">Training rounds so far</div><div class="value" id="training-epoch-count">-</div></div>
         <div class="tile"><div class="label">Better than a coin flip?</div><div class="value" id="training-significant">-</div></div>
+        <div class="tile"><div class="label">Training vs. validation gap</div><div class="value" id="training-gap">-</div></div>
       </div>
       <canvas id="training-canvas" style="width:100%;height:260px;display:block;"></canvas>
       <div class="legend" style="margin-top:8px;">
@@ -494,6 +496,28 @@ async function showTrainingDetail(symbol, silentRefresh) {
   const sigEl = document.getElementById("training-significant");
   sigEl.textContent = last.significant_edge ? "Yes" : "Not yet";
   sigEl.className = "value " + (last.significant_edge ? "good" : "");
+
+  const gapEl = document.getElementById("training-gap");
+  if (last.train_val_gap != null) {
+    const gapPct = last.train_val_gap * 100;
+    gapEl.textContent = `${gapPct >= 0 ? "+" : ""}${gapPct.toFixed(1)} pts`;
+    gapEl.className = "value " + (gapPct > 10 ? "bad" : "");
+  } else {
+    gapEl.textContent = "-";
+  }
+
+  const warnBox = document.getElementById("training-health-warning");
+  const reasons = [];
+  if (last.numerical_instability) reasons.push("Numerical instability (NaN/Inf loss) - something is genuinely broken, not just noise.");
+  if (last.overfitting_risk) reasons.push("Overfitting: training accuracy is pulling away from validation and has been for a few rounds in a row.");
+  if (last.lost_edge_risk) reasons.push("Lost its edge: validation accuracy has been at or below a coin flip for a few rounds in a row.");
+  if (last.not_learning_risk) reasons.push("Not learning: training accuracy has been stuck near a coin flip for a while - the model may not be finding any real signal.");
+  if (reasons.length) {
+    warnBox.style.display = "block";
+    warnBox.innerHTML = `<strong>⚠️ Training health warning</strong><br>${reasons.join("<br>")}`;
+  } else {
+    warnBox.style.display = "none";
+  }
 
   drawTrainingChart(rows);
 }
