@@ -355,8 +355,13 @@ def train_one_symbol(symbol: str, args):
         print(f"❌ No data loaded for {symbol}. Skipping."); return
 
     # ── 2. Single-symbol streaming dataset ───────────────────────────────────
+    # stride=1 (not the pooled pretrain phase's stride=5 default) - per-symbol
+    # data is already scarce (~5-6K windows), the whole reason pretrain+finetune
+    # exists instead of per-symbol-from-scratch; thinning it further here would
+    # cut into an already-limited fine-tune set for no benefit (this call's data
+    # isn't the pooled-window-redundancy problem the stride=5 default fixes).
     ds_info = build_dataset_streaming(data_by_symbol, context_window=CTX_WIN,
-                                       forecast_steps=FORECAST, batch_size=BATCH_S)
+                                       forecast_steps=FORECAST, batch_size=BATCH_S, stride=1)
     tr_ds   = ds_info["tr_ds"]
     va_ds   = ds_info["va_ds"]
     steps_tr = ds_info["steps_tr"]

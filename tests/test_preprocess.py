@@ -93,16 +93,26 @@ def test_return_vocab_roundtrip():
 def test_prediction_target_entry_matches_real_trade_entry_price():
     # Regression test for a real, previously-unnoticed bug: the prediction
     # head's "entry" reference (row 0 of its target) used to be TODAY's
-    # close (the context window's last day), while the real reasoning
-    # label's LONG/SHORT/FEE_TRAP/NOISE classification and the real
-    # trade-outcome walk both anchor on the ACTUAL entry day's close (one
-    # trading day later - "enter the day after the window ends"). Two model
-    # heads meant to AGREE on direction (see ml_strategy.py's multi-head
-    # gate) were being trained against direction measured from two
-    # different reference prices, a full day apart. This test builds one
-    # window by hand and confirms the prediction target's un-scaled index-0
-    # close exactly equals the real entry price used for the reasoning
-    # label - not just approximately, an exact match on the same raw value.
+    # close (the context window's last day), while the real reasoning label
+    # anchors on the ACTUAL entry day (one trading day later - "enter the
+    # day after the window ends"), not today. Two model heads meant to
+    # AGREE on direction (see ml_strategy.py's multi-head gate) were being
+    # trained against direction measured a full day apart. This test builds
+    # one window by hand and confirms the prediction target's un-scaled
+    # index-0 close is now anchored on the real entry DAY (entry_idx), not
+    # the day before it.
+    #
+    # NOTE: the reasoning label's own entry PRICE was separately found to
+    # use the entry day's close where it should use its open (see
+    # test_reasoning_label_entry_price_uses_real_backtest_fill_price below,
+    # matching swing_backtest/engine.py's actual next-day-OPEN fill) - so a
+    # small same-day open-vs-close residual now exists between what this
+    # test checks (prediction head, close) and the reasoning label (open).
+    # That's a deliberately smaller, accepted gap versus the full-day
+    # mismatch this test guards against - fixing it fully would mean
+    # changing which OHLC channel backs the model's primary "direction"
+    # channel everywhere (loss, metrics, inference decoding), a much larger
+    # change than the entry-DAY alignment this test is about.
     rng = np.random.default_rng(4)
     n = 300
     close = 100 + np.cumsum(rng.normal(0, 1, size=n))
@@ -124,6 +134,75 @@ def test_prediction_target_entry_matches_real_trade_entry_price():
     y_row0_unscaled = y_scaled[0, t_close] * local_std[t_close] + local_mean[t_close]
 
     assert np.isclose(real_entry_price, y_row0_unscaled, atol=1e-4)
+
+
+def test_reasoning_label_entry_price_uses_real_backtest_fill_price():
+    # Regression test for a real bug found by reading swing_backtest/
+    # engine.py directly rather than trusting a comment: the comment right
+    # above build_dataset_streaming's entry_price line always claimed
+    # "matching swing_backtest/engine.py's next-day-open fill", but the
+    # code read the entry day's CLOSE, not its OPEN. engine.py's real fill
+    # code is `price = entry_row["open"]` - confirmed directly. Every
+    # reasoning label (LONG/SHORT/FEE_TRAP/NOISE) was classified against a
+    # price the real backtest/live engine never actually pays. Verified
+    # on real HDFCBANK data this isn't rounding-error-sized: one sampled
+    # window showed a ~0.7% overnight open-vs-close gap, a meaningful
+    # fraction of the 5%/10% stop/target thresholds.
+    #
+    # This test builds a window where open and close on the entry day are
+    # DELIBERATELY far apart, runs it through the real build_dataset_streaming
+    # pipeline, and confirms the resulting LONG/SHORT/FEE_TRAP/NOISE label
+    # is the one implied by the entry day's OPEN, not its CLOSE - a
+    # black-box check of the real code path, not a hand-rolled bypass.
+    rng = np.random.default_rng(5)
+    n = 200
+    ctx, forecast = 20, 5
+
+    dates = pd.bdate_range("2018-01-01", periods=n, tz="Asia/Kolkata")
+    close = np.full(n, 100.0)
+    open_ = np.full(n, 100.0)
+    high = np.full(n, 100.5)
+    low = np.full(n, 99.5)
+
+    entry_idx = ctx  # first usable window (i=0) enters here
+    # Entry day gaps DOWN hard at the open, then closes back near 100 -
+    # and the whole forecast window that follows stays pinned near the
+    # OPEN price, not the close. Using open (correct) as entry should
+    # classify as a real LONG (a sustained ~8% move up from a low entry
+    # that clears target-before-stop); using close (the bug) as entry
+    # would see almost no real move exists from the true close.
+    open_[entry_idx] = 92.0
+    close[entry_idx] = 100.0
+    high[entry_idx] = 100.2
+    low[entry_idx] = 91.5
+    # high_path/low_path in the real code are data[entry_idx:entry_idx+forecast]
+    # - INCLUDING the entry day itself as day 0, not starting the day after -
+    # so the target must clear within entry_idx .. entry_idx+forecast-1.
+    for k in range(1, forecast + 1):
+        open_[entry_idx + k] = 99.5 + k * 0.4
+        close[entry_idx + k] = 99.5 + k * 0.4
+        high[entry_idx + k] = 99.5 + k * 0.4 + 0.3   # clears 92*1.10=101.2 by day entry_idx+4
+        low[entry_idx + k] = 99.5 + k * 0.4 - 0.3
+
+    df = pd.DataFrame({
+        "date": dates, "open": open_, "high": high, "low": low,
+        "close": close, "volume": np.full(n, 10000),
+    })
+
+    info = build_dataset_streaming({"SYNTH": df}, context_window=ctx, forecast_steps=forecast, batch_size=4)
+    # tr_ds is shuffled (both at build time and per-epoch), so scan every
+    # window rather than assuming order - every OTHER window in this
+    # synthetic set is perfectly flat (100/100.5/99.5, no real move), so a
+    # LONG classification can only come from the one deliberately-engineered
+    # window, wherever it landed after shuffling.
+    reasoning_labels = []
+    for _, yb in info["tr_ds"]:
+        reasoning_labels.extend(yb["reasoning"].numpy().ravel().tolist())
+
+    # 0 = LONG - only reachable if entry_price used the OPEN (92.0), where
+    # target (92*1.10=101.2) clears before any stop; using the CLOSE (100.0)
+    # would need a ~10% move from 100 that this synthetic path never makes.
+    assert 0 in reasoning_labels, f"expected a LONG (0) label somewhere; got labels {set(reasoning_labels)}"
 
 
 def test_build_dataset_streaming_purges_leaking_windows_at_train_val_boundary():
