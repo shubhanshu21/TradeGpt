@@ -310,6 +310,14 @@ def pretrain_base_model(args):
     print(f"   ✅ Pooled across {len(data_by_symbol)} symbols: {steps_tr} train steps/epoch | {steps_va} val steps")
 
     class_weights = _compute_class_weights(ds_info)
+    # vocab_size intentionally left at build_kraken's default (32), NOT this
+    # call's own fitted len(bin_centers) - the pretrained checkpoint's
+    # weights get loaded directly into every per-symbol fine-tune model
+    # (also built at the default), so the next_candle layer width must stay
+    # identical across pretrain and every fine-tune or that load_weights
+    # breaks. bin_edges/bin_centers are only needed to DECODE a predicted
+    # token back into an implied direction, at inference - never to resize
+    # the layer itself (see ml_strategy.py's loader, fixed alongside this).
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN, forecast_steps=FORECAST)
     _compile_hydra(model, class_weights, args.lr_decay_epochs, steps_tr,
                     learning_rate=1e-4, weight_decay=0.05)  # pooled data is much larger - the per-symbol 0.15 was specifically to fight per-symbol overfitting

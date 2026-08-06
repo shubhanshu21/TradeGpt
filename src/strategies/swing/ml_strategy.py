@@ -51,19 +51,24 @@ class MLSwingStrategy(SwingStrategy):
             shape = pickle.load(f)
 
         init_kraken_hardware()
-        # vocab_size isn't stored directly in model_shape.pkl, but
-        # len(bin_centers) IS the actual trained vocab size (fit_return_vocab
-        # can return fewer tokens than requested when quantile edges
-        # collapse - real, common, not rare: observed 31 instead of the
-        # requested 32 on real data during this session's own testing).
-        # Passing the wrong vocab_size here silently breaks load_weights
-        # with a shape mismatch the moment a symbol's real vocab != 32.
-        vocab_size = len(shape["bin_centers"]) if shape.get("bin_centers") is not None else 32
+        # vocab_size is intentionally NOT len(bin_centers) here. A real bug
+        # existed at this exact line: len(bin_centers) is the number of
+        # quantile bins fit_return_vocab's own vocabulary actually collapsed
+        # to (real, common, not rare: observed 31 instead of the requested
+        # 32 on real data), but train.py builds EVERY checkpoint's
+        # next_candle Dense layer at build_kraken's fixed default (32),
+        # deliberately never resized, specifically so the pretrained base's
+        # weights load cleanly into every per-symbol fine-tune regardless of
+        # that symbol's own vocab collapsing differently. Passing
+        # len(bin_centers) here breaks load_weights the moment a symbol's
+        # fitted vocab != 32 - the opposite of what the comment used to
+        # claim. bin_edges/bin_centers are only for DECODING a predicted
+        # token id back into an implied return, below - never for sizing
+        # this layer.
         model = build_kraken(
             n_features=shape["n_features"],
             context_window=shape["context_window"],
             forecast_steps=shape["forecast_steps"],
-            vocab_size=vocab_size,
         )
         model.load_weights(str(ckpt_path))
         self._models[symbol] = model
