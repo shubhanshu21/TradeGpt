@@ -23,7 +23,8 @@ dist/
 _agent/
 
 # 🌊 Data Abyss (Never track datasets)
-data/
+/data/
+/cache/
 *.parquet
 *.csv
 *.tfrecord
