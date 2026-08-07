@@ -101,7 +101,8 @@ class EdgeTracker(keras.callbacks.Callback):
         self.best_acc = 0.5
         self.best_epoch = 0
         self.history = []   # raw per-epoch dicts, fed to training_diagnostics each epoch
-        if not self.log_path.exists():
+        needs_header = not self.log_path.exists() or self.log_path.stat().st_size == 0
+        if needs_header:
             with open(self.log_path, "w") as f:
                 f.write("epoch,val_dir_acc,ci_low_95,ci_high_95,significant_edge,"
                         "epochs_since_best,val_loss,train_dir_acc,train_val_gap,"
