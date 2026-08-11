@@ -98,12 +98,26 @@ def process_file(path: Path) -> dict:
     for symbol, group in groups:
         symbol = str(symbol).strip().upper()
         out = group[["date", "open", "high", "low", "close", "volume"]].copy()
-        out = out.sort_values("date").drop_duplicates(subset="date")
+
+        # Drop rows with missing/non-positive OHLC or a high/low that can't
+        # be real (high below low, or either outside the day's open/close
+        # range) - malformed source rows shouldn't silently reach training.
+        ohlc = ["open", "high", "low", "close"]
+        n_before = len(out)
+        out = out.dropna(subset=ohlc + ["date"])
+        out = out[(out[ohlc] > 0).all(axis=1) & (out["high"] >= out["low"])]
+        if len(out) < n_before:
+            print(f"  {symbol}: dropped {n_before - len(out)} malformed row(s)")
+
+        out = out.sort_values("date").drop_duplicates(subset="date", keep="last")
 
         out_path = OUT_DIR / f"{symbol}.csv"
         if out_path.exists():
             existing = pd.read_csv(out_path, parse_dates=["date"])
-            out = pd.concat([existing, out]).drop_duplicates(subset="date").sort_values("date")
+            # keep="last" so a re-import with corrected data for a date
+            # already cached actually overwrites the old value, instead of
+            # "first import wins" silently keeping stale/wrong numbers.
+            out = pd.concat([existing, out]).sort_values("date").drop_duplicates(subset="date", keep="last")
         out.to_csv(out_path, index=False)
         counts[symbol] = len(out)
     return counts

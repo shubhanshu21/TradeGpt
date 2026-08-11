@@ -26,9 +26,10 @@ def load_config():
         return yaml.safe_load(f)
 
 
-def fetch_symbol(broker, symbol: str, interval: str, start: datetime, end: datetime) -> pd.DataFrame:
+def fetch_symbol(broker, symbol: str, interval: str, start: datetime, end: datetime,
+                  force_refresh: bool = False) -> pd.DataFrame:
     cache_file = CACHE_DIR / f"{broker.name}_{symbol}_{interval}_{start.date()}_{end.date()}.csv"
-    if cache_file.exists():
+    if cache_file.exists() and not force_refresh:
         return pd.read_csv(cache_file, parse_dates=["date"])
 
     df = broker.historical_candles(symbol, interval, start, end)
@@ -58,14 +59,16 @@ def fetch_universe_swing(force_refresh: bool = False) -> dict:
     benchmark_symbols = ["NIFTY", "INDIA VIX"]
     symbols = cfg["universe"]["symbols"] + benchmark_symbols
 
-    if force_refresh:
-        for f in CACHE_DIR.glob(f"{broker.name}_*.csv"):
-            f.unlink()
-
     data = {}
     for symbol in symbols:
         print(f"Fetching {symbol} via {broker.name} ({interval}, {start.date()} -> {end.date()})...")
-        df = fetch_symbol(broker, symbol, interval, start, end)
+        try:
+            df = fetch_symbol(broker, symbol, interval, start, end, force_refresh=force_refresh)
+        except Exception as e:
+            # One symbol's transient API failure shouldn't abort the whole
+            # universe fetch - log and move on, same as the empty-df case.
+            print(f"  WARNING: fetch failed for {symbol} ({e}), skipping")
+            continue
         if df.empty:
             print(f"  WARNING: no data returned for {symbol}, skipping")
             continue

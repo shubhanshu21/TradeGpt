@@ -222,9 +222,19 @@ class MLSwingStrategy(SwingStrategy):
 
         bin_centers = self._shapes[symbol].get("bin_centers")
         next_day_pct = None
+        reasoning_dir_signed = 1 if reasoning_cls == 0 else -1
+        next_candle_dir = reasoning_dir_signed
         if bin_centers is not None and len(bin_centers) > 0:
             next_tok_id = int(np.clip(np.argmax(next_candle), 0, len(bin_centers) - 1))
             next_day_pct = round(float(bin_centers[next_tok_id]) * 100, 2)
+            next_candle_return = bin_centers[next_tok_id]
+            next_candle_dir = 1 if next_candle_return > 0 else (-1 if next_candle_return < 0 else 0)
+
+        # Same multi-head agreement gate generate_signals() uses (certainty,
+        # reasoning class, price-trajectory direction, next-candle direction)
+        # - this dashboard field must not claim "tradeable" on weaker evidence
+        # than what actually fires a real signal.
+        price_dir = 1 if expected_move_pct > 0 else (-1 if expected_move_pct < 0 else 0)
 
         # Candlestick patterns detected on the most recent real candle only.
         last_row = df_feat.iloc[-1]
@@ -256,7 +266,12 @@ class MLSwingStrategy(SwingStrategy):
             "signal_label": signal_label,
             "signal_explanation": signal_explanation,
             "certainty_pct": round(certainty * 100, 1),
-            "meets_trade_threshold": bool(certainty >= self.cert_threshold and reasoning_cls in (0, 1)),
+            "meets_trade_threshold": bool(
+                certainty >= self.cert_threshold
+                and reasoning_cls in (0, 1)
+                and price_dir == reasoning_dir_signed
+                and next_candle_dir == reasoning_dir_signed
+            ),
             "expected_move_over_holding_period_pct": round(expected_move_pct, 2),
             "next_day_expected_move_pct": next_day_pct,
             "candlestick_patterns": patterns_detected[:6],

@@ -186,7 +186,14 @@ def training_progress(symbol: str):
     path = LOG_DIR / f"edge_tracker_{symbol}.csv"
     if not path.exists():
         raise HTTPException(404, f"No training history yet for {symbol}.")
-    df = pd.read_csv(path)
+    try:
+        # This file is actively appended to, one line per epoch, by a live
+        # training run's EdgeTracker callback - a poll landing mid-write of
+        # the newest line can hand pandas a ragged row. Drop just that
+        # trailing partial row rather than 500ing the whole request.
+        df = pd.read_csv(path)
+    except pd.errors.ParserError:
+        df = pd.read_csv(path, on_bad_lines="skip", engine="python")
     rows = df.to_dict(orient="records")
     # Older edge_tracker CSVs (from before this health-check feature existed)
     # won't have train_val_gap/overfitting_risk/etc. columns yet - annotate
@@ -215,7 +222,10 @@ def training_status():
         edge_path = LOG_DIR / f"edge_tracker_{symbol}.csv"
         epochs_logged, best_val_acc, best_epoch, significant_edge, last_val_acc = 0, None, None, False, None
         if edge_path.exists():
-            df = pd.read_csv(edge_path)
+            try:
+                df = pd.read_csv(edge_path)
+            except pd.errors.ParserError:
+                df = pd.read_csv(edge_path, on_bad_lines="skip", engine="python")
             if len(df):
                 epochs_logged = len(df)
                 best_row = df.loc[df["val_dir_acc"].idxmax()]

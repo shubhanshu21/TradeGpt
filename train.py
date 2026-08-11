@@ -426,7 +426,12 @@ def train_one_symbol(symbol: str, args):
     # training from scratch would - standard transfer-learning practice, so
     # this phase adjusts what the base already learned instead of overwriting
     # it with the higher LR that made sense for random-init training.
-    learning_rate = args.finetune_lr if (not resumed_from_symbol_ckpt and not args.skip_pretrain and PRETRAIN_CKPT.exists()) else 1e-4
+    # NOTE: this must NOT exclude resumed_from_symbol_ckpt - a resumed
+    # fine-tune run is still a fine-tune, and recompiling it at the higher
+    # from-scratch/pretrain LR here would destabilize weights that were
+    # already being gently adjusted at finetune_lr (a real bug found once:
+    # resuming a symbol's own checkpoint silently jumped LR 3e-5 -> 1e-4).
+    learning_rate = args.finetune_lr if (not args.skip_pretrain and PRETRAIN_CKPT.exists()) else 1e-4
     print(f"   ⚖️  Recompiling model with custom weighted categorical crossentropy (lr={learning_rate})...")
     _compile_hydra(model, class_weights, args.lr_decay_epochs, steps_tr,
                     learning_rate=learning_rate, weight_decay=0.15)
@@ -467,6 +472,11 @@ def train_one_symbol(symbol: str, args):
         except Exception as e:
             print(f"   ⚠️ Could not parse epoch from filename: {e}")
             current_epoch = len(saved)
+    elif args.resume and resumed_from_symbol_ckpt:
+        print(f"   ⚠️ Resumed from {ckpt_name} but no numbered checkpoint files exist to "
+              f"recover the epoch count from - EarlyStopping's patience/best-epoch "
+              f"tracking starts fresh from epoch 0, even though the loaded weights "
+              f"are already trained.")
 
     model.fit(
         tr_ds,
