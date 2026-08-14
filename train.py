@@ -320,17 +320,14 @@ def pretrain_base_model(args):
     # token back into an implied direction, at inference - never to resize
     # the layer itself (see ml_strategy.py's loader, fixed alongside this).
     model = build_kraken(n_features=n_feat, context_window=CTX_WIN, forecast_steps=FORECAST)
-    # weight_decay was 0.05 here on the assumption that pooled data being
-    # much larger than any one symbol's ~5,000 windows would fight
-    # overfitting on its own - real training_diagnostics data proved that
-    # wrong (train_dir_acc raced past 70% by epoch 24 while val_dir_acc
-    # stayed flat ~52-53%, overfitting_risk tripping True repeatedly): the
-    # pooled set's raw window count overstates its true effective sample
-    # size (CLAUDE.md's documented non-i.i.d. stock co-movement caveat), so
-    # a ~7.3M-param model still needs real regularization pressure here, not
-    # less than fine-tune gets. Matched to fine-tune's 0.15.
+    # weight_decay bumped to 0.15 here once, on the theory pretrain was
+    # under-regularized relative to fine-tune - real data showed almost no
+    # effect (same overfitting shape/epoch-to-collapse/val ceiling at 0.05
+    # and 0.15). The actual mechanism turned out to be a missing dropout
+    # call on HydraBlock's SwiGLU branch (src/core/hydra.py), now fixed -
+    # reverted back to 0.05 here so that fix gets a clean, isolated read.
     _compile_hydra(model, class_weights, args.lr_decay_epochs, steps_tr,
-                    learning_rate=1e-4, weight_decay=0.15)
+                    learning_rate=1e-4, weight_decay=0.05)
 
     callbacks = [
         keras.callbacks.ModelCheckpoint(

@@ -402,7 +402,9 @@ class GatedMoE(layers.Layer):
 class HydraBlock(layers.Layer):
     """
     V10.7 HydraBlock: MLA + TurboQuant + SwiGLU + MoE + Dropout.
-    Dropout(0.1) added after MoE output to prevent expert memorization.
+    Dropout applied after BOTH the SwiGLU branch and the MoE output -
+    SwiGLU is the largest always-active capacity block (every token, every
+    layer) and needs its own regularization, not just the sparse MoE path.
     """
     def __init__(self, d_model=128, n_heads=8, dropout_rate=0.15, **kwargs):
         super().__init__(**kwargs)
@@ -426,9 +428,17 @@ class HydraBlock(layers.Layer):
         self.dropout = layers.Dropout(self.dropout_rate)
 
     def call(self, x, training=None, context=None):
-        # Attention path with TurboQuant stabilization
+        # Attention path with TurboQuant stabilization. SwiGLU's output was
+        # previously added to the residual stream with NO dropout at all -
+        # unlike the MoE branch below, it's always-active (every token,
+        # every layer, 8 layers deep) and was the largest unregularized
+        # capacity block in the model, a real contributor to fast
+        # overfitting that weight_decay alone couldn't reach (found via
+        # real training data: train_dir_acc racing past 70% while val
+        # stayed flat ~52-53%, unchanged whether weight_decay was 0.05 or
+        # 0.15 - the missing dropout here, not weight_decay, was the lever).
         attn_out = self.tq(self.attn(self.norm1(x), training=training))
-        x = x + self.swiglu(attn_out)
+        x = x + self.dropout(self.swiglu(attn_out), training=training)
 
         # MoE path with dropout regularization
         moe_out, consensus = self.moe(self.norm2(x), context=context, training=training)
