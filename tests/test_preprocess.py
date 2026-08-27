@@ -189,7 +189,8 @@ def test_reasoning_label_entry_price_uses_real_backtest_fill_price():
         "close": close, "volume": np.full(n, 10000),
     })
 
-    info = build_dataset_streaming({"SYNTH": df}, context_window=ctx, forecast_steps=forecast, batch_size=4)
+    info = build_dataset_streaming({"SYNTH": df}, context_window=ctx, forecast_steps=forecast,
+                                    batch_size=4, burn_in_days=0)
     # tr_ds is shuffled (both at build time and per-epoch), so scan every
     # window rather than assuming order - every OTHER window in this
     # synthetic set is perfectly flat (100/100.5/99.5, no real move), so a
@@ -228,7 +229,8 @@ def test_build_dataset_streaming_purges_leaking_windows_at_train_val_boundary():
     })
 
     ctx, forecast = 20, 10
-    info = build_dataset_streaming({"SYNTH": df}, context_window=ctx, forecast_steps=forecast, batch_size=8)
+    info = build_dataset_streaming({"SYNTH": df}, context_window=ctx, forecast_steps=forecast,
+                                    batch_size=8, burn_in_days=0)
 
     # steps_tr is computed from the (purged) train window count - purging
     # windows near the boundary should mean fewer usable train windows than

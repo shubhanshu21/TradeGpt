@@ -423,7 +423,11 @@ class HydraBlock(layers.Layer):
         # practice for MoE architectures, since each expert only ever sees a
         # fraction of tokens and is more prone to overfitting than the
         # always-active dense/shared paths around it.
-        self.moe     = GatedMoE(d_model=self.d_model, n_experts=32,
+        # n_experts lowered 32 -> 8 alongside the 8x -> 4x block count
+        # reduction above - GatedMoE's entropy_coef auto-rescales from
+        # n_experts (log(n_experts)/log(256)), so this stays correctly
+        # calibrated without a separate change there.
+        self.moe     = GatedMoE(d_model=self.d_model, n_experts=8,
                                  expert_dropout_rate=min(0.5, self.dropout_rate * 1.5))
         self.dropout = layers.Dropout(self.dropout_rate)
 
@@ -530,12 +534,17 @@ class SovereignReasoningLoss(keras.losses.Loss):
 @keras.saving.register_keras_serializable(package="KAT")
 def certainty_loss(y_true, y_pred):
     """
-    Train certainty head to predict profitable (1.0) vs unprofitable (0.0) setups.
-    y_pred: (B, T) per-timestep consensus from HydraBlocks
+    Trains certainty (reasoning's own max-softmax confidence, see
+    build_kraken) to be high specifically on real LONG/SHORT setups and low
+    on FEE_TRAP/NOISE - not a separate learned head, so this loss's real
+    effect is pushing gradient back into reasoning's own logits: sharpen
+    the distribution (more confident) when the window is a genuine
+    trade, flatten it (less confident) when it isn't.
+    y_pred: (B,) reasoning's max-softmax value per window
     y_true: (B, 1) binary target — 1.0 if LONG/SHORT, 0.0 if FEE_TRAP/NOISE
     """
-    pred_mean = ops.mean(y_pred, axis=-1, keepdims=True)  # (B, 1)
-    return keras.losses.binary_crossentropy(y_true, pred_mean)
+    pred = ops.reshape(y_pred, (-1, 1))  # (B, 1) to match y_true
+    return keras.losses.binary_crossentropy(y_true, pred)
 
 
 @keras.saving.register_keras_serializable(package="KAT")
@@ -623,22 +632,18 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     x = layers.GaussianNoise(noise_stddev)(inputs)
     x = RMSNorm()(layers.Dense(128)(x))
 
-    # 8x HydraBlock with dropout
-    all_consensus = []
-    for i in range(8):
-        x, c = HydraBlock(d_model=128, n_heads=8,
+    # 4x HydraBlock with dropout - was 8x. Six independent, real fixes
+    # (weight_decay, missing SwiGLU dropout, a feature leak, degenerate
+    # early-history features, an LR schedule that froze too early, and a
+    # ruled-out dropout-during-eval check) all left val_dir_acc capped in
+    # the same ~53-55% band across BOTH pooled pretrain (30K windows) and
+    # single-symbol fine-tune (~4K windows) - a pattern much more
+    # consistent with the model being oversized for the actual data
+    # (~7.3M params, 8 layers x 32 experts each) than with one remaining
+    # hidden bug. Halved here as a direct test of that theory.
+    for i in range(4):
+        x, _ = HydraBlock(d_model=128, n_heads=8,
                           dropout_rate=dropout_rate, name=f"hydra_{i}")(x)
-        all_consensus.append(c)
-
-    # Consensus aggregation — stack all 8 block signals then calibrate with a
-    # trainable Dense so certainty actually spans [0,1] instead of sitting at ~0.99
-    cert_stacked = layers.Concatenate(axis=-1)([
-        layers.Reshape((context_window, 1))(c) for c in all_consensus
-    ])  # (B, T, 8)
-    cert_calibrated = layers.Dense(
-        1, activation='sigmoid', name='certainty_calibrate')(cert_stacked)  # (B, T, 1)
-    avg_consensus = layers.Reshape(
-        (context_window,), name='certainty')(cert_calibrated)  # (B, T)
 
     # Output heads - preserve dynamic temporal sequence ordering using last-token extraction
     normed_x  = RMSNorm()(x)
@@ -655,6 +660,26 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     # Label smoothing(0.1) on reasoning to prevent overconfidence
     reasoning = layers.Dense(4, activation="softmax", name="reasoning")(last_step)
 
+    # Certainty = the reasoning head's OWN max-softmax confidence (a
+    # standard, well-established confidence measure - not a new trainable
+    # head). Previously derived from MoE expert-routing agreement
+    # (per-block consensus, stacked + calibrated) - measured directly on a
+    # real 23-year NIFTYBEES history and found collapsed to a near-constant
+    # ~0.33 (matching the training label's ~31% LONG/SHORT base rate almost
+    # exactly - the textbook signature of a classifier that gave up
+    # discriminating and just learned the marginal probability), zeroing
+    # out every trade under ml_strategy.py's real gate despite the
+    # reasoning/price/next-candle signals all looking healthy. MoE-routing
+    # agreement measures the model's own internal stability, not "is this
+    # a real trading opportunity" - reasoning's max-softmax is mathematically
+    # bounded to vary with how sharply reasoning discriminates (can't
+    # collapse the same way unless reasoning itself goes uniform, which
+    # would show up as a different, already-visible problem), and it's the
+    # semantically correct thing to call "certainty" for a gate that reads
+    # reasoning's own class call.
+    certainty = layers.Lambda(
+        lambda r: ops.max(r, axis=-1), name="certainty")(reasoning)
+
     # GPT-style next-candle token head: real next-token classification over
     # a quantile-binned return vocabulary (see preprocess.py's
     # fit_return_vocab/tokenize_returns) - single-step prediction of
@@ -663,7 +688,7 @@ def build_kraken(n_features=38, context_window=CONTEXT_WINDOW, forecast_steps=FO
     next_candle = layers.Dense(vocab_size, activation="softmax", name="next_candle")(last_step)
 
     model = keras.Model(
-        inputs, [preds, avg_consensus, reasoning, next_candle],
+        inputs, [preds, certainty, reasoning, next_candle],
         name="sovereign_kraken_equity_v1")
 
     # Deliberately UNCOMPILED here. train.py's _compile_hydra() is the one real

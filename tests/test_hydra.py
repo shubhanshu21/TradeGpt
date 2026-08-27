@@ -39,12 +39,17 @@ def test_build_kraken_single_input_output_shapes(tiny_model):
 
     # 6 channels: close, volatility, volume, open, high, low - a real full-candle forecast.
     assert preds.shape == (BATCH, FORECAST + 1, 6)
-    assert certainty.shape == (BATCH, CONTEXT_WIN)
+    # certainty = reasoning's own max-softmax confidence (see build_kraken) -
+    # one value per window, not per-timestep (that was the old MoE-routing-
+    # consensus design, replaced after it was found to collapse to a near-
+    # constant output on real data).
+    assert certainty.shape == (BATCH,)
     assert reasoning.shape == (BATCH, 4)
     assert next_candle.shape == (BATCH, VOCAB_SIZE)
 
-    # certainty is sigmoid-calibrated, reasoning/next_candle are softmax — all bounded [0,1].
-    assert np.all(certainty.numpy() >= 0.0) and np.all(certainty.numpy() <= 1.0)
+    # certainty = max of a softmax distribution over 4 classes, so it's
+    # bounded to [0.25, 1.0], not the full [0,1] a sigmoid would allow.
+    assert np.all(certainty.numpy() >= 0.25) and np.all(certainty.numpy() <= 1.0)
     np.testing.assert_allclose(reasoning.numpy().sum(axis=-1), 1.0, atol=1e-5)
     np.testing.assert_allclose(next_candle.numpy().sum(axis=-1), 1.0, atol=1e-5)
 

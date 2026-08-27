@@ -124,7 +124,10 @@ class MLSwingStrategy(SwingStrategy):
         reasoning = np.concatenate(all_reason, axis=0)
         next_candle = np.concatenate(all_next_tok, axis=0)
 
-        cert = certainty.mean(axis=1)                       # (n_windows,)
+        # certainty is now reasoning's own max-softmax confidence - already
+        # one value per window (no per-timestep dimension left to average
+        # over, unlike the old MoE-consensus-based signal this replaced).
+        cert = certainty                                    # (n_windows,)
         reasoning_cls = np.argmax(reasoning, axis=1)         # 0=LONG 1=SHORT 2=FEE_TRAP 3=NOISE
         mean_move = pred[:, 1:, 0].mean(axis=1) - pred[:, 0, 0]
         price_dir = np.where(mean_move > 0, 1, np.where(mean_move < 0, -1, 0))
@@ -199,7 +202,9 @@ class MLSwingStrategy(SwingStrategy):
 
         pred, certainty, reasoning, next_candle = model(batch, training=False)
         pred = pred.numpy()[0]                          # (forecast_steps+1, 6)
-        certainty = float(certainty.numpy()[0].mean())
+        # certainty is reasoning's own max-softmax confidence - already a
+        # single value per window, no time dimension left to average over.
+        certainty = float(certainty.numpy()[0])
         reasoning_probs = reasoning.numpy()[0]
         reasoning_cls = int(np.argmax(reasoning_probs))
         next_candle = next_candle.numpy()[0]

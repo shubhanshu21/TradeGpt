@@ -184,7 +184,12 @@ def compute_indicators(df: pd.DataFrame, benchmark_df: pd.DataFrame = None,
         bench['date'] = pd.to_datetime(bench['date'])
         bench = bench.rename(columns={'close': 'bench_close'})
         df = df.merge(bench, on='date', how='left')
-        df['bench_close'] = df['bench_close'].ffill().bfill()
+        # ffill only - bfill would pull a FUTURE benchmark value backward
+        # into any row still NaN (only possible at a symbol's earliest
+        # dates, before the cached benchmark series starts), a real if minor
+        # leak. Leave those rows NaN here; the fillna(0) below zeroes them,
+        # same as the no-benchmark-data fallback path already does.
+        df['bench_close'] = df['bench_close'].ffill()
         bench_ret_20d = df['bench_close'].pct_change(20).fillna(0)
         df['rel_strength_20d'] = df['ret_20d'] - bench_ret_20d
         df = df.drop(columns=['bench_close'])
@@ -282,7 +287,7 @@ def compute_indicators(df: pd.DataFrame, benchmark_df: pd.DataFrame = None,
         vix['date'] = pd.to_datetime(vix['date'])
         vix = vix.rename(columns={'close': 'vix_close'})
         df = df.merge(vix, on='date', how='left')
-        df['vix_close'] = df['vix_close'].ffill().bfill()
+        df['vix_close'] = df['vix_close'].ffill()  # no bfill - see bench_close above
         vix_mean60 = df['vix_close'].rolling(60, min_periods=1).mean()
         vix_std60 = df['vix_close'].rolling(60, min_periods=1).std().fillna(1e-9).replace(0, 1e-9)
         df['vix_zscore_60d'] = ((df['vix_close'] - vix_mean60) / vix_std60).clip(-5, 5)
@@ -432,7 +437,8 @@ def _hits_target_before_stop(high_path, low_path, tp_price, sl_price, direction)
 
 
 def build_dataset_streaming(data_by_symbol: dict, context_window=CONTEXT_WINDOW,
-                             forecast_steps=FORECAST_STEPS, batch_size=32, stride=5):
+                             forecast_steps=FORECAST_STEPS, batch_size=32, stride=5,
+                             burn_in_days=252):
     """
     Builds a training set from {symbol: DataFrame} - typically just one
     symbol per call now (see train.py's per-symbol loop), but still handles
@@ -458,6 +464,15 @@ def build_dataset_streaming(data_by_symbol: dict, context_window=CONTEXT_WINDOW,
     Defaulting to stride=5 cuts window count ~5x but removes most of that
     redundancy, so a real epoch is closer to an actual pass over unique
     information instead of ~60 near-duplicate passes over the same data.
+
+    `burn_in_days` drops each symbol's earliest rows before windowing -
+    every rolling feature in compute_indicators() uses min_periods=1, so
+    without this, early rows get degenerate long-window statistics (e.g. a
+    "200-day SMA" from 5 real days) that are real but non-representative,
+    landing only on the train side (chronologically earliest) and giving
+    the model an easy, non-generalizing pattern to memorize. Default 252
+    covers the longest lookback used (sma200/high252/low252). Set to 0 for
+    small synthetic test data where warm-up realism isn't the point.
 
     Returns dict with: tr_ds, va_ds (tf.data.Dataset), steps_tr, steps_va,
     n_features, label_counts, vocab_size, bin_edges, bin_centers (the
@@ -487,8 +502,25 @@ def build_dataset_streaming(data_by_symbol: dict, context_window=CONTEXT_WINDOW,
               "(run fetch_historical.py, or ignore if that's expected)")
 
     print(f"   ⚓ Equity Data Engine: {len(data_by_symbol)} symbols → CTX={context_window} FORECAST={forecast_steps}")
+    # Longest lookback used by any feature in compute_indicators() (sma200,
+    # high252/low252) - every rolling call there uses min_periods=1, so
+    # rows before this many real days of history exist get a degenerate
+    # long-window statistic (e.g. a "200-day SMA" computed from 5 real
+    # days) instead of a genuine one. Those rows land only on the train
+    # side (chronologically earliest), giving the model an easy, fake,
+    # non-generalizing pattern to memorize - a real contributor to the
+    # train/val gap, found after two regularization fixes (weight_decay,
+    # SwiGLU dropout) failed to move it. Burn-in is dropped before
+    # windowing rather than patched per-indicator, so every feature gets a
+    # real lookback consistently.
     for symbol, raw_df in data_by_symbol.items():
         df_feat = compute_indicators(raw_df, benchmark_df=benchmark_df, vix_df=vix_df)
+        if burn_in_days > 0:
+            if len(df_feat) <= burn_in_days:
+                print(f"   ⚠️ {symbol}: not enough history ({len(df_feat)} rows) to clear the "
+                      f"{burn_in_days}-day feature burn-in period — skipping")
+                continue
+            df_feat = df_feat.iloc[burn_in_days:].reset_index(drop=True)
         data = df_feat[features].values.astype("float32")
         dates = df_feat["date"].values
         n = len(data)

@@ -106,7 +106,8 @@ class EdgeTracker(keras.callbacks.Callback):
             with open(self.log_path, "w") as f:
                 f.write("epoch,val_dir_acc,ci_low_95,ci_high_95,significant_edge,"
                         "epochs_since_best,val_loss,train_dir_acc,train_val_gap,"
-                        "overfitting_risk,lost_edge_risk,numerical_instability,not_learning_risk\n")
+                        "overfitting_risk,lost_edge_risk,numerical_instability,not_learning_risk,"
+                        "val_reasoning_acc,train_reasoning_acc\n")
 
     def on_epoch_end(self, epoch, logs=None):
         from core.training_diagnostics import annotate_training_health
@@ -114,6 +115,20 @@ class EdgeTracker(keras.callbacks.Callback):
         logs = logs or {}
         p = float(logs.get("val_prediction_dir_acc", 0.5))
         train_acc = float(logs.get("prediction_dir_acc", 0.5))
+        # reasoning_acc: the 4-way LONG/SHORT/FEE_TRAP/NOISE classification
+        # head's own accuracy - the head ml_strategy.py's real trading gate
+        # actually reads (alongside prediction's direction), previously
+        # tracked nowhere despite this whole investigation centering on
+        # prediction_dir_acc as if it were the only signal that mattered.
+        # Keras names multi-output metrics "{output}_{metric_name}" - since
+        # the metric's own name is "reasoning_acc" and the output is
+        # "reasoning", the real key is "reasoning_reasoning_acc" (confirmed
+        # directly against a live run's printed logs; matches the same
+        # doubled pattern already visible for certainty_certainty and
+        # next_candle_next_candle_acc). Reading "reasoning_acc" here was a
+        # real bug - it silently fell back to 0.0 every single epoch.
+        val_reasoning_acc = float(logs.get("val_reasoning_reasoning_acc", 0.0))
+        train_reasoning_acc = float(logs.get("reasoning_reasoning_acc", 0.0))
 
         z = 1.959964  # 95% two-sided
         denom  = 1.0 + (z * z) / self.n
@@ -151,7 +166,8 @@ class EdgeTracker(keras.callbacks.Callback):
                     f"{epochs_since_best},{logs.get('val_loss', 0.0):.4f},"
                     f"{train_acc:.4f},{gap:.4f},{annotated['overfitting_risk']},"
                     f"{annotated['lost_edge_risk']},{annotated['numerical_instability']},"
-                    f"{annotated['not_learning_risk']}\n")
+                    f"{annotated['not_learning_risk']},{val_reasoning_acc:.4f},"
+                    f"{train_reasoning_acc:.4f}\n")
 
         verdict = "✅ STATISTICALLY SIGNIFICANT EDGE" if significant else "— not significant yet (could be noise)"
         print(f"\n📐 EDGE CHECK | val_dir_acc={p*100:.2f}%  95% CI=[{ci_low*100:.2f}%, {ci_high*100:.2f}%]  "
@@ -258,7 +274,15 @@ def _compile_hydra(model, class_weights, lr_decay_epochs, steps_tr, learning_rat
             clipnorm=1.0
         ),
         loss={
-            "prediction": SovereignLoss(direction_weight=3.0),
+            # direction_weight was silently overridden to 3.0 here in an
+            # undocumented commit ("minor issues fixed", no rationale given,
+            # no test covering this value) - less than a third of
+            # SovereignLoss's own class default (10.0). This under-weights
+            # the exact directional signal prediction_dir_acc measures
+            # (the metric this whole overfitting investigation has been
+            # tracking) relative to raw price-magnitude MSE in the same
+            # loss. Restored to the class's own intended default.
+            "prediction": SovereignLoss(direction_weight=10.0),
             "certainty":  certainty_loss,
             "reasoning":  weighted_reasoning_loss,
             # Real next-token cross-entropy, same loss GPT training uses -
@@ -274,6 +298,7 @@ def _compile_hydra(model, class_weights, lr_decay_epochs, steps_tr, learning_rat
         metrics={
             "prediction": [SovereignAccuracy()],
             "certainty":  [CertaintyMetric()],
+            "reasoning":  [keras.metrics.SparseCategoricalAccuracy(name="reasoning_acc")],
             "next_candle": [keras.metrics.SparseCategoricalAccuracy(name="next_candle_acc")],
         }
     )
@@ -341,7 +366,18 @@ def pretrain_base_model(args):
             monitor="val_prediction_dir_acc", mode="max", patience=25,
             restore_best_weights=True, verbose=1),
         EdgeTracker(log_path=LOG_DIR / "edge_tracker__pretrained_base.csv",
-                    n_val_samples=steps_va * BATCH_S * FORECAST),
+                    # n_val_samples was steps_va*BATCH_S*FORECAST - treating
+                    # every day of a window's forecast_steps-day forecast as
+                    # an independent trial. They're not: SovereignAccuracy
+                    # checks all FORECAST days of ONE continuous predicted
+                    # path per window, highly serially correlated (a path
+                    # that's right on day+1 is very likely still right on
+                    # day+2..+20). Real independent trials = window count,
+                    # not window count x forecast_steps - the old n
+                    # overstated sample size ~20x (forecast_steps=20),
+                    # making the Wilson CI/significant_edge far more
+                    # confident than the data actually supports.
+                    n_val_samples=steps_va * BATCH_S),
     ]
 
     print(f"\n🚀 IGNITION: pretrain base | {EPOCHS}-Epoch Mission | Batch {BATCH_S} | CTX {CTX_WIN} trading days")
@@ -389,7 +425,18 @@ def train_one_symbol(symbol: str, args):
     class_weights = _compute_class_weights(ds_info)
 
     # ── 3. Build model ───────────────────────────────────────────────────────
-    model = build_kraken(n_features=n_feat, context_window=CTX_WIN, forecast_steps=FORECAST)
+    # Higher dropout than pretrain (0.30) - fine-tune sees only ~4-6K windows
+    # for one symbol vs pretrain's ~30K pooled. dropout=0.40 + freezing 2
+    # blocks (see below) was tried first and went too far the other way:
+    # overfitting_risk never tripped, but val_dir_acc peaked at epoch 1 and
+    # only declined afterward - EarlyStopping restored epoch 1, i.e. no
+    # real learning happened at all. 0.35 + freezing only 1 block is a
+    # deliberate middle ground between that (too tight) and the original
+    # 0.30/no-freeze (too loose - real blowups past epoch ~20-30 in every
+    # earlier attempt). Dropout carries no trainable weights, so this is
+    # safe to raise here without breaking pretrained-weight loading below.
+    model = build_kraken(n_features=n_feat, context_window=CTX_WIN, forecast_steps=FORECAST,
+                          dropout_rate=0.35)
 
     # Save the exact shape this checkpoint was trained with — any inference
     # code that rebuilds the model to load these weights needs to match
@@ -413,20 +460,44 @@ def train_one_symbol(symbol: str, args):
     saved     = sorted(glob.glob(str(ckpt_dir / f"{prefix}_checkpoint_E*.keras")))
 
     resumed_from_symbol_ckpt = False
+    loaded_pretrained_lineage = False
     if args.resume and saved:
         print(f"📦 Resuming from this symbol's own checkpoint: {os.path.basename(saved[-1])}")
         model.load_weights(saved[-1])
         resumed_from_symbol_ckpt = True
+        loaded_pretrained_lineage = not args.skip_pretrain
     elif args.resume and CKPT_BEST.exists():
         print(f"📦 Resuming from this symbol's own checkpoint: {ckpt_name}")
         model.load_weights(str(CKPT_BEST))
         resumed_from_symbol_ckpt = True
+        loaded_pretrained_lineage = not args.skip_pretrain
     elif not args.skip_pretrain and PRETRAIN_CKPT.exists():
         print(f"📦 Starting from the pretrained base ({PRETRAIN_CKPT.name}) - "
               f"broad patterns learned across all universe symbols, now specializing on {symbol}")
         model.load_weights(str(PRETRAIN_CKPT))
+        loaded_pretrained_lineage = True
     else:
         print("📦 No pretrained base available - starting from random initialization")
+
+    # Freeze the earliest HydraBlocks when starting from pretrained-lineage
+    # weights (pretrained base, or a resumed fine-tune that itself descended
+    # from it) - NOT for random-init, where there's nothing useful yet to
+    # preserve by freezing. Standard transfer-learning practice for a small
+    # target dataset: the earliest block already learned broad, general
+    # patterns during pretrain (30K pooled windows); the rest of the network
+    # (3 of 4 blocks + output heads) still fine-tunes on this symbol's much
+    # smaller ~4-6K windows. Freezing 2 blocks (instead of 1) was tried
+    # first and was too conservative - overfitting_risk never tripped, but
+    # val_dir_acc never beat its epoch-1 starting point either, so
+    # EarlyStopping restored epoch 1 with no real learning having happened.
+    if loaded_pretrained_lineage:
+        frozen = []
+        for layer in model.layers:
+            if layer.name.startswith("hydra_") and int(layer.name.split("_")[1]) < 1:
+                layer.trainable = False
+                frozen.append(layer.name)
+        if frozen:
+            print(f"   🧊 Frozen (pretrained-lineage fine-tune): {frozen}")
 
     # Fine-tuning from a pretrained base uses a lower learning rate than
     # training from scratch would - standard transfer-learning practice, so
@@ -439,7 +510,7 @@ def train_one_symbol(symbol: str, args):
     # resuming a symbol's own checkpoint silently jumped LR 3e-5 -> 1e-4).
     learning_rate = args.finetune_lr if (not args.skip_pretrain and PRETRAIN_CKPT.exists()) else 1e-4
     print(f"   ⚖️  Recompiling model with custom weighted categorical crossentropy (lr={learning_rate})...")
-    _compile_hydra(model, class_weights, args.lr_decay_epochs, steps_tr,
+    _compile_hydra(model, class_weights, args.finetune_lr_decay_epochs, steps_tr,
                     learning_rate=learning_rate, weight_decay=0.15)
 
     # ── 5. Callbacks ──────────────────────────────────────────────────────────
@@ -460,7 +531,18 @@ def train_one_symbol(symbol: str, args):
             restore_best_weights=True, verbose=1),
         CheckpointPruner(ckpt_dir=ckpt_dir, model_name=args.model, keep_n=3),
         EdgeTracker(log_path=LOG_DIR / f"edge_tracker_{symbol}.csv",
-                    n_val_samples=steps_va * BATCH_S * FORECAST),
+                    # n_val_samples was steps_va*BATCH_S*FORECAST - treating
+                    # every day of a window's forecast_steps-day forecast as
+                    # an independent trial. They're not: SovereignAccuracy
+                    # checks all FORECAST days of ONE continuous predicted
+                    # path per window, highly serially correlated (a path
+                    # that's right on day+1 is very likely still right on
+                    # day+2..+20). Real independent trials = window count,
+                    # not window count x forecast_steps - the old n
+                    # overstated sample size ~20x (forecast_steps=20),
+                    # making the Wilson CI/significant_edge far more
+                    # confident than the data actually supports.
+                    n_val_samples=steps_va * BATCH_S),
     ]
 
     # ── 6. Ignite ─────────────────────────────────────────────────────────────
@@ -536,6 +618,17 @@ if __name__ == "__main__":
                          "patience=25 would trigger a stop), so the model trained at ~full LR the whole "
                          "time instead of annealing down late as intended. 40 comfortably covers "
                          "'best found a few epochs in, then 25 more without improvement' while still "
-                         "letting the schedule actually reach its floor (alpha=0.1) within a real run.")
+                         "letting the schedule actually reach its floor (alpha=0.1) within a real run. "
+                         "Applies to PRETRAIN only - see --finetune_lr_decay_epochs for fine-tune's own value.")
+    p.add_argument("--finetune_lr_decay_epochs", type=int, default=20,
+                    help="Same REALISTIC-run-length idea as --lr_decay_epochs, but calibrated to "
+                         "fine-tune's own, much shorter real run length - a real, previously-missed "
+                         "instance of the exact same miscalibration class: reusing --lr_decay_epochs "
+                         "(tuned for pretrain's ~30-epoch runs) here meant fine-tune, which real runs "
+                         "show stopping around epoch 26-34 (best found within the first ~1-9 epochs, "
+                         "then patience=25 more), was training at a barely-decayed, near-peak LR for "
+                         "essentially its entire duration - aggressive, undecayed updates on only "
+                         "~4-6K per-symbol windows, a real contributor to every symbol observed peaking "
+                         "very early then degrading for the rest of the run.")
     args = p.parse_args()
     train_kraken(args)

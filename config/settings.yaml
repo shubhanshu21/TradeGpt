@@ -16,82 +16,35 @@ broker:
                    #       no live prices/orders - switch to a real broker for paper trading
 
 universe:
-  # Nifty 50 large caps, liquid only, grouped by sector for balanced
-  # cross-sector coverage (a pooled model trained on 6 banks and nothing
-  # else would just learn "bank patterns", not general market structure).
-  # Trim/extend this list freely - more symbols = slower backtests.
+  # Pivoted to index-only (was the 38-stock Nifty-50 large-cap universe -
+  # see git history for that list). Index-level direction prediction has a
+  # real structural advantage individual-stock prediction doesn't: company-
+  # specific noise cancels out across the index's 50 constituents, leaving
+  # a smoother, more learnable market-wide signal - confirmed directly this
+  # session (individual-stock fine-tunes landed 44.8%-56.1%, matching
+  # published walk-forward research for single stocks, while index-level
+  # prediction is the more tractable target going forward).
+  # NIFTYBEES (not "NIFTY") on purpose: fetch_historical.py's
+  # benchmark_symbols list hardcodes NIFTY (and INDIA VIX) as excluded from
+  # the tradeable data dict regardless of what's in this list, specifically
+  # so the rel_strength_20d benchmark reference can never accidentally be
+  # treated as a real position - putting "NIFTY" here would silently
+  # backtest/paper/live against an empty universe. NIFTYBEES is a real,
+  # separate NSE-listed ETF (trades like any stock through the existing
+  # broker/backtest/paper/live pipeline, no new code needed) that tracks
+  # the index closely - confirmed real cached data 2002-2025, 5,959 days.
+  # Nifty futures/options would track the same index even more directly
+  # but need new broker/margin/expiry/lot-size handling not yet built.
   symbols:
-    # Banking & Financial Services
-    - HDFCBANK
-    - ICICIBANK
-    - KOTAKBANK
-    - SBIN
-    - AXISBANK
-    - BAJFINANCE
-    - BAJAJFINSV
-    - HDFCLIFE
-    # IT Services
-    - INFY
-    - TCS
-    - HCLTECH
-    - WIPRO
-    - TECHM
-    # FMCG & Consumer
-    - ITC
-    - HINDUNILVR
-    - NESTLEIND
-    - BRITANNIA
-    - TITAN
-    - ASIANPAINT
-    # Auto
-    - MARUTI
-    - M&M
-    - BAJAJ-AUTO
-    - EICHERMOT
-    # Pharma
-    - SUNPHARMA
-    - DRREDDY
-    - CIPLA
-    # Energy, Oil & Gas, Power
-    - RELIANCE
-    - ONGC
-    - NTPC
-    - POWERGRID
-    # Metals & Mining
-    - TATASTEEL
-    - JSWSTEEL
-    - HINDALCO
-    # Cement
-    - ULTRACEMCO
-    - GRASIM
-    # Infra / Capital Goods / Ports
-    - LT
-    - ADANIPORTS
-    # Telecom
-    - BHARTIARTL
+    - NIFTYBEES
 
 training:
   # Which symbols an actual `python3 train.py` run pools together. Separate
   # from universe.symbols (which is the full tradeable universe backtest/
-  # paper/live pull data for) because CPU-only training of all of them in
-  # one pooled run takes a very long time (~19h/epoch on a 4-core box at
-  # the current 38-symbol size) - trim this list to train on a faster
-  # subset, then widen it once a full run is actually needed.
-  # null/omitted = use the full universe.symbols list. Defaulted here to one
-  # symbol per sector (still cross-sector diverse, ~10/38 of the compute) so
-  # a CPU-only run finishes in hours, not most of a day - widen this list
-  # once faster hardware is available or a longer run is worth the wait.
+  # paper/live pull data for). null/omitted = use the full universe.symbols
+  # list - with universe.symbols now just NIFTYBEES, this mirrors it.
   symbols:
-    - HDFCBANK      # Banking & Financial Services
-    - INFY          # IT Services
-    - HINDUNILVR    # FMCG & Consumer
-    - MARUTI        # Auto
-    - SUNPHARMA     # Pharma
-    - RELIANCE      # Energy, Oil & Gas, Power
-    - TATASTEEL     # Metals & Mining
-    - ULTRACEMCO    # Cement
-    - LT            # Infra / Capital Goods / Ports
-    - BHARTIARTL    # Telecom
+    - NIFTYBEES
 
 swing:
   # Positional/swing trading: daily candles, multi-day holds, no same-day
