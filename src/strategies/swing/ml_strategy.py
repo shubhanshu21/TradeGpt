@@ -22,13 +22,27 @@ class MLSwingStrategy(SwingStrategy):
     symbol as they're first needed."""
     name = "ml_swing"
 
-    def __init__(self, checkpoint_name: str = "hydra_best.keras", cert_threshold: float = CERT_THRESHOLD):
-        self.cert_threshold = cert_threshold
+    def __init__(self, checkpoint_name: str = "hydra_best.keras", cert_threshold: float = None):
+        # None (default) = use each symbol's OWN calibrated threshold from
+        # model_shape.pkl (see train.py - computed as the 75th percentile of
+        # that checkpoint's real validation certainty distribution). A real
+        # bug found this session: CERT_THRESHOLD (0.85, sovereign_config.py)
+        # was a global hardcoded constant nobody had validated against what
+        # any actual trained model's certainty output can achieve - on
+        # NIFTYBEES only 0.12% of real trading days ever cleared it,
+        # silently zeroing every trade. Passing an explicit float here
+        # overrides that per-symbol calibration for ALL symbols (e.g. for
+        # deliberate testing) - use with the same caution that broke this
+        # the first time.
+        self._explicit_cert_threshold = cert_threshold
         self._checkpoint_name = checkpoint_name
         self._models = {}   # symbol -> loaded keras model
         self._shapes = {}   # symbol -> model_shape.pkl contents
+        self._cert_thresholds = {}  # symbol -> calibrated (or overridden) cert_threshold
         self._benchmark = "unloaded"  # lazy-loaded once, shared across all symbols (see generate_signals)
         self._vix = "unloaded"  # lazy-loaded once, shared across all symbols (see generate_signals)
+        self._gift_nifty = "unloaded"  # lazy-loaded once, shared across all symbols
+        self._macro = "unloaded"  # lazy-loaded once, shared across all symbols
 
     def _load(self, symbol: str):
         """Lazy load per symbol - so importing this module doesn't require
@@ -73,9 +87,19 @@ class MLSwingStrategy(SwingStrategy):
         model.load_weights(str(ckpt_path))
         self._models[symbol] = model
         self._shapes[symbol] = shape
+        # Older checkpoints (trained before calibration existed) won't have
+        # "cert_threshold" saved - fall back to the global default rather
+        # than crashing, same pattern as bin_centers/bin_edges elsewhere.
+        self._cert_thresholds[symbol] = (
+            self._explicit_cert_threshold
+            if self._explicit_cert_threshold is not None
+            else shape.get("cert_threshold", CERT_THRESHOLD)
+        )
 
     def generate_signals(self, df: pd.DataFrame, symbol: str = None, batch_size: int = 32) -> pd.DataFrame:
-        from data.preprocess import compute_indicators, build_feature_cols, apply_dls, load_benchmark_index, load_vix_index
+        from data.preprocess import (compute_indicators, build_feature_cols, apply_dls,
+                                      load_benchmark_index, load_vix_index,
+                                      load_gift_nifty, load_macro_cues)
 
         if symbol is None:
             raise ValueError("MLSwingStrategy.generate_signals requires symbol= (one model per symbol)")
@@ -87,13 +111,18 @@ class MLSwingStrategy(SwingStrategy):
             self._benchmark = load_benchmark_index()
         if self._vix == "unloaded":
             self._vix = load_vix_index()
+        if self._gift_nifty == "unloaded":
+            self._gift_nifty = load_gift_nifty()
+        if self._macro == "unloaded":
+            self._macro = load_macro_cues()
 
         df = df.copy()
         df["signal"] = 0
         if len(df) <= ctx + 5:
             return df
 
-        df_feat = compute_indicators(df, benchmark_df=self._benchmark, vix_df=self._vix)
+        df_feat = compute_indicators(df, benchmark_df=self._benchmark, vix_df=self._vix,
+                                      gift_nifty_df=self._gift_nifty, macro_dfs=self._macro)
         features = build_feature_cols()
         data = df_feat[features].values.astype("float32")
 
@@ -148,7 +177,7 @@ class MLSwingStrategy(SwingStrategy):
             next_candle_dir = reasoning_dir  # no vocabulary saved (older checkpoint) - don't gate on it
 
         fire = (
-            (cert >= self.cert_threshold)
+            (cert >= self._cert_thresholds[symbol])
             & np.isin(reasoning_cls, (0, 1))
             & (price_dir == reasoning_dir)
             & (next_candle_dir == reasoning_dir)
@@ -172,6 +201,7 @@ class MLSwingStrategy(SwingStrategy):
         """
         from data.preprocess import (compute_indicators, build_feature_cols, apply_dls,
                                       load_benchmark_index, load_vix_index,
+                                      load_gift_nifty, load_macro_cues,
                                       CANDLESTICK_PATTERNS, CANDLESTICK_PATTERN_NAMES)
 
         try:
@@ -187,12 +217,17 @@ class MLSwingStrategy(SwingStrategy):
             self._benchmark = load_benchmark_index()
         if self._vix == "unloaded":
             self._vix = load_vix_index()
+        if self._gift_nifty == "unloaded":
+            self._gift_nifty = load_gift_nifty()
+        if self._macro == "unloaded":
+            self._macro = load_macro_cues()
 
         if len(df) < ctx:
             return {"available": False, "symbol": symbol,
                     "reason": f"Needs at least {ctx} days of price history, only have {len(df)}."}
 
-        df_feat = compute_indicators(df, benchmark_df=self._benchmark, vix_df=self._vix)
+        df_feat = compute_indicators(df, benchmark_df=self._benchmark, vix_df=self._vix,
+                                      gift_nifty_df=self._gift_nifty, macro_dfs=self._macro)
         features = build_feature_cols()
         data = df_feat[features].values.astype("float32")
 
@@ -272,7 +307,7 @@ class MLSwingStrategy(SwingStrategy):
             "signal_explanation": signal_explanation,
             "certainty_pct": round(certainty * 100, 1),
             "meets_trade_threshold": bool(
-                certainty >= self.cert_threshold
+                certainty >= self._cert_thresholds[symbol]
                 and reasoning_cls in (0, 1)
                 and price_dir == reasoning_dir_signed
                 and next_candle_dir == reasoning_dir_signed

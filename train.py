@@ -580,6 +580,30 @@ def train_one_symbol(symbol: str, args):
 
     final_name = "hydra_final.keras" if args.model == "hydra" else f"{args.model}_final.keras"
     model.save(str(ckpt_dir / final_name))
+
+    # Calibrate this checkpoint's own cert_threshold from its REAL validation
+    # certainty distribution, instead of trusting sovereign_config.py's
+    # hardcoded CERT_THRESHOLD (0.85) blindly. Real bug found this session:
+    # certainty was redesigned (was collapsed MoE-consensus output, now
+    # reasoning's own max-softmax confidence - see hydra.py), and even after
+    # that fix, checking the real distribution on NIFTYBEES showed only
+    # 0.12% of days ever cleared 0.85 (p99 was 0.74) - a hardcoded absolute
+    # threshold nobody had validated against what any actual trained model
+    # can achieve silently zeroed out every trade. This computes and
+    # PERSISTS a percentile-based threshold per checkpoint (selective - top
+    # quartile by this model's own confidence - but not vanishingly rare),
+    # so a future retrain/architecture change can't silently repeat this.
+    _, cal_cert, _, _ = model.predict(va_ds, verbose=0)
+    calibrated_cert_threshold = float(np.percentile(cal_cert, 75))
+    print(f"   🎯 Calibrated cert_threshold from real validation certainty "
+          f"distribution: {calibrated_cert_threshold:.4f} (75th percentile, "
+          f"range {cal_cert.min():.4f}-{cal_cert.max():.4f})")
+    with open(ckpt_dir / "model_shape.pkl", "rb") as _f:
+        _shape = _pickle.load(_f)
+    _shape["cert_threshold"] = calibrated_cert_threshold
+    with open(ckpt_dir / "model_shape.pkl", "wb") as _f:
+        _pickle.dump(_shape, _f)
+
     print(f"\n✅ {symbol} MISSION COMPLETE — saved to {ckpt_dir}/{final_name}")
 
 

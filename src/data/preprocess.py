@@ -96,6 +96,39 @@ def load_vix_index() -> pd.DataFrame:
     return data.get("INDIA VIX")
 
 
+def load_gift_nifty() -> pd.DataFrame:
+    """GIFT NIFTY's own daily candles (cached via the broker, same as any
+    symbol) - the overnight/near-24h futures market on Nifty, real signal
+    Indian traders actually use to gauge how Nifty will open before the
+    NSE cash market itself opens. Only ~2020-onward history via the
+    configured broker (see fetch_historical.py's YAHOO_MACRO_SERIES for
+    the longer-history macro cues, fetched separately since GIFT NIFTY has
+    no long free third-party equivalent). Returns None if not cached."""
+    data = load_universe_from_cache(["GIFT NIFTY"])
+    return data.get("GIFT NIFTY")
+
+
+def load_macro_cues() -> dict:
+    """Long-history macro/global-cue series (S&P 500, USD/INR, WTI crude)
+    fetched from Yahoo Finance (see fetch_historical.py's
+    fetch_yahoo_symbol/YAHOO_MACRO_SERIES) rather than the configured
+    broker, specifically because they cover almost this project's entire
+    NIFTYBEES history (S&P500/crude back to 2000, USD/INR to 2003) instead
+    of the broker's own global-data feeds, which only start ~March 2020.
+    Real, causally-relevant signals for Indian equities that were entirely
+    unused before this: US market moves overnight (Indian markets often
+    gap in sympathy), USD/INR (FII flow proxy), crude (India imports ~85%
+    of its oil). Returns {} for any series not yet cached, so callers can
+    degrade gracefully per-series rather than requiring all three."""
+    from data.fetch_historical import YAHOO_MACRO_SERIES, CACHE_DIR
+    out = {}
+    for cache_name in YAHOO_MACRO_SERIES:
+        matches = sorted(CACHE_DIR.glob(f"yahoo_{cache_name}_day_*.csv"))
+        if matches:
+            out[cache_name] = pd.read_csv(matches[-1], parse_dates=["date"]).sort_values("date").reset_index(drop=True)
+    return out
+
+
 def build_feature_cols():
     """
     Equity daily-swing feature set. Every entry is a ratio, bounded
@@ -120,6 +153,10 @@ def build_feature_cols():
         'obv_dist',
         'vwap20_dist',
         'vix_zscore_60d',
+        'gift_nifty_return_1d',
+        'sp500_return_1d',
+        'usdinr_return_1d',
+        'crude_return_1d',
     ] + CANDLESTICK_PATTERNS
 
 
@@ -141,7 +178,8 @@ CANDLESTICK_PATTERNS = [f'cdl_{n}' for n in CANDLESTICK_PATTERN_NAMES]
 
 
 def compute_indicators(df: pd.DataFrame, benchmark_df: pd.DataFrame = None,
-                        vix_df: pd.DataFrame = None) -> pd.DataFrame:
+                        vix_df: pd.DataFrame = None, gift_nifty_df: pd.DataFrame = None,
+                        macro_dfs: dict = None) -> pd.DataFrame:
     """
     Compute equity technical indicators. Expects columns: date, open, high,
     low, close, volume (one symbol's full daily history, sorted ascending).
@@ -158,6 +196,17 @@ def compute_indicators(df: pd.DataFrame, benchmark_df: pd.DataFrame = None,
 
     vix_df (optional): India VIX daily candles (see load_vix_index()), used
     for vix_zscore_60d. If omitted, that feature is filled with 0.
+
+    gift_nifty_df (optional): GIFT NIFTY daily candles (see
+    load_gift_nifty()), used for gift_nifty_return_1d - the overnight
+    futures market real Indian traders watch to gauge how Nifty will open.
+    Only ~2020-onward via the broker; earlier rows fill 0 (see the ffill-
+    only/no-bfill note below - same reasoning applies here).
+
+    macro_dfs (optional): {"SP500":.., "USDINR_LONG":.., "CRUDE":..} from
+    load_macro_cues() - US market/currency/oil moves, real causal drivers
+    of Indian market sentiment previously unused in this pipeline. Any
+    series missing from the dict fills 0 for that one feature only.
     """
     df = df.copy()
     if 'date' in df.columns:
@@ -294,6 +343,57 @@ def compute_indicators(df: pd.DataFrame, benchmark_df: pd.DataFrame = None,
         df = df.drop(columns=['vix_close'])
     else:
         df['vix_zscore_60d'] = 0.0
+
+    # ── GIFT NIFTY overnight return and macro cues (S&P 500, USD/INR,
+    # crude) — real, causally-relevant signals no per-stock price/volume
+    # feature can capture: overnight US market moves Indian markets often
+    # gap in sympathy with, currency moves that drive FII flows, and oil
+    # price (India imports ~85% of its crude). Each merged independently
+    # so one series being unavailable/not-yet-cached doesn't block the
+    # others - ffill only (no bfill, same reasoning as bench/vix above),
+    # missing/pre-availability rows fill 0 rather than leaking a future
+    # value backward or crashing when a series isn't cached yet.
+    def _to_naive_date(s):
+        # tz_localize(None) errors on an already-tz-naive series ("Cannot
+        # convert tz-naive timestamps") - only strip tz when there is one.
+        s = pd.to_datetime(s)
+        if s.dt.tz is not None:
+            s = s.dt.tz_localize(None)
+        return s.dt.normalize()
+
+    def _merge_return_1d(df, src_df, src_col_name, out_col_name):
+        if src_df is None or src_df.empty:
+            df[out_col_name] = 0.0
+            return df
+        src = src_df[['date', 'close']].copy()
+        src = src.rename(columns={'close': src_col_name})
+        # Merge on a tz-naive, time-stripped date key - real bug found
+        # here: the broker's dates are tz-aware (IST), but the Yahoo
+        # Finance fetcher (fetch_yahoo_symbol) returns tz-naive UTC-epoch
+        # dates, and pandas refuses to merge tz-aware against tz-naive
+        # datetime columns outright. Everything in this pipeline is
+        # daily-granularity anyway, so normalizing both sides to a bare
+        # date for the merge key (leaving the real 'date' column
+        # untouched) is safe and source-agnostic - works for GIFT NIFTY
+        # (broker, tz-aware) and the Yahoo series (tz-naive) alike.
+        df['_merge_date'] = _to_naive_date(df['date'])
+        src['_merge_date'] = _to_naive_date(src['date'])
+        df = df.merge(src[['_merge_date', src_col_name]], on='_merge_date', how='left')
+        df[src_col_name] = df[src_col_name].ffill()
+        # Clipped to +-50% - real historical extreme found here: WTI crude
+        # futures went NEGATIVE in April 2020 (the COVID oil-price crash),
+        # so a plain pct_change() across that event produces a
+        # mathematically enormous value (observed: -306% in one row) that's
+        # a data artifact of price crossing zero, not real proportional
+        # signal - same reasoning as vix_zscore_60d's existing clip(-5, 5).
+        df[out_col_name] = df[src_col_name].pct_change(1).clip(-0.5, 0.5).fillna(0)
+        return df.drop(columns=[src_col_name, '_merge_date'])
+
+    df = _merge_return_1d(df, gift_nifty_df, 'gift_nifty_close', 'gift_nifty_return_1d')
+    macro_dfs = macro_dfs or {}
+    df = _merge_return_1d(df, macro_dfs.get('SP500'), 'sp500_close', 'sp500_return_1d')
+    df = _merge_return_1d(df, macro_dfs.get('USDINR_LONG'), 'usdinr_close', 'usdinr_return_1d')
+    df = _merge_return_1d(df, macro_dfs.get('CRUDE'), 'crude_close', 'crude_return_1d')
 
     # ── Price position in range (20d and 52-week) ────────────────────────
     high20, low20 = high.rolling(20, min_periods=1).max(), low.rolling(20, min_periods=1).min()
@@ -501,6 +601,15 @@ def build_dataset_streaming(data_by_symbol: dict, context_window=CONTEXT_WINDOW,
         print("   ⚠️ No cached India VIX data - vix_zscore_60d will be 0 for all symbols "
               "(run fetch_historical.py, or ignore if that's expected)")
 
+    gift_nifty_df = load_gift_nifty()
+    if gift_nifty_df is None:
+        print("   ⚠️ No cached GIFT NIFTY data - gift_nifty_return_1d will be 0 for all symbols")
+
+    macro_dfs = load_macro_cues()
+    missing_macro = [k for k in ("SP500", "USDINR_LONG", "CRUDE") if k not in macro_dfs]
+    if missing_macro:
+        print(f"   ⚠️ No cached data for {missing_macro} - those return_1d features will be 0")
+
     print(f"   ⚓ Equity Data Engine: {len(data_by_symbol)} symbols → CTX={context_window} FORECAST={forecast_steps}")
     # Longest lookback used by any feature in compute_indicators() (sma200,
     # high252/low252) - every rolling call there uses min_periods=1, so
@@ -514,7 +623,8 @@ def build_dataset_streaming(data_by_symbol: dict, context_window=CONTEXT_WINDOW,
     # windowing rather than patched per-indicator, so every feature gets a
     # real lookback consistently.
     for symbol, raw_df in data_by_symbol.items():
-        df_feat = compute_indicators(raw_df, benchmark_df=benchmark_df, vix_df=vix_df)
+        df_feat = compute_indicators(raw_df, benchmark_df=benchmark_df, vix_df=vix_df,
+                                      gift_nifty_df=gift_nifty_df, macro_dfs=macro_dfs)
         if burn_in_days > 0:
             if len(df_feat) <= burn_in_days:
                 print(f"   ⚠️ {symbol}: not enough history ({len(df_feat)} rows) to clear the "
